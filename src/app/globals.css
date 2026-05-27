@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── v0.dev 홈 디자인 시스템 ── */
+
+@layer base {
+  :root {
+    --background: #f7f8fa;
+    --foreground: #1a1a1a;
+    --card: #ffffff;
+    --card-foreground: #1a1a1a;
+    --primary: #0b1f4b;
+    --primary-foreground: #ffffff;
+    --accent: #c6ff00;
+    --accent-foreground: #0b1f4b;
+    --muted: #f0f1f3;
+    --muted-foreground: #888888;
+    --border: #ebebeb;
+    --radius: 1rem;
+    --line-1: #0052a4;
+    --line-2: #00a84d;
+    --warning: #f97316;
+    --danger: #ef4444;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/*
+ * ========== 기존 globals.css (보존) ==========
+ *
+ * @tailwind base;
+ * @tailwind components;
+ * @tailwind utilities;
+ *
+ * :root {
+ *   --bg: #F7F8FA;
+ *   --card: #FFFFFF;
+ *   --accent: #C6FF00;
+ *   --primary: #0B1F4B;
+ *   --text: #1A1A1A;
+ *   --text-sub: #888888;
+ *   --border: #EBEBEB;
+ *   --line1: #0052A4;
+ *   --line2: #F5A200;
+ *   --lines2: #00A84D;
+ *   ... zeb-page, zeb-btn, zeb-card 등 전체 컴포넌트 레이어 ...
+ * }
+ */
