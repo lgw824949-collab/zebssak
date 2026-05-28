@@ -75,15 +75,15 @@ const BOARDING_MODE_META: Record<
   { title: string; badge: string; submitLabel: string; role: BoardingRole }
 > = {
   seek: {
-    title: '?? ???',
-    badge: '?? ??',
-    submitLabel: '?? ??? ??',
+    title: '앉고 싶어요',
+    badge: '착석 희망',
+    submitLabel: '앉고 싶어요 접수',
     role: 'seeker',
   },
   leave: {
-    title: '????',
-    badge: '?? ??',
-    submitLabel: '???? ??',
+    title: '내릴게요',
+    badge: '하차 예정',
+    submitLabel: '내릴게요 접수',
     role: 'provider',
   },
 }
@@ -104,20 +104,20 @@ function resolveBoardingType(
   return null
 }
 
-/** ???draft? ??? (lineKey ?? ?? ??) */
+/** 화면·draft용 호선명 (lineKey 기준 고정 매핑) */
 const LINE_LABEL_BY_KEY: Record<BoardingLine, string> = {
-  seoul1_incheon: '??1 ??',
-  seoul1_cheonan: '??1 ??',
-  seoul2: '?? 2??',
-  seoul3: '?? 3??',
-  seoul4: '?? 4??',
-  seoul5: '?? 5??',
-  seoul6: '?? 6??',
-  seoul7: '?? 7??',
-  seoul8: '?? 8??',
-  seoul9: '?? 9??',
-  incheon1: '?? 1??',
-  incheon2: '?? 2??',
+  seoul1_incheon: '서울1 인천',
+  seoul1_cheonan: '서울1 천안',
+  seoul2: '서울 2호선',
+  seoul3: '서울 3호선',
+  seoul4: '서울 4호선',
+  seoul5: '서울 5호선',
+  seoul6: '서울 6호선',
+  seoul7: '서울 7호선',
+  seoul8: '서울 8호선',
+  seoul9: '서울 9호선',
+  incheon1: '인천 1호선',
+  incheon2: '인천 2호선',
 }
 
 /** /api/trains line ???? (1?? ??? ?? ??? 1?? ??? ??) */
@@ -172,7 +172,7 @@ const LINE_OPTIONS: Array<{
 
 /** ?? 1?? ????: ??? ~ ?? */
 const S1_INCHEON_STATIONS: MockStation[] = (() => {
-  const incheonIndex = MOCK_LINE_S1_STATIONS.findIndex((station) => station.name === '??')
+  const incheonIndex = MOCK_LINE_S1_STATIONS.findIndex((station) => station.name === '인천')
   if (incheonIndex < 0) {
     return MOCK_LINE_S1_STATIONS
   }
@@ -181,7 +181,7 @@ const S1_INCHEON_STATIONS: MockStation[] = (() => {
 
 /** ?? 1?? ??/????: ?? ?? ?? ??? ?? */
 const S1_CHEONAN_STATIONS: MockStation[] = (() => {
-  const guroIndex = MOCK_LINE_S1_STATIONS.findIndex((station) => station.name === '???????')
+  const guroIndex = MOCK_LINE_S1_STATIONS.findIndex((station) => station.name === '가산디지털단지')
   const branchStartIndex = MOCK_LINE_S1_STATIONS.findIndex(
     (station) => station.name === '???????'
   )
@@ -305,7 +305,7 @@ function resolveStationByName(
   stationName: string
 ): MockStation | undefined {
   const trimmed = stationName.trim()
-  const withoutSuffix = trimmed.replace(/?$/, '')
+  const withoutSuffix = trimmed.replace(/역$/, '')
 
   return (
     stations.find((station) => station.name === trimmed) ??
@@ -366,7 +366,7 @@ function resolveLinearDirectionStep(
 }
 
 function normalizeStationName(name: string): string {
-  return name.trim().replace(/\s+/g, '').replace(/?$/, '')
+  return name.trim().replace(/\s+/g, '').replace(/역$/, '')
 }
 
 function reorderStationsByNameOrder(
@@ -415,16 +415,16 @@ function distanceKm(
 }
 
 function findStationNameInPhrase(phrase: string): string | null {
-  const normalizedPhrase = phrase.replace(/\s+/g, '').replace(/?/g, '')
+  const normalizedPhrase = phrase.replace(/\s+/g, '').replace(/역/g, '')
   if (!normalizedPhrase) return null
 
   const aliasMap: Record<string, string> = {
-    ?????????: '?????????',
+    동대문역사문화공간: '동대문역사문화공원',
   }
   const aliased = aliasMap[normalizedPhrase] ?? normalizedPhrase
 
   for (const stationName of ALL_STATION_NAMES) {
-    const normalizedStation = stationName.replace(/\s+/g, '').replace(/?/g, '')
+    const normalizedStation = stationName.replace(/\s+/g, '').replace(/역/g, '')
     if (
       normalizedStation &&
       (aliased.includes(normalizedStation) ||
@@ -437,11 +437,11 @@ function findStationNameInPhrase(phrase: string): string | null {
 }
 
 function findStationMentionsInText(text: string): Array<{ name: string; index: number }> {
-  const compact = text.replace(/\s+/g, '').replace(/?/g, '')
+  const compact = text.replace(/\s+/g, '').replace(/역/g, '')
   const mentions = new Map<string, number>()
 
   for (const stationName of ALL_STATION_NAMES) {
-    const normalizedStation = stationName.replace(/\s+/g, '').replace(/?/g, '')
+    const normalizedStation = stationName.replace(/\s+/g, '').replace(/역/g, '')
     if (!normalizedStation) continue
     const idx = compact.indexOf(normalizedStation)
     if (idx >= 0) {
@@ -450,8 +450,8 @@ function findStationMentionsInText(text: string): Array<{ name: string; index: n
     }
   }
 
-  const tokens = compact.match(/[?-?0-9]+/g) ?? []
-  const stopWords = new Set(['??', '??', '???', '???'])
+  const tokens = compact.match(/[가-힣0-9]+/g) ?? []
+  const stopWords = new Set(['에서', '까지', '가고싶', '타고싶'])
   for (const token of tokens) {
     if (token.length < 2 || stopWords.has(token)) continue
     const matched = findStationNameInPhrase(token)
@@ -472,11 +472,11 @@ function parseVoiceRoute(rawText: string): { origin: string; destination: string
   if (!text) return null
 
   const compact = text.replace(/\s+/g, '')
-  const fromMatch = compact.match(/^(.+?)??(.+)$/)
+  const fromMatch = compact.match(/^(.+?)에서(.+)$/)
   if (fromMatch) {
     const origin = findStationNameInPhrase(fromMatch[1] ?? '')
     const destinationPhrase = (fromMatch[2] ?? '').replace(
-      /(??|??|?|??|???|???|???|???)\s*$/g,
+      /(까지|으로|로|가요|갈게요|갑니다|가고싶|타고싶)\s*$/g,
       ''
     )
     const destination = findStationNameInPhrase(destinationPhrase)
@@ -491,7 +491,7 @@ function parseVoiceRoute(rawText: string): { origin: string; destination: string
   const origin = mentions[0].name
   let destination = mentions[1].name
 
-  const destinationCue = compact.search(/(??|???|???)/)
+  const destinationCue = compact.search(/(까지|가고싶|타고싶)/)
   if (destinationCue >= 0) {
     const beforeCue = mentions.filter((m) => m.index < destinationCue)
     if (beforeCue.length > 0) {
@@ -506,18 +506,18 @@ function parseVoiceRoute(rawText: string): { origin: string; destination: string
 function parseKoreanNumber(token: string): number | null {
   const value = token.trim()
   const map: Record<string, number> = {
-    ?: 1,
-    ?: 2,
-    ?: 3,
-    ?: 4,
-    ?: 5,
-    ?: 6,
-    ?: 7,
-    ?: 8,
-    ?: 1,
-    ?: 2,
-    ?: 3,
-    ?: 4,
+    일: 1,
+    이: 2,
+    삼: 3,
+    사: 4,
+    오: 5,
+    육: 6,
+    칠: 7,
+    팔: 8,
+    한: 1,
+    두: 2,
+    세: 3,
+    네: 4,
     1: 1,
     2: 2,
     3: 3,
@@ -544,7 +544,7 @@ function parseCarAndDoor(
   }
 
   const fullMatch = compact.match(
-    /([????????????1-8])??([????????????1-4])/
+    /([일이삼사오육칠팔한두세네1-8])호차([일이삼사오육칠팔한두세네1-4])/
   )
   if (fullMatch) {
     const carNumber = parseKoreanNumber(fullMatch[1] ?? '')
@@ -554,7 +554,7 @@ function parseCarAndDoor(
     return { carNumber, doorPosition }
   }
 
-  const carOnlyMatch = compact.match(/([????????????1-8])??/)
+  const carOnlyMatch = compact.match(/([일이삼사오육칠팔한두세네1-8])호차/)
   if (!carOnlyMatch) return null
   const carNumber = parseKoreanNumber(carOnlyMatch[1] ?? '')
   if (!carNumber || carNumber < 1 || carNumber > 8) return null
@@ -1387,7 +1387,7 @@ function BoardingForm() {
                     const isCurrentLocation = currentLocationName
                       ? station.name === currentLocationName ||
                         currentLocationName.includes(station.name) ||
-                        station.name.includes(currentLocationName.replace(/?$/, ''))
+                        station.name.includes(currentLocationName.replace(/역$/, ''))
                       : false
                     return (
                       <li key={station.id}>
