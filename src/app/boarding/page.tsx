@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -74,15 +74,15 @@ const BOARDING_MODE_META: Record<
   { title: string; badge: string; submitLabel: string; role: BoardingRole }
 > = {
   seek: {
-    title: '?�고 ?�어??,
-    badge: '착석 ?�망',
-    submitLabel: '?�고 ?�어???�수',
+    title: '앉고 싶어요',
+    badge: '착석 희망',
+    submitLabel: '앉고 싶어요 접수',
     role: 'seeker',
   },
   leave: {
-    title: '?�릴게요',
-    badge: '?�차 ?�정',
-    submitLabel: '?�릴게요 ?�수',
+    title: '내릴게요',
+    badge: '하차 예정',
+    submitLabel: '내릴게요 접수',
     role: 'provider',
   },
 }
@@ -103,23 +103,23 @@ function resolveBoardingType(
   return null
 }
 
-/** ?�면·draft???�선�?(lineKey 기�? 고정 매핑) */
+/** 화면·draft용 호선명 (lineKey 기준 고정 매핑) */
 const LINE_LABEL_BY_KEY: Record<BoardingLine, string> = {
-  seoul1_incheon: '?�울1 ?�천',
-  seoul1_cheonan: '?�울1 천안',
-  seoul2: '?�울 2?�선',
-  seoul3: '?�울 3?�선',
-  seoul4: '?�울 4?�선',
-  seoul5: '?�울 5?�선',
-  seoul6: '?�울 6?�선',
-  seoul7: '?�울 7?�선',
-  seoul8: '?�울 8?�선',
-  seoul9: '?�울 9?�선',
-  incheon1: '?�천 1?�선',
-  incheon2: '?�천 2?�선',
+  seoul1_incheon: '서울1 인천',
+  seoul1_cheonan: '서울1 천안',
+  seoul2: '서울 2호선',
+  seoul3: '서울 3호선',
+  seoul4: '서울 4호선',
+  seoul5: '서울 5호선',
+  seoul6: '서울 6호선',
+  seoul7: '서울 7호선',
+  seoul8: '서울 8호선',
+  seoul9: '서울 9호선',
+  incheon1: '인천 1호선',
+  incheon2: '인천 2호선',
 }
 
-/** /api/trains line ?�라미터 (1?�선 분기???�일 ?�시�?1?�선 ?�이???�용) */
+/** /api/trains line 파라미터 (1호선 분기는 동일 실시간 1호선 데이터 사용) */
 const TRAINS_API_LINE: Record<BoardingLine, string> = {
   seoul1_incheon: 'seoul1_incheon',
   seoul1_cheonan: 'seoul1_cheonan',
@@ -169,20 +169,20 @@ const LINE_OPTIONS: Array<{
   { key: 'seoul9', label: LINE_LABEL_BY_KEY.seoul9, color: '#BDB092' },
 ]
 
-/** ?�울 1?�선 ?�천방면: ?�요??~ ?�천 */
+/** 서울 1호선 인천방면: 소요산 ~ 인천 */
 const S1_INCHEON_STATIONS: MockStation[] = (() => {
-  const incheonIndex = MOCK_LINE_S1_STATIONS.findIndex((station) => station.name === '?�천')
+  const incheonIndex = MOCK_LINE_S1_STATIONS.findIndex((station) => station.name === '인천')
   if (incheonIndex < 0) {
     return MOCK_LINE_S1_STATIONS
   }
   return MOCK_LINE_S1_STATIONS.slice(0, incheonIndex + 1)
 })()
 
-/** ?�울 1?�선 천안/?�창방면: 구로 ?�후 천안 지?�만 ?�함 */
+/** 서울 1호선 천안/신창방면: 구로 이후 천안 지선만 포함 */
 const S1_CHEONAN_STATIONS: MockStation[] = (() => {
   const guroIndex = MOCK_LINE_S1_STATIONS.findIndex((station) => station.name === '구로')
   const branchStartIndex = MOCK_LINE_S1_STATIONS.findIndex(
-    (station) => station.name === '가?�디지?�단지'
+    (station) => station.name === '가산디지털단지'
   )
   if (guroIndex < 0 || branchStartIndex < 0) return MOCK_LINE_S1_STATIONS
   return [
@@ -191,7 +191,7 @@ const S1_CHEONAN_STATIONS: MockStation[] = (() => {
   ]
 })()
 
-/** ?�선�?목적지·?�승??목록 */
+/** 호선별 목적지·탑승역 목록 */
 const STATIONS_BY_LINE: Record<BoardingLine, MockStation[]> = {
   seoul1_incheon: S1_INCHEON_STATIONS,
   seoul1_cheonan: S1_CHEONAN_STATIONS,
@@ -277,7 +277,7 @@ interface BoardingDraft {
   role: BoardingRole
   lineKey: BoardingLine
   lineLabel: string
-  /** 매칭 API??(?�천 1??, �???2; ?�울 ?�선?� lineKey�?구분) */
+  /** 매칭 API용 (인천 1→1, 그 외 2; 서울 호선은 lineKey로 구분) */
   lineNumber: LineNumber
   trainNo: string
   carNumber: number
@@ -298,13 +298,13 @@ function resolveLineLabel(line: BoardingLine): string {
   return LINE_LABEL_BY_KEY[line] ?? ''
 }
 
-/** API ??��??목업 ??목록�?매칭 */
+/** API 역명을 목업 역 목록과 매칭 */
 function resolveStationByName(
   stations: MockStation[],
   stationName: string
 ): MockStation | undefined {
   const trimmed = stationName.trim()
-  const withoutSuffix = trimmed.replace(/??/, '')
+  const withoutSuffix = trimmed.replace(/역$/, '')
 
   return (
     stations.find((station) => station.name === trimmed) ??
@@ -318,13 +318,13 @@ function resolveStationByName(
 function normalizeDirectionKey(direction: string | null | undefined): 'up' | 'down' | null {
   const value = direction?.trim()
   if (!value) return null
-  if (value === '?�행' || value === '?�선' || value === '1') return 'up'
-  if (value === '?�행' || value === '?�선' || value === '2') return 'down'
+  if (value === '상행' || value === '내선' || value === '1') return 'up'
+  if (value === '하행' || value === '외선' || value === '2') return 'down'
   return null
 }
 
 const MIN_DESTINATION_STOPS = 1
-/** ?�택 방향 기�? 20??초과??반�? 방향????빠름 */
+/** 선택 방향 기준 20역 초과는 반대 방향이 더 빠름 */
 const LOOP_MAX_DESTINATION_STOPS = 20
 
 function resolveSeoul2DirectionStep(
@@ -365,7 +365,7 @@ function resolveLinearDirectionStep(
 }
 
 function normalizeStationName(name: string): string {
-  return name.trim().replace(/\s+/g, '').replace(/??/, '')
+  return name.trim().replace(/\s+/g, '').replace(/역$/, '')
 }
 
 function reorderStationsByNameOrder(
@@ -414,16 +414,16 @@ function distanceKm(
 }
 
 function findStationNameInPhrase(phrase: string): string | null {
-  const normalizedPhrase = phrase.replace(/\s+/g, '').replace(/??g, '')
+  const normalizedPhrase = phrase.replace(/\s+/g, '').replace(/역/g, '')
   if (!normalizedPhrase) return null
 
   const aliasMap: Record<string, string> = {
-    ?��?문역?�문?�공�? '?��?문역?�문?�공??,
+    동대문역사문화공간: '동대문역사문화공원',
   }
   const aliased = aliasMap[normalizedPhrase] ?? normalizedPhrase
 
   for (const stationName of ALL_STATION_NAMES) {
-    const normalizedStation = stationName.replace(/\s+/g, '').replace(/??g, '')
+    const normalizedStation = stationName.replace(/\s+/g, '').replace(/역/g, '')
     if (
       normalizedStation &&
       (aliased.includes(normalizedStation) ||
@@ -436,11 +436,11 @@ function findStationNameInPhrase(phrase: string): string | null {
 }
 
 function findStationMentionsInText(text: string): Array<{ name: string; index: number }> {
-  const compact = text.replace(/\s+/g, '').replace(/??g, '')
+  const compact = text.replace(/\s+/g, '').replace(/역/g, '')
   const mentions = new Map<string, number>()
 
   for (const stationName of ALL_STATION_NAMES) {
-    const normalizedStation = stationName.replace(/\s+/g, '').replace(/??g, '')
+    const normalizedStation = stationName.replace(/\s+/g, '').replace(/역/g, '')
     if (!normalizedStation) continue
     const idx = compact.indexOf(normalizedStation)
     if (idx >= 0) {
@@ -449,8 +449,8 @@ function findStationMentionsInText(text: string): Array<{ name: string; index: n
     }
   }
 
-  const tokens = compact.match(/[가-??-9]+/g) ?? []
-  const stopWords = new Set(['?�서', '까�?', '가고싶??, '?�리고싶??])
+  const tokens = compact.match(/[가-힣0-9]+/g) ?? []
+  const stopWords = new Set(['에서', '까지', '가고싶어', '내리고싶어'])
   for (const token of tokens) {
     if (token.length < 2 || stopWords.has(token)) continue
     const matched = findStationNameInPhrase(token)
@@ -471,11 +471,11 @@ function parseVoiceRoute(rawText: string): { origin: string; destination: string
   if (!text) return null
 
   const compact = text.replace(/\s+/g, '')
-  const fromMatch = compact.match(/^(.+?)?�서(.+)$/)
+  const fromMatch = compact.match(/^(.+?)에서(.+)$/)
   if (fromMatch) {
     const origin = findStationNameInPhrase(fromMatch[1] ?? '')
     const destinationPhrase = (fromMatch[2] ?? '').replace(
-      /(까�?|?�로|�?가??갈게??갑니??가고싶???�리고싶??\s*$/g,
+      /(까지|으로|로|가요|갈게요|갑니다|가고싶어|내리고싶어)\s*$/g,
       ''
     )
     const destination = findStationNameInPhrase(destinationPhrase)
@@ -490,7 +490,7 @@ function parseVoiceRoute(rawText: string): { origin: string; destination: string
   const origin = mentions[0].name
   let destination = mentions[1].name
 
-  const destinationCue = compact.search(/(까�?|가고싶???�리고싶??/)
+  const destinationCue = compact.search(/(까지|가고싶어|내리고싶어)/)
   if (destinationCue >= 0) {
     const beforeCue = mentions.filter((m) => m.index < destinationCue)
     if (beforeCue.length > 0) {
@@ -505,18 +505,18 @@ function parseVoiceRoute(rawText: string): { origin: string; destination: string
 function parseKoreanNumber(token: string): number | null {
   const value = token.trim()
   const map: Record<string, number> = {
-    ?? 1,
-    ?? 2,
-    ?? 3,
-    ?? 4,
-    ?? 5,
-    ?? 6,
-    �? 7,
-    ?? 8,
-    ?? 1,
-    ?? 2,
-    ?? 3,
-    ?? 4,
+    일: 1,
+    이: 2,
+    삼: 3,
+    사: 4,
+    오: 5,
+    육: 6,
+    칠: 7,
+    팔: 8,
+    한: 1,
+    두: 2,
+    세: 3,
+    네: 4,
     1: 1,
     2: 2,
     3: 3,
@@ -543,7 +543,7 @@ function parseCarAndDoor(
   }
 
   const fullMatch = compact.match(
-    /([?�이?�사?�육칠팔?�두?�네1-8])?�시([?�이?�사?�두?�네1-4])/
+    /([일이삼사오육칠팔한두세네1-8])다시([일이삼사한두세네1-4])/
   )
   if (fullMatch) {
     const carNumber = parseKoreanNumber(fullMatch[1] ?? '')
@@ -553,7 +553,7 @@ function parseCarAndDoor(
     return { carNumber, doorPosition }
   }
 
-  const carOnlyMatch = compact.match(/([?�이?�사?�육칠팔?�두?�네1-8])?�차/)
+  const carOnlyMatch = compact.match(/([일이삼사오육칠팔한두세네1-8])호차/)
   if (!carOnlyMatch) return null
   const carNumber = parseKoreanNumber(carOnlyMatch[1] ?? '')
   if (!carNumber || carNumber < 1 || carNumber > 8) return null
@@ -667,7 +667,7 @@ function BoardingForm() {
 
     async function loadStations() {
       try {
-        const apiLine = STATIONS_API_LINE[lineKey!]
+        const apiLine = STATIONS_API_LINE[lineKey]
         const response = await fetch(buildStationsApiUrl(apiLine), {
           method: 'GET',
           cache: 'no-store',
@@ -770,7 +770,7 @@ function BoardingForm() {
           })
         }
 
-        // 백엔??/api/trains) ?�렬(가까운 ?�·급???�선) ?�서�?그�?�??�용?�니??
+        // 백엔드(/api/trains) 정렬(가까운 순·급행 우선) 순서를 그대로 사용합니다.
         setTrainList(trains)
       } catch (fetchError) {
         if (fetchError instanceof Error && fetchError.name === 'AbortError') {
@@ -820,7 +820,7 @@ function BoardingForm() {
         }
       },
       () => {
-        // 권한 거�?/?�패 ???�동 ?�택?�로 ?�백
+        // 권한 거부/실패 시 수동 선택으로 폴백
       },
       {
         enableHighAccuracy: true,
@@ -899,7 +899,7 @@ function BoardingForm() {
       return linearStep === 1 ? delta > 0 : delta < 0
     })
 
-    // ?�동 방향 기�? 가까운 ?????(귤현??�??�에 ?��? ?�도�?
+    // 이동 방향 기준 가까운 역부터 (귤현이 맨 위에 오지 않도록)
     return candidates.sort((a, b) => {
       const distA = Math.abs(a.order - currentStation.order)
       const distB = Math.abs(b.order - currentStation.order)
@@ -933,15 +933,15 @@ function BoardingForm() {
       isSeatStepComplete &&
       destinationId !== null
 
-  const summaryLine = lineOption?.label ?? '?�선 미선??
-  const summaryTrain = trainNo ?? '?�차 미선??
+  const summaryLine = lineOption?.label ?? '호선 미선택'
+  const summaryTrain = trainNo ?? '열차 미선택'
   const summaryBoarding =
-    boardingStation?.name ?? currentLocationName ?? '?�승??미선??
-  const summaryCar = carNumber ? `${carNumber}?�차` : '?�차 미선??
+    boardingStation?.name ?? currentLocationName ?? '탑승역 미선택'
+  const summaryCar = carNumber ? `${carNumber}호차` : '호차 미선택'
   const summaryDestination = destinationStation?.name
-    ? `${destinationStation.name} ?�차`
-    : '목적지 미선??
-  const summarySeat = selectedSeat ? `${selectedSeat.face} ${selectedSeat.number}�? : ''
+    ? `${destinationStation.name} 하차`
+    : '목적지 미선택'
+  const summarySeat = selectedSeat ? `${selectedSeat.face} ${selectedSeat.number}번` : ''
 
   function applyTrainLocation(trainNoValue: string, stations: MockStation[]) {
     const train = trainList.find((item) => item.train_no === trainNoValue)
@@ -989,7 +989,7 @@ function BoardingForm() {
       sessionStorage.setItem('boardingDraft', JSON.stringify(draft))
       sessionStorage.setItem('waitingDraft', JSON.stringify(draft))
     } catch {
-      setError('?�승 ?�보 ?�?�에 ?�패?�습?�다.')
+      setError('탑승 정보 저장에 실패했습니다.')
     }
   }
 
@@ -1028,7 +1028,7 @@ function BoardingForm() {
 
   function handleVoiceInput() {
     if (!lineKey) {
-      setError('?�선??먼�? ?�택?�주?�요.')
+      setError('호선을 먼저 선택해주세요.')
       return
     }
 
@@ -1038,7 +1038,7 @@ function BoardingForm() {
         : undefined
 
     if (!SpeechRecognition) {
-      setError('??브라?��????�성 ?�식??지?�하지 ?�습?�다.')
+      setError('이 브라우저는 음성 인식을 지원하지 않습니다.')
       return
     }
 
@@ -1094,8 +1094,8 @@ function BoardingForm() {
         setDoorPosition(parsedCarDoor.doorPosition ?? null)
         setVoiceParsedCarDoor(
           parsedCarDoor.doorPosition
-            ? `${parsedCarDoor.carNumber}?�차 ${parsedCarDoor.doorPosition}번문`
-            : `${parsedCarDoor.carNumber}?�차`
+            ? `${parsedCarDoor.carNumber}호차 ${parsedCarDoor.doorPosition}번문`
+            : `${parsedCarDoor.carNumber}호차`
         )
       }
     }
@@ -1118,7 +1118,7 @@ function BoardingForm() {
     }
 
     recognition.onerror = () => {
-      setError('?�성 ?�식???�패?�습?�다. ?�시 ?�도?�주?�요.')
+      setError('음성 인식에 실패했습니다. 다시 시도해주세요.')
       if (silenceTimer) {
         clearTimeout(silenceTimer)
       }
@@ -1129,7 +1129,7 @@ function BoardingForm() {
         clearTimeout(silenceTimer)
       }
       if (!parseVoiceRoute(lastTranscript)) {
-        setError('?? "?�울?�?�구?�서 강남 ?�다?�이" ?�태�?말�??�주?�요.')
+        setError('예: "서울대입구에서 강남 삼다시이" 형태로 말씀해주세요.')
       }
       setIsListeningVoice(false)
     }
@@ -1155,12 +1155,12 @@ function BoardingForm() {
       !trainNo ||
       carNumber === null
     ) {
-      setError('모든 ??��???�택?�주?�요.')
+      setError('모든 항목을 선택해주세요.')
       return
     }
 
     if (!boardingStationId) {
-      setError('?�승??�� ?�인?�주?�요. ?�차�??�시 ?�택?�거???�승??�� 지?�해주세??')
+      setError('탑승역을 확인해주세요. 열차를 다시 선택하거나 탑승역을 지정해주세요.')
       return
     }
 
@@ -1168,19 +1168,19 @@ function BoardingForm() {
       (station) => station.id === boardingStationId
     )
     if (!startStation) {
-      setError('?�승??�� ?�택?�주?�요.')
+      setError('탑승역을 선택해주세요.')
       return
     }
 
     if (isLeaveMode) {
       if (!selectedSeat) {
-        setError('좌석???�택?�주?�요.')
+        setError('좌석을 선택해주세요.')
         return
       }
 
       const destination = stationsOnLine.find((station) => station.id === destinationId)
       if (!destination) {
-        setError('목적지 ??�� ?�택?�주?�요.')
+        setError('목적지 역을 선택해주세요.')
         return
       }
 
@@ -1204,7 +1204,7 @@ function BoardingForm() {
       sessionStorage.setItem('waitingDraft', JSON.stringify(draft))
       sessionStorage.setItem(
         COMPLETION_NOTICE_KEY,
-        `?�릴게요 ?�수?�료: ${destination.name}??
+        `내릴게요 접수완료: ${destination.name}역`
       )
       router.push('/provider')
       return
@@ -1212,7 +1212,7 @@ function BoardingForm() {
 
     const destination = stationsOnLine.find((station) => station.id === destinationId)
     if (!destination) {
-      setError('목적지 ??�� ?�택?�주?�요.')
+      setError('목적지 역을 선택해주세요.')
       return
     }
 
@@ -1244,8 +1244,9 @@ function BoardingForm() {
   return (
     <div className="brd-app">
       <header className="brd-header">
-        <Link href="/" className="brd-back" aria-label="?�으�?>
-          ??        </Link>
+        <Link href="/" className="brd-back" aria-label="홈으로">
+          ←
+        </Link>
         <h1 className="brd-title">{modeMeta.title}</h1>
         <span className="brd-role">{modeMeta.badge}</span>
       </header>
@@ -1255,38 +1256,38 @@ function BoardingForm() {
           type="button"
           className={`brd-voice-top-btn ${isListeningVoice ? 'is-listening' : ''}`}
           onClick={handleVoiceInput}
-          aria-label="?�성?�로 ?�력?�기"
+          aria-label="음성으로 입력하기"
         >
-          {isListeningVoice ? '?�는 중�? : '?�� ?�성?�로 ?�력?�기'}
+          {isListeningVoice ? '듣는 중…' : '🎤 음성으로 입력하기'}
         </button>
         {voiceRecognizedText ? (
-          <p className="brd-voice-top-text">?�식: {voiceRecognizedText}</p>
+          <p className="brd-voice-top-text">인식: {voiceRecognizedText}</p>
         ) : null}
-        {voiceRawText ? <p className="brd-voice-raw-text">?�문: {voiceRawText}</p> : null}
+        {voiceRawText ? <p className="brd-voice-raw-text">원문: {voiceRawText}</p> : null}
         {isListeningVoice ? (
           <p className="brd-voice-listening" role="status">
-            ?�고 ?�어??..
+            듣고 있어요...
           </p>
         ) : null}
         {(voiceParsedOrigin || voiceParsedDestination || voiceParsedCarDoor) && (
           <div className="brd-voice-parse-result" role="status" aria-live="polite">
             <p>
-              ?�재?�치: <strong>{voiceParsedOrigin ?? '미인??}</strong>
+              현재위치: <strong>{voiceParsedOrigin ?? '미인식'}</strong>
             </p>
             <p>
-              목적지: <strong>{voiceParsedDestination ?? '미인??}</strong>
+              목적지: <strong>{voiceParsedDestination ?? '미인식'}</strong>
             </p>
             <p>
-              ?�차: <strong>{voiceParsedCarDoor ?? '미인??}</strong>
+              호차: <strong>{voiceParsedCarDoor ?? '미인식'}</strong>
             </p>
-            <p className="brd-voice-parse-hint">?�리면 ?�래 ?�계?�서 ?�동?�로 ?�정?????�어??</p>
+            <p className="brd-voice-parse-hint">틀리면 아래 단계에서 수동으로 수정할 수 있어요.</p>
           </div>
         )}
 
-        {/* 1?�계 ???�선 */}
+        {/* 1단계 — 호선 */}
         <section className="brd-card">
-          <h2 className="brd-step-title">1. ?�선 ?�택</h2>
-          <div className="brd-line-chips" role="listbox" aria-label="?�선">
+          <h2 className="brd-step-title">1. 호선 선택</h2>
+          <div className="brd-line-chips" role="listbox" aria-label="호선">
             {LINE_OPTIONS.map((line) => {
               const selected = lineKey === line.key
               return (
@@ -1315,19 +1316,19 @@ function BoardingForm() {
           </div>
         </section>
 
-        {/* 2?�계 ???�차 */}
+        {/* 2단계 — 열차 */}
         {lineKey && (
           <section className="brd-card">
-            <h2 className="brd-step-title">2. ?�차 번호</h2>
+            <h2 className="brd-step-title">2. 열차 번호</h2>
             {trainsLoading ? (
               <div className="brd-trains-loading" role="status" aria-live="polite">
                 <span className="brd-spinner" aria-hidden="true" />
-                <span className="brd-trains-loading-text">?�차 ?�보 불러?�는 중�?/span>
+                <span className="brd-trains-loading-text">열차 정보 불러오는 중…</span>
               </div>
             ) : trainsLoadError ? (
-              <p className="brd-trains-error">?�차 ?�보�?불러?????�습?�다</p>
+              <p className="brd-trains-error">열차 정보를 불러올 수 없습니다</p>
             ) : (
-              <div className="brd-scroll-row" role="listbox" aria-label="?�차 번호">
+              <div className="brd-scroll-row" role="listbox" aria-label="열차 번호">
                 {trainOptions.map((train) => {
                   const selected = trainNo === train
                   const trainInfo = trainList.find((item) => item.train_no === train)
@@ -1352,7 +1353,7 @@ function BoardingForm() {
                           : ''}
                       </span>
                       {trainInfo?.is_express ? (
-                        <span className="brd-chip-express">�?/span>
+                        <span className="brd-chip-express">급</span>
                       ) : null}
                     </button>
                   )
@@ -1361,25 +1362,25 @@ function BoardingForm() {
             )}
             {trainNo && currentLocationName && (
               <p className="brd-current-location brd-current-location--inline" role="status">
-                ?�재 ?�치: <strong>{currentLocationName}</strong>
+                현재 위치: <strong>{currentLocationName}</strong>
               </p>
             )}
             {isLeaveMode && trainNo && (
               <>
                 {currentLocationName && !boardingStationId && (
-                  <p className="brd-boarding-hint">?�래 목록?�서 ?�승??�� ?�택?�주?�요.</p>
+                  <p className="brd-boarding-hint">아래 목록에서 탑승역을 선택해주세요.</p>
                 )}
                 <ul
                   className="brd-station-list brd-boarding-list"
                   role="listbox"
-                  aria-label="?�승??
+                  aria-label="탑승역"
                 >
                   {stationsOnLine.map((station) => {
                     const selected = boardingStationId === station.id
                     const isCurrentLocation = currentLocationName
                       ? station.name === currentLocationName ||
                         currentLocationName.includes(station.name) ||
-                        station.name.includes(currentLocationName.replace(/??/, ''))
+                        station.name.includes(currentLocationName.replace(/역$/, ''))
                       : false
                     return (
                       <li key={station.id}>
@@ -1394,7 +1395,7 @@ function BoardingForm() {
                         >
                           {station.name}
                           {isCurrentLocation ? (
-                            <span className="brd-station-tag">?�재 ?�치</span>
+                            <span className="brd-station-tag">현재 위치</span>
                           ) : null}
                         </button>
                       </li>
@@ -1405,17 +1406,17 @@ function BoardingForm() {
             )}
             {isSeekMode && trainNo && currentLocationName && !boardingStationId && (
               <p className="brd-boarding-hint">
-                ?�재 ?�치 ??�� 목록?�서 찾�? 못했?�니?? ?�른 ?�차�??�택?�주?�요.
+                현재 위치 역을 목록에서 찾지 못했습니다. 다른 열차를 선택해주세요.
               </p>
             )}
           </section>
         )}
 
-        {/* 3?�계 ???�차 */}
+        {/* 3단계 — 호차 */}
         {trainNo && boardingStationId && (
           <section className="brd-card">
-            <h2 className="brd-step-title">3. ?�차 ?�택</h2>
-            <div className="brd-car-row" role="listbox" aria-label="?�차">
+            <h2 className="brd-step-title">3. 호차 선택</h2>
+            <div className="brd-car-row" role="listbox" aria-label="호차">
               {CAR_NUMBERS.map((car) => {
                 const selected = carNumber === car
                 return (
@@ -1433,22 +1434,22 @@ function BoardingForm() {
               })}
             </div>
             {doorPosition !== null ? (
-              <p className="brd-door-position">{doorPosition}�?�??�동 ?�력??/p>
+              <p className="brd-door-position">{doorPosition}번 문 자동 입력됨</p>
             ) : null}
           </section>
         )}
 
-        {/* 4?�계 ??좌석 (?�릴게요) */}
+        {/* 4단계 — 좌석 (내릴게요) */}
         {isLeaveMode && carNumber !== null && (
           <section className="brd-card brd-seat-card">
-            <h2 className="brd-step-title">4. 좌석 ?�치</h2>
-            <p className="brd-seat-hint">가로로 ?�리�??�체 좌석??�????�습?�다</p>
+            <h2 className="brd-step-title">4. 좌석 위치</h2>
+            <p className="brd-seat-hint">가로로 돌리면 전체 좌석을 볼 수 있습니다</p>
             <div className="brd-cabin">
               {(['A', 'B'] as const).map((face) => {
                 let seatNum = face === 'A' ? 1 : 23
                 return (
                   <div key={face}>
-                    <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>{face}�?/div>
+                    <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>{face}면</div>
                     <div
                       style={{
                         display: 'flex',
@@ -1527,7 +1528,8 @@ function BoardingForm() {
                           padding: '6px 0',
                         }}
                       >
-                        ????�???                      </div>
+                        — 통 로 —
+                      </div>
                     )}
                   </div>
                 )
@@ -1535,36 +1537,37 @@ function BoardingForm() {
             </div>
             <div className="brd-legend">
               <span className="brd-legend-item">
-                <i className="brd-legend-swatch is-priority" /> ?�약?�석
+                <i className="brd-legend-swatch is-priority" /> 노약자석
               </span>
               <span className="brd-legend-item">
-                <i className="brd-legend-swatch is-general" /> ?�반??              </span>
+                <i className="brd-legend-swatch is-general" /> 일반석
+              </span>
               <span className="brd-legend-item">
-                <i className="brd-legend-swatch is-selected" /> ???�리
+                <i className="brd-legend-swatch is-selected" /> 내 자리
               </span>
             </div>
           </section>
         )}
 
-        {/* 4?�계(?�고?�어?? / 5?�계(?�릴게요) ??목적지 */}
+        {/* 4단계(앉고싶어요) / 5단계(내릴게요) — 목적지 */}
         {((isSeekMode && carNumber !== null) || (isLeaveMode && isSeatStepComplete)) && (
           <section className="brd-card">
             <h2 className="brd-step-title">
-              {isSeekMode ? '4. 목적지 ???�택' : '5. 목적지 ??}
+              {isSeekMode ? '4. 목적지 역 선택' : '5. 목적지 역'}
             </h2>
             <div className="brd-search-wrap">
               <input
                 type="search"
                 value={destinationSearch}
                 onChange={(event) => setDestinationSearch(event.target.value)}
-                placeholder="???�름 검??
+                placeholder="역 이름 검색"
                 className="brd-search"
-                aria-label="목적지 검??
+                aria-label="목적지 검색"
               />
             </div>
-            <ul className="brd-station-list" role="listbox" aria-label="목적지 ??>
+            <ul className="brd-station-list" role="listbox" aria-label="목적지 역">
               {filteredDestinations.length === 0 ? (
-                <li className="brd-station-empty">검??결과가 ?�습?�다</li>
+                <li className="brd-station-empty">검색 결과가 없습니다</li>
               ) : (
                 filteredDestinations.map((station) => {
                   const selected = destinationId === station.id
@@ -2223,7 +2226,7 @@ export default function BoardingPage() {
             fontFamily: 'Pretendard, sans-serif',
           }}
         >
-          로딩 �?..
+          로딩 중...
         </div>
       }
     >
