@@ -75,15 +75,15 @@ const BOARDING_MODE_META: Record<
   { title: string; badge: string; submitLabel: string; role: BoardingRole }
 > = {
   seek: {
-    title: '?? ???',
-    badge: '?? ??',
-    submitLabel: '?? ??? ??',
+    title: 'Seat Request',
+    badge: 'Need Seat',
+    submitLabel: 'Submit Request',
     role: 'seeker',
   },
   leave: {
-    title: '????',
-    badge: '?? ??',
-    submitLabel: '???? ??',
+    title: 'Seat Offer',
+    badge: 'Can Offer Seat',
+    submitLabel: 'Submit Offer',
     role: 'provider',
   },
 }
@@ -106,18 +106,18 @@ function resolveBoardingType(
 
 /** ???draft? ??? (lineKey ?? ?? ??) */
 const LINE_LABEL_BY_KEY: Record<BoardingLine, string> = {
-  seoul1_incheon: '??1 ??',
-  seoul1_cheonan: '??1 ??',
-  seoul2: '?? 2??',
-  seoul3: '?? 3??',
-  seoul4: '?? 4??',
-  seoul5: '?? 5??',
-  seoul6: '?? 6??',
-  seoul7: '?? 7??',
-  seoul8: '?? 8??',
-  seoul9: '?? 9??',
-  incheon1: '?? 1??',
-  incheon2: '?? 2??',
+  seoul1_incheon: 'Seoul Line 1 Incheon',
+  seoul1_cheonan: 'Seoul Line 1 Cheonan',
+  seoul2: 'Seoul Line 2',
+  seoul3: 'Seoul Line 3',
+  seoul4: 'Seoul Line 4',
+  seoul5: 'Seoul Line 5',
+  seoul6: 'Seoul Line 6',
+  seoul7: 'Seoul Line 7',
+  seoul8: 'Seoul Line 8',
+  seoul9: 'Seoul Line 9',
+  incheon1: 'Incheon Line 1',
+  incheon2: 'Incheon Line 2',
 }
 
 /** /api/trains line ???? (1?? ??? ?? ??? 1?? ??? ??) */
@@ -849,7 +849,7 @@ function BoardingForm() {
   const summaryDestination = destinationStation?.name
     ? `${destinationStation.name} destination`
     : 'Destination not selected'
-  const summarySeat = selectedSeat ? `${selectedSeat.face} ${selectedSeat.number}?` : ''
+  const summarySeat = selectedSeat ? `${selectedSeat.face} ${selectedSeat.number}` : ''
 
   function applyTrainLocation(trainNoValue: string, stations: MockStation[]) {
     const train = trainList.find((item) => item.train_no === trainNoValue)
@@ -1256,9 +1256,7 @@ function BoardingForm() {
                     >
                       <span className="brd-chip-label">
                         {train}
-                        {trainInfo?.direction_display
-                          ? ` ? ${trainInfo.direction_display}`
-                          : ''}
+                        {trainInfo?.direction_display ? ` - ${trainInfo.direction_display}` : ''}
                       </span>
                       {trainInfo?.is_express ? (
                         <span className="brd-chip-express">EXP</span>
@@ -1357,7 +1355,7 @@ function BoardingForm() {
                 let seatNum = face === 'A' ? 1 : 23
                 return (
                   <div key={face}>
-                    <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>{face}?</div>
+                    <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>{face}</div>
                     <div
                       style={{
                         display: 'flex',
@@ -1507,10 +1505,10 @@ function BoardingForm() {
       <footer className="brd-footer">
         <p className="brd-summary">
           {isSeekMode
-            ? `${summaryLine} ? ${summaryTrain} ? ${summaryCar} ? ${summaryDestination}`
-            : `${summaryLine} ? ${summaryTrain} ? ${summaryBoarding} ? ${summaryCar}${
-                summarySeat ? ` ? ${summarySeat}` : ''
-              }${destinationStation ? ` ? ${destinationStation.name}` : ''}`}
+            ? `${summaryLine} / ${summaryTrain} / ${summaryCar} / ${summaryDestination}`
+            : `${summaryLine} / ${summaryTrain} / ${summaryBoarding} / ${summaryCar}${
+                summarySeat ? ` / ${summarySeat}` : ''
+              }${destinationStation ? ` / ${destinationStation.name}` : ''}`}
         </p>
         <button
           type="button"
