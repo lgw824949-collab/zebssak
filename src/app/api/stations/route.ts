@@ -70,8 +70,15 @@ const ROUTES_BY_LINE: Record<SupportedLine, string[]> = {
   incheon2: ['인천2호선'],
 }
 
+const JSON_UTF8_HEADERS = {
+  'Content-Type': 'application/json; charset=utf-8',
+} as const
+
 function errorResponse(message: string, status: number) {
-  return NextResponse.json({ success: false, error: message }, { status })
+  return NextResponse.json(
+    { success: false, error: message },
+    { status, headers: JSON_UTF8_HEADERS }
+  )
 }
 
 function normalizeStationName(name: string): string {
@@ -203,11 +210,14 @@ export async function GET(request: Request) {
     const coords = await fetchStationCoordinatesByLine(line)
     const stations = interpolateCoordinates(ordered, coords)
 
-    return NextResponse.json({
-      success: true,
-      line,
-      stations,
-    })
+    return NextResponse.json(
+      {
+        success: true,
+        line,
+        stations,
+      },
+      { headers: JSON_UTF8_HEADERS }
+    )
   } catch {
     return errorResponse('서버 오류가 발생했습니다.', 500)
   }

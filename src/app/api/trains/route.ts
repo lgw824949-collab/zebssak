@@ -210,8 +210,15 @@ const INCHEON2_MOCK_TRAINS: Omit<TrainListItem, 'direction_display'>[] = [
   { train_no: '2204', station_name: '왕길', direction: '하행', is_express: false },
 ]
 
+const JSON_UTF8_HEADERS = {
+  'Content-Type': 'application/json; charset=utf-8',
+} as const
+
 function errorResponse(message: string, status: number) {
-  return NextResponse.json({ success: false, error: message }, { status })
+  return NextResponse.json(
+    { success: false, error: message },
+    { status, headers: JSON_UTF8_HEADERS }
+  )
 }
 
 function isSeoulLine(value: string): value is SeoulLineParam {
@@ -564,7 +571,10 @@ export async function GET(request: Request) {
 
     trains = sortTrainsByProximity(trains, stationOrder, currentStation)
 
-    return NextResponse.json({ trains, station_order: stationOrder })
+    return NextResponse.json(
+      { trains, station_order: stationOrder },
+      { headers: JSON_UTF8_HEADERS }
+    )
   } catch (error) {
     if (error instanceof TrainsApiError) {
       return errorResponse(error.message, error.status)
