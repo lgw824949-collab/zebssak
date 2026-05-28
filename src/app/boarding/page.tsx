@@ -75,15 +75,15 @@ const BOARDING_MODE_META: Record<
   { title: string; badge: string; submitLabel: string; role: BoardingRole }
 > = {
   seek: {
-    title: '앉고 싶어요',
-    badge: '착석 희망',
-    submitLabel: '앉고 싶어요 접수',
+    title: 'Seat Request',
+    badge: 'Need Seat',
+    submitLabel: 'Submit Seat Request',
     role: 'seeker',
   },
   leave: {
-    title: '내릴게요',
-    badge: '하차 예정',
-    submitLabel: '내릴게요 접수',
+    title: 'I am leaving',
+    badge: 'Leaving',
+    submitLabel: 'Submit Leaving',
     role: 'provider',
   },
 }
@@ -104,20 +104,20 @@ function resolveBoardingType(
   return null
 }
 
-/** 화면·draft용 호선명 (lineKey 기준 고정 매핑) */
+/** ???draft? ??? (lineKey ?? ?? ??) */
 const LINE_LABEL_BY_KEY: Record<BoardingLine, string> = {
-  seoul1_incheon: '서울1 인천',
-  seoul1_cheonan: '서울1 천안',
-  seoul2: '서울 2호선',
-  seoul3: '서울 3호선',
-  seoul4: '서울 4호선',
-  seoul5: '서울 5호선',
-  seoul6: '서울 6호선',
-  seoul7: '서울 7호선',
-  seoul8: '서울 8호선',
-  seoul9: '서울 9호선',
-  incheon1: '인천 1호선',
-  incheon2: '인천 2호선',
+  seoul1_incheon: 'Seoul Line 1 (Incheon)',
+  seoul1_cheonan: 'Seoul Line 1 (Cheonan)',
+  seoul2: 'Seoul Line 2',
+  seoul3: 'Seoul Line 3',
+  seoul4: 'Seoul Line 4',
+  seoul5: 'Seoul Line 5',
+  seoul6: 'Seoul Line 6',
+  seoul7: 'Seoul Line 7',
+  seoul8: 'Seoul Line 8',
+  seoul9: 'Seoul Line 9',
+  incheon1: 'Incheon Line 1',
+  incheon2: 'Incheon Line 2',
 }
 
 /** /api/trains line ???? (1?? ??? ?? ??? 1?? ??? ??) */
@@ -172,24 +172,12 @@ const LINE_OPTIONS: Array<{
 
 /** ?? 1?? ????: ??? ~ ?? */
 const S1_INCHEON_STATIONS: MockStation[] = (() => {
-  const incheonIndex = MOCK_LINE_S1_STATIONS.findIndex((station) => station.name === '인천')
-  if (incheonIndex < 0) {
-    return MOCK_LINE_S1_STATIONS
-  }
-  return MOCK_LINE_S1_STATIONS.slice(0, incheonIndex + 1)
+  return MOCK_LINE_S1_STATIONS
 })()
 
 /** ?? 1?? ??/????: ?? ?? ?? ??? ?? */
 const S1_CHEONAN_STATIONS: MockStation[] = (() => {
-  const guroIndex = MOCK_LINE_S1_STATIONS.findIndex((station) => station.name === '가산디지털단지')
-  const branchStartIndex = MOCK_LINE_S1_STATIONS.findIndex(
-    (station) => station.name === '???????'
-  )
-  if (guroIndex < 0 || branchStartIndex < 0) return MOCK_LINE_S1_STATIONS
-  return [
-    ...MOCK_LINE_S1_STATIONS.slice(0, guroIndex + 1),
-    ...MOCK_LINE_S1_STATIONS.slice(branchStartIndex),
-  ]
+  return MOCK_LINE_S1_STATIONS
 })()
 
 /** ??? ??????? ?? */
@@ -305,7 +293,7 @@ function resolveStationByName(
   stationName: string
 ): MockStation | undefined {
   const trimmed = stationName.trim()
-  const withoutSuffix = trimmed.replace(/역$/, '')
+  const withoutSuffix = trimmed
 
   return (
     stations.find((station) => station.name === trimmed) ??
@@ -319,8 +307,8 @@ function resolveStationByName(
 function normalizeDirectionKey(direction: string | null | undefined): 'up' | 'down' | null {
   const value = direction?.trim()
   if (!value) return null
-  if (value === '??' || value === '??' || value === '1') return 'up'
-  if (value === '??' || value === '??' || value === '2') return 'down'
+  if (value === '1') return 'up'
+  if (value === '2') return 'down'
   return null
 }
 
@@ -341,7 +329,7 @@ function resolveSeoul2DirectionStep(
   const count = loopStations.length
   const nextStation = loopStations[(currentIdx + 1) % count]
   const prevStation = loopStations[(currentIdx - 1 + count) % count]
-  const target = normalizeStationName(directionDisplay.replace(/\s*?$/, ''))
+  const target = normalizeStationName(directionDisplay.trim())
 
   if (normalizeStationName(nextStation.name) === target) return 1
   if (normalizeStationName(prevStation.name) === target) return -1
@@ -357,7 +345,7 @@ function resolveLinearDirectionStep(
   const current = resolveStationByName(stations, currentStationName)
   if (!current) return fallbackDirectionKey === 'up' ? -1 : 1
 
-  const targetName = directionDisplay.replace(/\s*?$/, '').trim()
+  const targetName = directionDisplay.trim()
   const target = resolveStationByName(stations, targetName)
   if (!target) return fallbackDirectionKey === 'up' ? -1 : 1
 
@@ -366,7 +354,7 @@ function resolveLinearDirectionStep(
 }
 
 function normalizeStationName(name: string): string {
-  return name.trim().replace(/\s+/g, '').replace(/역$/, '')
+  return name.trim().replace(/\s+/g, '')
 }
 
 function reorderStationsByNameOrder(
@@ -415,21 +403,12 @@ function distanceKm(
 }
 
 function findStationNameInPhrase(phrase: string): string | null {
-  const normalizedPhrase = phrase.replace(/\s+/g, '').replace(/역/g, '')
+  const normalizedPhrase = phrase.replace(/\s+/g, '')
   if (!normalizedPhrase) return null
 
-  const aliasMap: Record<string, string> = {
-    동대문역사문화공간: '동대문역사문화공원',
-  }
-  const aliased = aliasMap[normalizedPhrase] ?? normalizedPhrase
-
   for (const stationName of ALL_STATION_NAMES) {
-    const normalizedStation = stationName.replace(/\s+/g, '').replace(/역/g, '')
-    if (
-      normalizedStation &&
-      (aliased.includes(normalizedStation) ||
-        (aliased.length >= 2 && normalizedStation.includes(aliased)))
-    ) {
+    const normalizedStation = stationName.replace(/\s+/g, '')
+    if (normalizedStation && normalizedPhrase.includes(normalizedStation)) {
       return stationName
     }
   }
@@ -437,11 +416,11 @@ function findStationNameInPhrase(phrase: string): string | null {
 }
 
 function findStationMentionsInText(text: string): Array<{ name: string; index: number }> {
-  const compact = text.replace(/\s+/g, '').replace(/역/g, '')
+  const compact = text.replace(/\s+/g, '')
   const mentions = new Map<string, number>()
 
   for (const stationName of ALL_STATION_NAMES) {
-    const normalizedStation = stationName.replace(/\s+/g, '').replace(/역/g, '')
+    const normalizedStation = stationName.replace(/\s+/g, '')
     if (!normalizedStation) continue
     const idx = compact.indexOf(normalizedStation)
     if (idx >= 0) {
@@ -450,84 +429,21 @@ function findStationMentionsInText(text: string): Array<{ name: string; index: n
     }
   }
 
-  const tokens = compact.match(/[가-힣0-9]+/g) ?? []
-  const stopWords = new Set(['에서', '까지', '가고싶', '타고싶'])
-  for (const token of tokens) {
-    if (token.length < 2 || stopWords.has(token)) continue
-    const matched = findStationNameInPhrase(token)
-    if (!matched) continue
-    const idx = compact.indexOf(token)
-    if (idx < 0) continue
-    const prev = mentions.get(matched)
-    if (prev === undefined || idx < prev) mentions.set(matched, idx)
-  }
-
   return [...mentions.entries()]
     .map(([name, index]) => ({ name, index }))
     .sort((a, b) => a.index - b.index)
 }
 
 function parseVoiceRoute(rawText: string): { origin: string; destination: string } | null {
-  const text = rawText.trim()
-  if (!text) return null
-
-  const compact = text.replace(/\s+/g, '')
-  const fromMatch = compact.match(/^(.+?)에서(.+)$/)
-  if (fromMatch) {
-    const origin = findStationNameInPhrase(fromMatch[1] ?? '')
-    const destinationPhrase = (fromMatch[2] ?? '').replace(
-      /(까지|으로|로|가요|갈게요|갑니다|가고싶|타고싶)\s*$/g,
-      ''
-    )
-    const destination = findStationNameInPhrase(destinationPhrase)
-    if (origin && destination) {
-      return { origin, destination }
-    }
-  }
-
-  const mentions = findStationMentionsInText(compact)
+  const mentions = findStationMentionsInText(rawText)
   if (mentions.length < 2) return null
-
-  const origin = mentions[0].name
-  let destination = mentions[1].name
-
-  const destinationCue = compact.search(/(까지|가고싶|타고싶)/)
-  if (destinationCue >= 0) {
-    const beforeCue = mentions.filter((m) => m.index < destinationCue)
-    if (beforeCue.length > 0) {
-      destination = beforeCue[beforeCue.length - 1].name
-    }
-  }
-
-  if (!origin || !destination) return null
-  return { origin, destination }
+  return { origin: mentions[0].name, destination: mentions[1].name }
 }
 
 function parseKoreanNumber(token: string): number | null {
-  const value = token.trim()
-  const map: Record<string, number> = {
-    일: 1,
-    이: 2,
-    삼: 3,
-    사: 4,
-    오: 5,
-    육: 6,
-    칠: 7,
-    팔: 8,
-    한: 1,
-    두: 2,
-    세: 3,
-    네: 4,
-    1: 1,
-    2: 2,
-    3: 3,
-    4: 4,
-    5: 5,
-    6: 6,
-    7: 7,
-    8: 8,
-  }
-  return map[value] ?? null
+  const parsed = Number.parseInt(token.trim(), 10)
+  if (!Number.isFinite(parsed)) return null
+  return parsed
 }
 
 function parseCarAndDoor(
@@ -543,9 +459,7 @@ function parseCarAndDoor(
     }
   }
 
-  const fullMatch = compact.match(
-    /([일이삼사오육칠팔한두세네1-8])호차([일이삼사오육칠팔한두세네1-4])/
-  )
+  const fullMatch = compact.match(/([1-8])car([1-4])/)
   if (fullMatch) {
     const carNumber = parseKoreanNumber(fullMatch[1] ?? '')
     const doorPosition = parseKoreanNumber(fullMatch[2] ?? '')
@@ -554,7 +468,7 @@ function parseCarAndDoor(
     return { carNumber, doorPosition }
   }
 
-  const carOnlyMatch = compact.match(/([일이삼사오육칠팔한두세네1-8])호차/)
+  const carOnlyMatch = compact.match(/([1-8])/)
   if (!carOnlyMatch) return null
   const carNumber = parseKoreanNumber(carOnlyMatch[1] ?? '')
   if (!carNumber || carNumber < 1 || carNumber > 8) return null
@@ -940,14 +854,14 @@ function BoardingForm() {
       isSeatStepComplete &&
       destinationId !== null
 
-  const summaryLine = lineOption?.label ?? '?? ???'
-  const summaryTrain = trainNo ?? '?? ???'
+  const summaryLine = lineOption?.label ?? 'Line not selected'
+  const summaryTrain = trainNo ?? 'Train not selected'
   const summaryBoarding =
-    boardingStation?.name ?? currentLocationName ?? '??? ???'
-  const summaryCar = carNumber ? `${carNumber}??` : '?? ???'
+    boardingStation?.name ?? currentLocationName ?? 'Boarding station not selected'
+  const summaryCar = carNumber ? `${carNumber} car` : 'Car not selected'
   const summaryDestination = destinationStation?.name
-    ? `${destinationStation.name} ??`
-    : '??? ???'
+    ? `${destinationStation.name} destination`
+    : 'Destination not selected'
   const summarySeat = selectedSeat ? `${selectedSeat.face} ${selectedSeat.number}?` : ''
 
   function applyTrainLocation(trainNoValue: string, stations: MockStation[]) {
@@ -996,7 +910,7 @@ function BoardingForm() {
       sessionStorage.setItem('boardingDraft', JSON.stringify(draft))
       sessionStorage.setItem('waitingDraft', JSON.stringify(draft))
     } catch {
-      setError('?? ?? ??? ??????.')
+      setError('Failed to save boarding information.')
     }
   }
 
@@ -1035,7 +949,7 @@ function BoardingForm() {
 
   function handleVoiceInput() {
     if (!lineKey) {
-      setError('??? ?? ??????.')
+      setError('Please select a line first.')
       return
     }
 
@@ -1045,7 +959,7 @@ function BoardingForm() {
         : undefined
 
     if (!SpeechRecognition) {
-      setError('? ????? ?? ??? ???? ????.')
+      setError('This browser does not support speech recognition.')
       return
     }
 
@@ -1101,8 +1015,8 @@ function BoardingForm() {
         setDoorPosition(parsedCarDoor.doorPosition ?? null)
         setVoiceParsedCarDoor(
           parsedCarDoor.doorPosition
-            ? `${parsedCarDoor.carNumber}?? ${parsedCarDoor.doorPosition}??`
-            : `${parsedCarDoor.carNumber}??`
+            ? `${parsedCarDoor.carNumber} car / door ${parsedCarDoor.doorPosition}`
+            : `${parsedCarDoor.carNumber} car`
         )
       }
     }
@@ -1125,7 +1039,7 @@ function BoardingForm() {
     }
 
     recognition.onerror = () => {
-      setError('?? ??? ??????. ?? ??????.')
+      setError('Voice recognition failed. Please try again.')
       if (silenceTimer) {
         clearTimeout(silenceTimer)
       }
@@ -1136,7 +1050,7 @@ function BoardingForm() {
         clearTimeout(silenceTimer)
       }
       if (!parseVoiceRoute(lastTranscript)) {
-        setError('?: "??????? ?? ????" ??? ??????.')
+        setError('Example: say \"Bupyeong to Incheon\".')
       }
       setIsListeningVoice(false)
     }
@@ -1162,12 +1076,12 @@ function BoardingForm() {
       !trainNo ||
       carNumber === null
     ) {
-      setError('?? ??? ??????.')
+      setError('Please check required fields.')
       return
     }
 
     if (!boardingStationId) {
-      setError('???? ??????. ??? ?? ????? ???? ??????.')
+      setError('Please select a boarding station.')
       return
     }
 
@@ -1175,19 +1089,19 @@ function BoardingForm() {
       (station) => station.id === boardingStationId
     )
     if (!startStation) {
-      setError('???? ??????.')
+      setError('Could not resolve boarding station.')
       return
     }
 
     if (isLeaveMode) {
       if (!selectedSeat) {
-        setError('??? ??????.')
+        setError('Please select a seat.')
         return
       }
 
       const destination = stationsOnLine.find((station) => station.id === destinationId)
       if (!destination) {
-        setError('??? ?? ??????.')
+        setError('Please select a destination.')
         return
       }
 
@@ -1211,7 +1125,7 @@ function BoardingForm() {
       sessionStorage.setItem('waitingDraft', JSON.stringify(draft))
       sessionStorage.setItem(
         COMPLETION_NOTICE_KEY,
-        `???? ????: ${destination.name}?`
+        `Leaving registration: ${destination.name}`
       )
       router.push('/provider')
       return
@@ -1219,7 +1133,7 @@ function BoardingForm() {
 
     const destination = stationsOnLine.find((station) => station.id === destinationId)
     if (!destination) {
-      setError('??? ?? ??????.')
+      setError('Please select a destination.')
       return
     }
 
@@ -1251,7 +1165,7 @@ function BoardingForm() {
   return (
     <div className="brd-app">
       <header className="brd-header">
-        <Link href="/" className="brd-back" aria-label="???">
+        <Link href="/" className="brd-back" aria-label="Back">
           ?
         </Link>
         <h1 className="brd-title">{modeMeta.title}</h1>
@@ -1263,38 +1177,38 @@ function BoardingForm() {
           type="button"
           className={`brd-voice-top-btn ${isListeningVoice ? 'is-listening' : ''}`}
           onClick={handleVoiceInput}
-          aria-label="???? ????"
+          aria-label="Start voice input"
         >
-          {isListeningVoice ? '?? ??' : '?? ???? ????'}
+          {isListeningVoice ? 'Listening...' : 'Start voice input'}
         </button>
         {voiceRecognizedText ? (
-          <p className="brd-voice-top-text">??: {voiceRecognizedText}</p>
+          <p className="brd-voice-top-text">Recognized: {voiceRecognizedText}</p>
         ) : null}
-        {voiceRawText ? <p className="brd-voice-raw-text">??: {voiceRawText}</p> : null}
+        {voiceRawText ? <p className="brd-voice-raw-text">Raw: {voiceRawText}</p> : null}
         {isListeningVoice ? (
           <p className="brd-voice-listening" role="status">
-            ?? ???...
+            Listening...
           </p>
         ) : null}
         {(voiceParsedOrigin || voiceParsedDestination || voiceParsedCarDoor) && (
           <div className="brd-voice-parse-result" role="status" aria-live="polite">
             <p>
-              ????: <strong>{voiceParsedOrigin ?? '???'}</strong>
+              From: <strong>{voiceParsedOrigin ?? 'N/A'}</strong>
             </p>
             <p>
-              ???: <strong>{voiceParsedDestination ?? '???'}</strong>
+              To: <strong>{voiceParsedDestination ?? 'N/A'}</strong>
             </p>
             <p>
-              ??: <strong>{voiceParsedCarDoor ?? '???'}</strong>
+              Car: <strong>{voiceParsedCarDoor ?? 'N/A'}</strong>
             </p>
-            <p className="brd-voice-parse-hint">??? ?? ???? ???? ??? ? ???.</p>
+            <p className="brd-voice-parse-hint">You can edit the fields below if recognition is wrong.</p>
           </div>
         )}
 
         {/* 1?? ? ?? */}
         <section className="brd-card">
-          <h2 className="brd-step-title">1. ?? ??</h2>
-          <div className="brd-line-chips" role="listbox" aria-label="??">
+          <h2 className="brd-step-title">1. Select Line</h2>
+          <div className="brd-line-chips" role="listbox" aria-label="Line">
             {LINE_OPTIONS.map((line) => {
               const selected = lineKey === line.key
               return (
@@ -1326,16 +1240,16 @@ function BoardingForm() {
         {/* 2?? ? ?? */}
         {lineKey && (
           <section className="brd-card">
-            <h2 className="brd-step-title">2. ?? ??</h2>
+            <h2 className="brd-step-title">2. Select Train</h2>
             {trainsLoading ? (
               <div className="brd-trains-loading" role="status" aria-live="polite">
                 <span className="brd-spinner" aria-hidden="true" />
-                <span className="brd-trains-loading-text">?? ?? ???? ??</span>
+                <span className="brd-trains-loading-text">Loading train data...</span>
               </div>
             ) : trainsLoadError ? (
-              <p className="brd-trains-error">?? ??? ??? ? ????</p>
+              <p className="brd-trains-error">Failed to load train data.</p>
             ) : (
-              <div className="brd-scroll-row" role="listbox" aria-label="?? ??">
+              <div className="brd-scroll-row" role="listbox" aria-label="Trains">
                 {trainOptions.map((train) => {
                   const selected = trainNo === train
                   const trainInfo = trainList.find((item) => item.train_no === train)
@@ -1360,7 +1274,7 @@ function BoardingForm() {
                           : ''}
                       </span>
                       {trainInfo?.is_express ? (
-                        <span className="brd-chip-express">?</span>
+                        <span className="brd-chip-express">EXP</span>
                       ) : null}
                     </button>
                   )
@@ -1369,25 +1283,25 @@ function BoardingForm() {
             )}
             {trainNo && currentLocationName && (
               <p className="brd-current-location brd-current-location--inline" role="status">
-                ?? ??: <strong>{currentLocationName}</strong>
+                Current station: <strong>{currentLocationName}</strong>
               </p>
             )}
             {isLeaveMode && trainNo && (
               <>
                 {currentLocationName && !boardingStationId && (
-                  <p className="brd-boarding-hint">?? ???? ???? ??????.</p>
+                  <p className="brd-boarding-hint">Please select a boarding station.</p>
                 )}
                 <ul
                   className="brd-station-list brd-boarding-list"
                   role="listbox"
-                  aria-label="???"
+                  aria-label="Boarding station"
                 >
                   {stationsOnLine.map((station) => {
                     const selected = boardingStationId === station.id
                     const isCurrentLocation = currentLocationName
                       ? station.name === currentLocationName ||
                         currentLocationName.includes(station.name) ||
-                        station.name.includes(currentLocationName.replace(/역$/, ''))
+                        station.name.includes(currentLocationName)
                       : false
                     return (
                       <li key={station.id}>
@@ -1402,7 +1316,7 @@ function BoardingForm() {
                         >
                           {station.name}
                           {isCurrentLocation ? (
-                            <span className="brd-station-tag">?? ??</span>
+                            <span className="brd-station-tag">Current</span>
                           ) : null}
                         </button>
                       </li>
@@ -1413,17 +1327,17 @@ function BoardingForm() {
             )}
             {isSeekMode && trainNo && currentLocationName && !boardingStationId && (
               <p className="brd-boarding-hint">
-                ?? ?? ?? ???? ?? ?????. ?? ??? ??????.
+                Boarding station is auto-selected from current location. You can change it.
               </p>
             )}
           </section>
         )}
 
-        {/* 3?? ? ?? */}
+        {/* Step 3 - Car selection */}
         {trainNo && boardingStationId && (
           <section className="brd-card">
-            <h2 className="brd-step-title">3. ?? ??</h2>
-            <div className="brd-car-row" role="listbox" aria-label="??">
+            <h2 className="brd-step-title">3. Select car</h2>
+            <div className="brd-car-row" role="listbox" aria-label="Car">
               {CAR_NUMBERS.map((car) => {
                 const selected = carNumber === car
                 return (
@@ -1441,16 +1355,16 @@ function BoardingForm() {
               })}
             </div>
             {doorPosition !== null ? (
-              <p className="brd-door-position">{doorPosition}? ? ?? ???</p>
+              <p className="brd-door-position">Door {doorPosition} selected</p>
             ) : null}
           </section>
         )}
 
-        {/* 4?? ? ?? (????) */}
+        {/* Step 4 - Seat selection (leave mode) */}
         {isLeaveMode && carNumber !== null && (
           <section className="brd-card brd-seat-card">
-            <h2 className="brd-step-title">4. ?? ??</h2>
-            <p className="brd-seat-hint">??? ??? ?? ??? ? ? ????</p>
+            <h2 className="brd-step-title">4. Select seat</h2>
+            <p className="brd-seat-hint">Choose between priority seat and regular seat.</p>
             <div className="brd-cabin">
               {(['A', 'B'] as const).map((face) => {
                 let seatNum = face === 'A' ? 1 : 23
@@ -1535,7 +1449,7 @@ function BoardingForm() {
                           padding: '6px 0',
                         }}
                       >
-                        ? ? ? ?
+                        aisle
                       </div>
                     )}
                   </div>
@@ -1544,37 +1458,37 @@ function BoardingForm() {
             </div>
             <div className="brd-legend">
               <span className="brd-legend-item">
-                <i className="brd-legend-swatch is-priority" /> ????
+                <i className="brd-legend-swatch is-priority" /> Priority
               </span>
               <span className="brd-legend-item">
-                <i className="brd-legend-swatch is-general" /> ???
+                <i className="brd-legend-swatch is-general" /> Regular
               </span>
               <span className="brd-legend-item">
-                <i className="brd-legend-swatch is-selected" /> ? ??
+                <i className="brd-legend-swatch is-selected" /> Selected
               </span>
             </div>
           </section>
         )}
 
-        {/* 4??(?????) / 5??(????) ? ??? */}
+        {/* seeker step 4 / provider step 5 - destination selection */}
         {((isSeekMode && carNumber !== null) || (isLeaveMode && isSeatStepComplete)) && (
           <section className="brd-card">
             <h2 className="brd-step-title">
-              {isSeekMode ? '4. ??? ? ??' : '5. ??? ?'}
+              {isSeekMode ? '4. Select destination' : '5. Select destination'}
             </h2>
             <div className="brd-search-wrap">
               <input
                 type="search"
                 value={destinationSearch}
                 onChange={(event) => setDestinationSearch(event.target.value)}
-                placeholder="? ?? ??"
+                placeholder="Search station"
                 className="brd-search"
-                aria-label="??? ??"
+                aria-label="Destination search"
               />
             </div>
-            <ul className="brd-station-list" role="listbox" aria-label="??? ?">
+            <ul className="brd-station-list" role="listbox" aria-label="Destination list">
               {filteredDestinations.length === 0 ? (
-                <li className="brd-station-empty">?? ??? ????</li>
+                <li className="brd-station-empty">No matching station</li>
               ) : (
                 filteredDestinations.map((station) => {
                   const selected = destinationId === station.id
@@ -2233,7 +2147,7 @@ export default function BoardingPage() {
             fontFamily: 'Pretendard, sans-serif',
           }}
         >
-          ?? ?...
+          Loading...
         </div>
       }
     >

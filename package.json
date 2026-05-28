@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "vercel:env": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/vercel-env-from-local.ps1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",

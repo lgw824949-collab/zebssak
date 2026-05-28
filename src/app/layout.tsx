@@ -13,7 +13,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className="antialiased">{children}</body>
+     <body className="antialiased">
+  <Script src="https://www.googletagmanager.com/gtag/js?id=G-6SD2XF6RH5" strategy="afterInteractive" />
+  <Script id="ga" strategy="afterInteractive">{`
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-6SD2XF6RH5');
+  `}</Script>
+  {children}
+</body>
     </html>
   )
 }
