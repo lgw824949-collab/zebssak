@@ -1152,7 +1152,7 @@ function BoardingForm() {
   return (
     <div className="brd-app">
       <header className="brd-header">
-        <Link href="/" className="brd-back" aria-label="\uB4A4\uB85C\uAC00\uAE30">
+        <Link href="/" className="brd-back" aria-label={'\uB4A4\uB85C\uAC00\uAE30'}>
           {'<'}
         </Link>
         <h1 className="brd-title">{modeMeta.title}</h1>
@@ -1164,14 +1164,20 @@ function BoardingForm() {
           type="button"
           className={`brd-voice-top-btn ${isListeningVoice ? 'is-listening' : ''}`}
           onClick={handleVoiceInput}
-          aria-label="\uC74C\uC131 \uC785\uB825 \uC2DC\uC791"
+          aria-label={'\uC74C\uC131 \uC785\uB825 \uC2DC\uC791'}
         >
           {isListeningVoice ? '\uB4E3\uB294 \uC911...' : '\uC74C\uC131 \uC785\uB825 \uC2DC\uC791'}
         </button>
         {voiceRecognizedText ? (
-          <p className="brd-voice-top-text">\uC778\uC2DD \uACB0\uACFC: {voiceRecognizedText}</p>
+          <p className="brd-voice-top-text">
+            {'\uC778\uC2DD \uACB0\uACFC:'} {voiceRecognizedText}
+          </p>
         ) : null}
-        {voiceRawText ? <p className="brd-voice-raw-text">\uC6D0\uBB38: {voiceRawText}</p> : null}
+        {voiceRawText ? (
+          <p className="brd-voice-raw-text">
+            {'\uC6D0\uBB38:'} {voiceRawText}
+          </p>
+        ) : null}
         {isListeningVoice ? (
           <p className="brd-voice-listening" role="status">
             \uB4E3\uB294 \uC911...
@@ -1188,14 +1194,16 @@ function BoardingForm() {
             <p>
               \uCE78/\uBB38: <strong>{voiceParsedCarDoor ?? '\uC5C6\uC74C'}</strong>
             </p>
-            <p className="brd-voice-parse-hint">\uC778\uC2DD\uC774 \uD2C0\uB9AC\uBA74 \uC544\uB798 \uD56D\uBAA9\uC744 \uC9C1\uC811 \uC218\uC815\uD574 \uC8FC\uC138\uC694.</p>
+            <p className="brd-voice-parse-hint">
+              {'\uC778\uC2DD\uC774 \uD2C0\uB9AC\uBA74 \uC544\uB798 \uD56D\uBAA9\uC744 \uC9C1\uC811 \uC218\uC815\uD574 \uC8FC\uC138\uC694.'}
+            </p>
           </div>
         )}
 
         {/* 1?? ? ?? */}
         <section className="brd-card">
-          <h2 className="brd-step-title">1. \uB178\uC120 \uC120\uD0DD</h2>
-          <div className="brd-line-chips" role="listbox" aria-label="\uB178\uC120">
+          <h2 className="brd-step-title">{'1. \uB178\uC120 \uC120\uD0DD'}</h2>
+          <div className="brd-line-chips" role="listbox" aria-label={'\uB178\uC120'}>
             {LINE_OPTIONS.map((line) => {
               const selected = lineKey === line.key
               return (
@@ -1227,16 +1235,20 @@ function BoardingForm() {
         {/* 2?? ? ?? */}
         {lineKey && (
           <section className="brd-card">
-            <h2 className="brd-step-title">2. \uC5F4\uCC28 \uC120\uD0DD</h2>
+            <h2 className="brd-step-title">{'2. \uC5F4\uCC28 \uC120\uD0DD'}</h2>
             {trainsLoading ? (
               <div className="brd-trains-loading" role="status" aria-live="polite">
                 <span className="brd-spinner" aria-hidden="true" />
-                <span className="brd-trains-loading-text">\uC5F4\uCC28 \uC815\uBCF4 \uBD88\uB7EC\uC624\uB294 \uC911...</span>
+                <span className="brd-trains-loading-text">
+                  {'\uC5F4\uCC28 \uC815\uBCF4 \uBD88\uB7EC\uC624\uB294 \uC911...'}
+                </span>
               </div>
             ) : trainsLoadError ? (
-              <p className="brd-trains-error">\uC5F4\uCC28 \uC815\uBCF4\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.</p>
+              <p className="brd-trains-error">
+                {'\uC5F4\uCC28 \uC815\uBCF4\uB97C \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.'}
+              </p>
             ) : (
-              <div className="brd-scroll-row" role="listbox" aria-label="\uC5F4\uCC28 \uBAA9\uB85D">
+              <div className="brd-scroll-row" role="listbox" aria-label={'\uC5F4\uCC28 \uBAA9\uB85D'}>
                 {trainOptions.map((train) => {
                   const selected = trainNo === train
                   const trainInfo = trainList.find((item) => item.train_no === train)
@@ -1268,18 +1280,20 @@ function BoardingForm() {
             )}
             {trainNo && currentLocationName && (
               <p className="brd-current-location brd-current-location--inline" role="status">
-                \uD604\uC7AC \uC5ED: <strong>{currentLocationName}</strong>
+                {'\uD604\uC7AC \uC5ED:'} <strong>{currentLocationName}</strong>
               </p>
             )}
             {isLeaveMode && trainNo && (
               <>
                 {currentLocationName && !boardingStationId && (
-                  <p className="brd-boarding-hint">\uD0D1\uC2B9\uC5ED\uC744 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694.</p>
+                  <p className="brd-boarding-hint">
+                    {'\uD0D1\uC2B9\uC5ED\uC744 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694.'}
+                  </p>
                 )}
                 <ul
                   className="brd-station-list brd-boarding-list"
                   role="listbox"
-                  aria-label="\uD0D1\uC2B9\uC5ED"
+                  aria-label={'\uD0D1\uC2B9\uC5ED'}
                 >
                   {stationsOnLine.map((station) => {
                     const selected = boardingStationId === station.id
@@ -1301,7 +1315,7 @@ function BoardingForm() {
                         >
                           {station.name}
                           {isCurrentLocation ? (
-                            <span className="brd-station-tag">\uD604\uC7AC</span>
+                            <span className="brd-station-tag">{'\uD604\uC7AC'}</span>
                           ) : null}
                         </button>
                       </li>
@@ -1312,7 +1326,9 @@ function BoardingForm() {
             )}
             {isSeekMode && trainNo && currentLocationName && !boardingStationId && (
               <p className="brd-boarding-hint">
-                \uD604\uC7AC \uC704\uCE58 \uAE30\uBC18\uC73C\uB85C \uD0D1\uC2B9\uC5ED\uC774 \uC790\uB3D9 \uC120\uD0DD\uB429\uB2C8\uB2E4. \uC9C1\uC811 \uBCC0\uACBD\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.
+                {
+                  '\uD604\uC7AC \uC704\uCE58 \uAE30\uBC18\uC73C\uB85C \uD0D1\uC2B9\uC5ED\uC774 \uC790\uB3D9 \uC120\uD0DD\uB429\uB2C8\uB2E4. \uC9C1\uC811 \uBCC0\uACBD\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.'
+                }
               </p>
             )}
           </section>
@@ -1321,8 +1337,8 @@ function BoardingForm() {
         {/* Step 3 - Car selection */}
         {trainNo && boardingStationId && (
           <section className="brd-card">
-            <h2 className="brd-step-title">3. \uCE78 \uC120\uD0DD</h2>
-            <div className="brd-car-row" role="listbox" aria-label="\uCE78">
+            <h2 className="brd-step-title">{'3. \uCE78 \uC120\uD0DD'}</h2>
+            <div className="brd-car-row" role="listbox" aria-label={'\uCE78'}>
               {CAR_NUMBERS.map((car) => {
                 const selected = carNumber === car
                 return (
@@ -1340,7 +1356,10 @@ function BoardingForm() {
               })}
             </div>
             {doorPosition !== null ? (
-              <p className="brd-door-position">{doorPosition}\uBC88 \uBB38 \uC120\uD0DD\uB428</p>
+              <p className="brd-door-position">
+                {doorPosition}
+                {'\uBC88 \uBB38 \uC120\uD0DD\uB428'}
+              </p>
             ) : null}
           </section>
         )}
@@ -1348,8 +1367,10 @@ function BoardingForm() {
         {/* Step 4 - Seat selection (leave mode) */}
         {isLeaveMode && carNumber !== null && (
           <section className="brd-card brd-seat-card">
-            <h2 className="brd-step-title">4. \uC88C\uC11D \uC120\uD0DD</h2>
-            <p className="brd-seat-hint">\uAD50\uD1B5\uC57D\uC790\uC11D \uB610\uB294 \uC77C\uBC18\uC11D\uC744 \uC120\uD0DD\uD558\uC138\uC694.</p>
+            <h2 className="brd-step-title">{'4. \uC88C\uC11D \uC120\uD0DD'}</h2>
+            <p className="brd-seat-hint">
+              {'\uAD50\uD1B5\uC57D\uC790\uC11D \uB610\uB294 \uC77C\uBC18\uC11D\uC744 \uC120\uD0DD\uD558\uC138\uC694.'}
+            </p>
             <div className="brd-cabin">
               {(['A', 'B'] as const).map((face) => {
                 let seatNum = face === 'A' ? 1 : 23
@@ -1434,7 +1455,7 @@ function BoardingForm() {
                           padding: '6px 0',
                         }}
                       >
-                        \uD1B5\uB85C
+                        {'\uD1B5\uB85C'}
                       </div>
                     )}
                   </div>
@@ -1443,13 +1464,13 @@ function BoardingForm() {
             </div>
             <div className="brd-legend">
               <span className="brd-legend-item">
-                <i className="brd-legend-swatch is-priority" /> \uAD50\uD1B5\uC57D\uC790\uC11D
+                <i className="brd-legend-swatch is-priority" /> {'\uAD50\uD1B5\uC57D\uC790\uC11D'}
               </span>
               <span className="brd-legend-item">
-                <i className="brd-legend-swatch is-general" /> \uC77C\uBC18\uC11D
+                <i className="brd-legend-swatch is-general" /> {'\uC77C\uBC18\uC11D'}
               </span>
               <span className="brd-legend-item">
-                <i className="brd-legend-swatch is-selected" /> \uC120\uD0DD\uB428
+                <i className="brd-legend-swatch is-selected" /> {'\uC120\uD0DD\uB428'}
               </span>
             </div>
           </section>
@@ -1459,21 +1480,23 @@ function BoardingForm() {
         {((isSeekMode && carNumber !== null) || (isLeaveMode && isSeatStepComplete)) && (
           <section className="brd-card">
             <h2 className="brd-step-title">
-              {isSeekMode ? '4. \uD558\uCC28\uC5ED \uC120\uD0DD' : '5. \uD558\uCC28\uC5ED \uC120\uD0DD'}
+              {isSeekMode
+                ? '4. \uD558\uCC28\uC5ED \uC120\uD0DD'
+                : '5. \uD558\uCC28\uC5ED \uC120\uD0DD'}
             </h2>
             <div className="brd-search-wrap">
               <input
                 type="search"
                 value={destinationSearch}
                 onChange={(event) => setDestinationSearch(event.target.value)}
-                placeholder="\uC5ED \uAC80\uC0C9"
+                placeholder={'\uC5ED \uAC80\uC0C9'}
                 className="brd-search"
-                aria-label="\uD558\uCC28\uC5ED \uAC80\uC0C9"
+                aria-label={'\uD558\uCC28\uC5ED \uAC80\uC0C9'}
               />
             </div>
-            <ul className="brd-station-list" role="listbox" aria-label="\uD558\uCC28\uC5ED \uBAA9\uB85D">
+            <ul className="brd-station-list" role="listbox" aria-label={'\uD558\uCC28\uC5ED \uBAA9\uB85D'}>
               {filteredDestinations.length === 0 ? (
-                <li className="brd-station-empty">\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.</li>
+                <li className="brd-station-empty">{'\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.'}</li>
               ) : (
                 filteredDestinations.map((station) => {
                   const selected = destinationId === station.id
