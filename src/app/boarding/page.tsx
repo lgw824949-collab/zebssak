@@ -75,15 +75,15 @@ const BOARDING_MODE_META: Record<
   { title: string; badge: string; submitLabel: string; role: BoardingRole }
 > = {
   seek: {
-    title: 'Seat Request',
-    badge: 'Need Seat',
-    submitLabel: 'Submit Seat Request',
+    title: '?? ???',
+    badge: '?? ??',
+    submitLabel: '?? ??? ??',
     role: 'seeker',
   },
   leave: {
-    title: 'I am leaving',
-    badge: 'Leaving',
-    submitLabel: 'Submit Leaving',
+    title: '????',
+    badge: '?? ??',
+    submitLabel: '???? ??',
     role: 'provider',
   },
 }
@@ -106,18 +106,18 @@ function resolveBoardingType(
 
 /** ???draft? ??? (lineKey ?? ?? ??) */
 const LINE_LABEL_BY_KEY: Record<BoardingLine, string> = {
-  seoul1_incheon: 'Seoul Line 1 (Incheon)',
-  seoul1_cheonan: 'Seoul Line 1 (Cheonan)',
-  seoul2: 'Seoul Line 2',
-  seoul3: 'Seoul Line 3',
-  seoul4: 'Seoul Line 4',
-  seoul5: 'Seoul Line 5',
-  seoul6: 'Seoul Line 6',
-  seoul7: 'Seoul Line 7',
-  seoul8: 'Seoul Line 8',
-  seoul9: 'Seoul Line 9',
-  incheon1: 'Incheon Line 1',
-  incheon2: 'Incheon Line 2',
+  seoul1_incheon: '??1 ??',
+  seoul1_cheonan: '??1 ??',
+  seoul2: '?? 2??',
+  seoul3: '?? 3??',
+  seoul4: '?? 4??',
+  seoul5: '?? 5??',
+  seoul6: '?? 6??',
+  seoul7: '?? 7??',
+  seoul8: '?? 8??',
+  seoul9: '?? 9??',
+  incheon1: '?? 1??',
+  incheon2: '?? 2??',
 }
 
 /** /api/trains line ???? (1?? ??? ?? ??? 1?? ??? ??) */
@@ -400,19 +400,6 @@ function distanceKm(
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
   return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-function findStationNameInPhrase(phrase: string): string | null {
-  const normalizedPhrase = phrase.replace(/\s+/g, '')
-  if (!normalizedPhrase) return null
-
-  for (const stationName of ALL_STATION_NAMES) {
-    const normalizedStation = stationName.replace(/\s+/g, '')
-    if (normalizedStation && normalizedPhrase.includes(normalizedStation)) {
-      return stationName
-    }
-  }
-  return null
 }
 
 function findStationMentionsInText(text: string): Array<{ name: string; index: number }> {
