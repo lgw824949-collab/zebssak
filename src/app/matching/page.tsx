@@ -5,24 +5,11 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 const MATCH_TIMEOUT_SECONDS = 30
 
-/**
- * sessionStorage에서 칸 번호를 읽습니다.
- */
-function readCarNumber(): number | null {
-  try {
-    const keys = ['boardingDraft', 'providerRegistered']
-    for (const key of keys) {
-      const raw = sessionStorage.getItem(key)
-      if (!raw) continue
-      const parsed = JSON.parse(raw) as { carNumber?: number }
-      if (typeof parsed.carNumber === 'number') {
-        return parsed.carNumber
-      }
-    }
-  } catch {
-    return null
-  }
-  return null
+interface MatchGuideState {
+  carNumber: number | null
+  carDoorShort: string | null
+  lineLabel: string | null
+  destinationName: string | null
 }
 
 /**
@@ -50,7 +37,12 @@ function MatchingForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [secondsLeft, setSecondsLeft] = useState(MATCH_TIMEOUT_SECONDS)
-  const [carNumber, setCarNumber] = useState<number | null>(null)
+  const [guide, setGuide] = useState<MatchGuideState>({
+    carNumber: null,
+    carDoorShort: null,
+    lineLabel: null,
+    destinationName: null,
+  })
   const [actionError, setActionError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const expireRequestedRef = useRef(false)
@@ -92,8 +84,52 @@ function MatchingForm() {
       return
     }
 
-    resolveMatchId(searchParams.get('matchId'))
-    setCarNumber(readCarNumber())
+    const matchId = resolveMatchId(searchParams.get('matchId'))
+
+    async function loadPartnerGuide() {
+      if (!matchId) return
+
+      try {
+        const response = await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const result = (await response.json()) as {
+          success?: boolean
+          data?: {
+            partner?: {
+              car_number?: number | null
+              car_door_short?: string | null
+              line_label?: string | null
+              destination_station_name?: string
+            }
+          }
+        }
+
+        if (!response.ok || !result.success || !result.data?.partner) {
+          return
+        }
+
+        const partner = result.data.partner
+        setGuide({
+          carNumber:
+            typeof partner.car_number === 'number' ? partner.car_number : null,
+          carDoorShort:
+            typeof partner.car_door_short === 'string'
+              ? partner.car_door_short
+              : null,
+          lineLabel:
+            typeof partner.line_label === 'string' ? partner.line_label : null,
+          destinationName:
+            typeof partner.destination_station_name === 'string'
+              ? partner.destination_station_name
+              : null,
+        })
+      } catch {
+        // 상대방 안내 로드 실패 시 칸 번호만 비워 둡니다.
+      }
+    }
+
+    void loadPartnerGuide()
   }, [router, searchParams])
 
   useEffect(() => {
@@ -242,14 +278,30 @@ function MatchingForm() {
               className="font-semibold zeb-text-line1"
               style={{ fontSize: 'var(--font-size-base)' }}
             >
-              이동 안내
+              이동 안내 (하차 예정 승객)
             </p>
+            {guide.lineLabel ? (
+              <p className="zeb-caption mt-2">{guide.lineLabel}</p>
+            ) : null}
+            {guide.destinationName ? (
+              <p className="zeb-caption mt-1">
+                하차 역 · {guide.destinationName}
+              </p>
+            ) : null}
             <p
               className="zeb-text-line1 mt-2"
               style={{ fontSize: 'var(--font-size-3xl)', fontWeight: 800, lineHeight: 1.2 }}
             >
-              {carNumber != null ? `${carNumber}호차` : '—호차'}
+              {guide.carNumber != null ? `${guide.carNumber}호차` : '—호차'}
             </p>
+            {guide.carDoorShort ? (
+              <p
+                className="zeb-text-line1 mt-2"
+                style={{ fontSize: 'var(--font-size-xl)', fontWeight: 800 }}
+              >
+                {guide.carDoorShort}번 문 옆
+              </p>
+            ) : null}
           </div>
 
           <div className="mt-8">

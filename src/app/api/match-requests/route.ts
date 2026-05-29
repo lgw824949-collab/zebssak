@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
+import {
+  equivalentDirectionsForMatch,
+  normalizeDirectionForStorage,
+} from '@/lib/match-direction'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -260,12 +264,14 @@ async function tryCreateMatch(
     return null
   }
 
+  const directionValues = equivalentDirectionsForMatch(direction)
+
   const { data: candidates, error } = await supabase
     .from('match_requests')
     .select('id, user_id, remaining_stations, requested_at')
     .eq('status', 'waiting')
     .eq('request_type', oppositeType)
-    .eq('direction', direction)
+    .in('direction', directionValues)
     .in('train_id', trainIds)
     .neq('id', newRequestId)
 
@@ -475,10 +481,12 @@ export async function POST(request: Request) {
       .eq('status', 'waiting')
 
     const requestType = mapRole(role)
+    const directionStored = normalizeDirectionForStorage(direction)
+
     const insertPayload: Record<string, unknown> = {
       user_id: userId,
       train_id: trainUuid,
-      direction,
+      direction: directionStored,
       request_type: requestType,
       origin_station_id: originStationId,
       destination_station_id: destinationStationId,
@@ -529,7 +537,7 @@ export async function POST(request: Request) {
       requestType,
       trainNo,
       lineNumber,
-      direction
+      directionStored
     )
 
     const queuePosition =

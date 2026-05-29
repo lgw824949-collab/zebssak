@@ -1,78 +1,94 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
-interface BoardingInfo {
-  role: string | null
-  carNumber: number | null
-  seatSide?: 'A' | 'B'
-  seatNumber?: number
-  lineNumber?: number
-  trainNo?: string
-  destinationName?: string
-}
-
-// 하차 예정자(provider) 매칭 완료 시 적립 예정 포인트 (API 연동 전)
 const PENDING_POINTS_PROVIDER = 100
 
-/**
- * sessionStorage에서 탑승 정보를 읽습니다.
- */
-function readBoardingInfo(): BoardingInfo {
-  const keys = ['providerRegistered', 'boardingDraft']
-
-  for (const key of keys) {
-    try {
-      const raw = sessionStorage.getItem(key)
-      if (!raw) continue
-
-      const parsed = JSON.parse(raw) as Record<string, unknown>
-      return {
-        role: typeof parsed.role === 'string' ? parsed.role : null,
-        carNumber:
-          typeof parsed.carNumber === 'number' ? parsed.carNumber : null,
-        seatSide:
-          parsed.seatSide === 'A' || parsed.seatSide === 'B'
-            ? parsed.seatSide
-            : parsed.seat_side === 'A' || parsed.seat_side === 'B'
-              ? parsed.seat_side
-              : undefined,
-        seatNumber:
-          typeof parsed.seatNumber === 'number'
-            ? parsed.seatNumber
-            : typeof parsed.seat_number === 'number'
-              ? parsed.seat_number
-              : undefined,
-        lineNumber:
-          typeof parsed.lineNumber === 'number' ? parsed.lineNumber : undefined,
-        trainNo:
-          typeof parsed.trainNo === 'string' ? parsed.trainNo : undefined,
-        destinationName:
-          typeof parsed.destinationName === 'string'
-            ? parsed.destinationName
-            : undefined,
-      }
-    } catch {
-      continue
-    }
-  }
-
-  return { role: null, carNumber: null }
+/** 테스트·API 영문 역명 → 한글 (매칭 완료 화면 전용) */
+const STATION_NAME_EN_TO_KO: Record<string, string> = {
+  gangnam: '강남',
+  seoul: '서울',
+  gangbyeon: '강변',
+  jamsil: '잠실',
+  sadang: '사당',
+  hongdae: '홍대입구',
+  sinchon: '신촌',
+  edae: '이대',
+  cityhall: '시청',
+  euljiro: '을지로',
+  dongdaemun: '동대문',
+  wangsimni: '왕십리',
+  yeongdeungpo: '영등포',
+  sindorim: '신도림',
+  guro: '구로',
+  bupyeong: '부평',
+  incheon: '인천',
 }
 
-/** 호선 번호에 맞는 노선 트랙 클래스 */
-function getTrackClass(lineNumber: number): string {
-  return lineNumber === 1
-    ? 'zeb-track zeb-track--line1'
-    : 'zeb-track zeb-track--line2'
+interface RequestSummary {
+  car_number: number | null
+  car_door_short: string | null
+  seat_side: 'A' | 'B' | null
+  seat_position_label: string | null
+  train_no: string | null
+  line_label: string | null
+  destination_station_name: string
+  destination_station_code?: string | null
+  remaining_stations: number | null
 }
 
-/** 호선 번호에 맞는 배지 클래스 */
-function getLineBadgeClass(lineNumber: number): string {
-  return lineNumber === 1
-    ? 'zeb-line-badge zeb-line-badge--1'
-    : 'zeb-line-badge zeb-line-badge--2'
+interface MatchDetail {
+  match_id: string
+  status: string
+  viewer_role: 'seeker' | 'provider'
+  partner: RequestSummary
+  self: RequestSummary
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      className="flex items-start justify-between gap-3 py-2"
+      style={{ borderBottom: '1px solid var(--border)' }}
+    >
+      <span className="zeb-caption shrink-0" style={{ fontWeight: 600 }}>
+        {label}
+      </span>
+      <span
+        className="text-right font-semibold"
+        style={{ fontSize: 'var(--font-size-base)', color: 'var(--foreground)' }}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      className="mt-4 rounded-[var(--radius-button)] border-2 px-4 py-4 text-left"
+      style={{
+        background: 'var(--surface)',
+        borderColor: 'var(--line-1)',
+      }}
+    >
+      <p
+        className="font-semibold zeb-text-line1 mb-3"
+        style={{ fontSize: 'var(--font-size-base)' }}
+      >
+        {title}
+      </p>
+      {children}
+    </div>
+  )
 }
 
 function MatchedLoading() {
@@ -89,12 +105,94 @@ function MatchedLoading() {
   )
 }
 
+/** 역명 한글 표기 (역 접미사 포함) */
+function formatStationKorean(name: string | null | undefined): string {
+  const trimmed = (name ?? '').trim()
+  if (!trimmed) return '미확인'
+
+  if (/[가-힣]/.test(trimmed)) {
+    return trimmed.endsWith('역') ? trimmed : `${trimmed}역`
+  }
+
+  const normalizedKey = trimmed.toLowerCase().replace(/[^a-z]/g, '')
+  const mapped = STATION_NAME_EN_TO_KO[normalizedKey]
+  if (mapped) {
+    return `${mapped}역`
+  }
+
+  return `${trimmed}역`
+}
+
+/** sessionStorage draft에서 한글 하차역명 보조 조회 */
+function readKoreanDestinationFromSession(): string | null {
+  const keys = ['waitingDraft', 'boardingDraft'] as const
+  for (const key of keys) {
+    try {
+      const raw = sessionStorage.getItem(key)
+      if (!raw) continue
+      const parsed = JSON.parse(raw) as { destinationName?: string }
+      if (typeof parsed.destinationName === 'string' && /[가-힣]/.test(parsed.destinationName)) {
+        return parsed.destinationName.trim()
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+/** seat_side(A/B) → 진행 방향 기준 좌측·우측 (좌석 맵과 동일) */
+function seatSideToTravelSideLabel(seatSide: 'A' | 'B' | null | undefined): string {
+  if (seatSide === 'A') return '좌측'
+  if (seatSide === 'B') return '우측'
+  return ''
+}
+
+/** 문·좌석 위치 한글 안내 */
+function formatSeatPositionKorean(guide: RequestSummary): string {
+  const sideLabel = seatSideToTravelSideLabel(guide.seat_side)
+  const carNumber = guide.car_number
+  const doorPart = guide.car_door_short?.includes('-')
+    ? guide.car_door_short.split('-')[1]
+    : null
+
+  if (carNumber != null && doorPart && sideLabel) {
+    return `${carNumber}-${doorPart}번 문 옆 (${sideLabel})`
+  }
+
+  const fallback = (guide.seat_position_label ?? '').trim()
+  if (!fallback) return '좌석 정보 없음'
+
+  return fallback.replace(/A측/g, '좌측').replace(/B측/g, '우측')
+}
+
+/** 하차역 표시 (영문 API값 보정) */
+function resolveDestinationKorean(guide: RequestSummary): string {
+  const fromSession = readKoreanDestinationFromSession()
+  if (fromSession) {
+    return formatStationKorean(fromSession)
+  }
+  return formatStationKorean(guide.destination_station_name)
+}
+
+function resolveMatchId(): string | null {
+  const fromStorage = sessionStorage.getItem('activeMatchId')?.trim()
+  if (fromStorage) return fromStorage
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('matchId')?.trim()
+    return fromUrl || null
+  } catch {
+    return null
+  }
+}
+
 /**
- * 매칭 완료 화면
+ * 매칭 완료 화면 — API 기준 상대방(하차 예정) 위치·노선 표시
  */
 export default function MatchedPage() {
   const router = useRouter()
-  const [boardingInfo, setBoardingInfo] = useState<BoardingInfo | null>(null)
+  const [detail, setDetail] = useState<MatchDetail | null>(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -103,31 +201,95 @@ export default function MatchedPage() {
       return
     }
 
-    setBoardingInfo(readBoardingInfo())
+    const resolvedMatchId = resolveMatchId()
+    if (!resolvedMatchId) {
+      setError('매칭 정보를 찾을 수 없습니다.')
+      return
+    }
+    const matchId = resolvedMatchId
+
+    const abortController = new AbortController()
+
+    async function loadMatchDetail() {
+      try {
+        const response = await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: abortController.signal,
+        })
+
+        const result = (await response.json()) as {
+          success?: boolean
+          error?: string
+          data?: MatchDetail
+        }
+
+        if (!response.ok || !result.success || !result.data) {
+          setError(result.error ?? '매칭 결과를 불러올 수 없습니다.')
+          return
+        }
+
+        setDetail(result.data)
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
+        setError('네트워크 오류가 발생했습니다.')
+      }
+    }
+
+    void loadMatchDetail()
+
+    return () => abortController.abort()
   }, [router])
 
   function handleConfirm() {
     sessionStorage.removeItem('boardingDraft')
+    sessionStorage.removeItem('waitingDraft')
     sessionStorage.removeItem('providerRegistered')
+    sessionStorage.removeItem('activeMatchId')
+    sessionStorage.removeItem('activeMatchRequestId')
+    sessionStorage.removeItem('seekerMatchRequestRegistered')
     router.push('/home')
   }
 
-  if (!boardingInfo) {
+  if (error) {
+    return (
+      <div className="zeb-page matched-theme flex flex-col items-center justify-center p-6">
+        <p className="zeb-caption text-center" style={{ color: 'var(--color-danger)' }}>
+          {error}
+        </p>
+        <button
+          type="button"
+          className="zeb-btn zeb-btn--line1 mt-6"
+          onClick={() => router.push('/home')}
+        >
+          홈으로
+        </button>
+      </div>
+    )
+  }
+
+  if (!detail) {
     return <MatchedLoading />
   }
 
-  const isProvider = boardingInfo.role === 'provider'
-  const lineNumber = boardingInfo.lineNumber ?? 1
-  const hasSeatGuide =
-    boardingInfo.carNumber != null &&
-    (boardingInfo.seatSide === 'A' || boardingInfo.seatSide === 'B') &&
-    typeof boardingInfo.seatNumber === 'number'
+  const isSeeker = detail.viewer_role === 'seeker'
+  const guide = isSeeker ? detail.partner : detail.self
+  const lineLabel = guide.line_label ?? '노선 미확인'
+  const trainNo =
+    guide.train_no != null && String(guide.train_no).trim()
+      ? `${String(guide.train_no).trim()}번`
+      : '미확인'
+  const carLabel =
+    guide.car_number != null ? `${guide.car_number}호차` : '미확인'
+  const positionLabel = formatSeatPositionKorean(guide)
+  const carDoorShort = guide.car_door_short
+  const destinationLabel = resolveDestinationKorean(guide)
+  const travelSideLabel = seatSideToTravelSideLabel(guide.seat_side)
 
   return (
     <div className="zeb-page matched-theme flex flex-col">
       <header className="zeb-page-header" aria-hidden>
         <div className="space-y-2">
-          <div className={getTrackClass(lineNumber)} />
+          <div className="zeb-track zeb-track--line1" />
           <div className="zeb-track zeb-track--lines2" />
         </div>
       </header>
@@ -165,90 +327,62 @@ export default function MatchedPage() {
           </div>
 
           <p className="zeb-page-desc">
-            매칭이 성공적으로 완료되었습니다.
-            <br />
-            안내에 따라 이동해주세요.
+            {isSeeker
+              ? '하차 예정 승객 옆으로 이동해 주세요.'
+              : '착석 희망 승객이 이동 중입니다.'}
           </p>
 
-          {boardingInfo.destinationName && (
-            <p className="zeb-caption mt-3">
-              목적지 · {boardingInfo.destinationName}
-            </p>
-          )}
+          <SectionCard title={isSeeker ? '하차 예정 승객' : '내 하차 등록'}>
+            <InfoRow label="노선" value={lineLabel} />
+            <InfoRow label="열차 번호" value={trainNo} />
+            <InfoRow
+              label={isSeeker ? '상대방 하차 역' : '내 하차 역'}
+              value={destinationLabel}
+            />
+            {guide.remaining_stations != null ? (
+              <InfoRow
+                label="남은 역 수"
+                value={`${guide.remaining_stations}역`}
+              />
+            ) : null}
+          </SectionCard>
 
-          <div
-            className="mt-8 rounded-[var(--radius-button)] border-2 px-4 py-5"
-            style={{
-              background: 'var(--surface)',
-              borderColor: 'var(--line-1)',
-            }}
-          >
-            <p
-              className="font-semibold zeb-text-line1"
-              style={{ fontSize: 'var(--font-size-base)' }}
-            >
-              탑승 안내
-            </p>
-            <p
-              className="zeb-text-line1 mt-2"
-              style={{ fontSize: 'var(--font-size-3xl)', fontWeight: 800, lineHeight: 1.2 }}
-            >
-              {boardingInfo.carNumber != null
-                ? `${boardingInfo.carNumber}호차`
-                : '—호차'}
-            </p>
-            {boardingInfo.lineNumber != null && boardingInfo.trainNo && (
-              <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
-                <span className={getLineBadgeClass(boardingInfo.lineNumber)}>
-                  {boardingInfo.lineNumber}
-                </span>
-                <p className="zeb-caption">
-                  인천 {boardingInfo.lineNumber}호선 · {boardingInfo.trainNo}
-                </p>
-              </div>
-            )}
-          </div>
+          <SectionCard title={isSeeker ? '이동 안내 (착석 위치)' : '내 좌석 위치'}>
+            <InfoRow label="칸" value={carLabel} />
+            <InfoRow label="문·좌석 위치" value={positionLabel} />
+          </SectionCard>
 
-          <div
-            className="mt-4 rounded-[var(--radius-card)] border-2 px-4 py-5"
-            style={{
-              background: '#0B1F4B',
-              borderColor: '#C6FF00',
-              color: '#ffffff',
-            }}
-          >
-            <p style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, opacity: 0.9 }}>
-              좌석 위치 안내
-            </p>
-            <p
+          {isSeeker ? (
+            <div
+              className="mt-4 rounded-[var(--radius-card)] border-2 px-4 py-5"
               style={{
-                marginTop: '0.5rem',
-                fontSize: 'var(--font-size-xl)',
-                fontWeight: 900,
-                lineHeight: 1.3,
-                color: '#C6FF00',
+                background: '#0B1F4B',
+                borderColor: '#C6FF00',
+                color: '#ffffff',
               }}
             >
-              {hasSeatGuide
-                ? `${boardingInfo.carNumber}호차 ${boardingInfo.seatSide}면 ${boardingInfo.seatNumber}번으로 이동하세요`
-                : '좌석 위치 정보를 불러오는 중입니다.'}
-            </p>
-          </div>
-
-          <div className="mt-6 flex justify-center gap-2" aria-hidden>
-            <span className="zeb-station-dot zeb-station-dot--line1" />
-            <span className="zeb-station-dot zeb-station-dot--line2" />
-            <span className="zeb-station-dot zeb-station-dot--lines2" />
-          </div>
-
-          {isProvider && (
-            <div className="zeb-alert zeb-alert--warning mt-6 text-center">
+              <p style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, opacity: 0.9 }}>
+                한 줄 안내
+              </p>
               <p
                 style={{
-                  fontSize: 'var(--font-size-base)',
-                  fontWeight: 700,
+                  marginTop: '0.5rem',
+                  fontSize: 'var(--font-size-xl)',
+                  fontWeight: 900,
+                  lineHeight: 1.35,
+                  color: '#C6FF00',
                 }}
               >
+                {carDoorShort
+                  ? `${carLabel} · ${carDoorShort}번 문 옆${travelSideLabel ? `(${travelSideLabel})` : ''}으로 이동하세요`
+                  : `${carLabel} · ${positionLabel}`}
+              </p>
+            </div>
+          ) : null}
+
+          {!isSeeker ? (
+            <div className="zeb-alert zeb-alert--warning mt-6 text-center">
+              <p style={{ fontSize: 'var(--font-size-base)', fontWeight: 700 }}>
                 적립 예정 포인트
               </p>
               <p
@@ -259,11 +393,11 @@ export default function MatchedPage() {
                   color: '#8a5a00',
                 }}
               >
-                +{PENDING_POINTS_PROVIDER.toLocaleString()}P
+                +{PENDING_POINTS_PROVIDER.toLocaleString()}포인트
               </p>
               <p className="zeb-caption mt-2">하차 완료 후 자동 적립됩니다.</p>
             </div>
-          )}
+          ) : null}
         </div>
       </main>
 
@@ -293,8 +427,6 @@ export default function MatchedPage() {
           border: 0.5px solid #ebebeb !important;
           box-shadow: 0 2px 10px rgba(26, 26, 26, 0.05) !important;
         }
-        .matched-theme .zeb-page-title,
-        .matched-theme .zeb-label,
         .matched-theme .zeb-text-line1 {
           color: #0052a4 !important;
         }
@@ -302,9 +434,6 @@ export default function MatchedPage() {
           border-color: #ff6b00 !important;
           background: #fff4ea !important;
           color: #ff6b00 !important;
-        }
-        .matched-theme .zeb-btn {
-          border-radius: 16px !important;
         }
         .matched-theme .zeb-btn--line1 {
           background: #0052a4 !important;

@@ -27,8 +27,8 @@ yarn-error.log*
 
 # local env files (비밀키 — Git 제외)
 .env
-.env.txt
-.env*.local
+.env.*
+!.env.example
 
 # vercel
 .vercel

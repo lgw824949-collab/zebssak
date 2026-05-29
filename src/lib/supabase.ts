@@ -2,14 +2,18 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 /**
  * .env.local의 Supabase 공개 키를 읽고 유효성을 검사합니다.
+ * - 신규: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+ * - 기존: NEXT_PUBLIC_SUPABASE_ANON_KEY
  */
 function getSupabaseConfig(): { url: string; anonKey: string } {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+  const anonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
 
   if (!url || !anonKey) {
     throw new Error(
-      'Supabase 환경변수(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)가 없습니다. .env.local을 확인하세요.'
+      'Supabase 환경변수(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY 또는 NEXT_PUBLIC_SUPABASE_ANON_KEY)가 없습니다. .env.local을 확인하세요.'
     )
   }
 

@@ -31,6 +31,8 @@ interface BoardingDraft {
   trainNo: string
   carNumber: number
   direction?: string | number
+  boardingStationId?: string
+  boardingStationName?: string
   destinationId: string
   destinationName: string
   remainingStations: number
@@ -137,6 +139,31 @@ function normalizeDirection(raw: string | number | undefined): string {
   return ''
 }
 
+/** 대기 등록 API용 direction 값을 보정합니다. */
+function resolveRequestDirection(draft: BoardingDraft): string {
+  const normalized = normalizeDirection(draft.direction)
+  if (normalized) return normalized
+
+  if (draft.lineKey === 'seoul1') return '1'
+  if (draft.lineKey === 'seoul1_incheon' || draft.lineKey === 'seoul1_cheonan') return '2'
+
+  const boardingOrder = Number.parseInt(
+    String(draft.boardingStationId ?? '').match(/-(\d+)$/)?.[1] ?? '',
+    10
+  )
+  const destinationOrder = Number.parseInt(
+    String(draft.destinationId ?? '').match(/-(\d+)$/)?.[1] ?? '',
+    10
+  )
+  if (Number.isFinite(boardingOrder) && Number.isFinite(destinationOrder)) {
+    if (destinationOrder > boardingOrder) return '2'
+    if (destinationOrder < boardingOrder) return '1'
+  }
+
+  // 방향 정보가 없는 구버전 draft 호환값
+  return '2'
+}
+
 function getDirectionDisplay(draft: BoardingDraft): string {
   const direction = normalizeDirection(draft.direction)
   const lineKey = draft.lineKey
@@ -177,6 +204,30 @@ function getLineBadgeText(draft: BoardingDraft): string {
     return '2'
   }
   return String(draft.lineNumber)
+}
+
+function parseStationOrderFromId(stationId: string | undefined): number | null {
+  if (!stationId) return null
+  const matched = stationId.match(/-(\d+)$/)
+  if (!matched?.[1]) return null
+  const parsed = Number.parseInt(matched[1], 10)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/** draft 호환: 남은 역 수 누락/문자열/구버전 데이터 보정 */
+function resolveRemainingStations(draft: BoardingDraft): number | null {
+  const direct = Number(draft.remainingStations)
+  if (Number.isFinite(direct) && direct >= 0) {
+    return Math.floor(direct)
+  }
+
+  const fromOrder = parseStationOrderFromId(draft.boardingStationId)
+  const toOrder = parseStationOrderFromId(draft.destinationId)
+  if (fromOrder !== null && toOrder !== null) {
+    return Math.abs(toOrder - fromOrder)
+  }
+
+  return null
 }
 
 function WaitingLoading() {
@@ -259,6 +310,7 @@ export default function WaitingPage() {
             body: JSON.stringify({
               role: 'seeker',
               train_id: parsedDraft.trainNo,
+              direction: resolveRequestDirection(parsedDraft),
               car_number: parsedDraft.carNumber,
               seat_side: seat.seatSide,
               seat_number: seat.seatNumber,
@@ -386,6 +438,9 @@ export default function WaitingPage() {
   }
 
   const isVulnerable = user?.is_vulnerable === true
+  const remainingStations = draft ? resolveRemainingStations(draft) : null
+  const remainingStationsText =
+    remainingStations === null ? '미확인' : `${remainingStations}`
   const priorityLabel = isVulnerable
     ? '교통약자 우선 (1순위)'
     : '교통약자 → 매너포인트 높은 순 → 남은 역 수 → 요청 시각'
@@ -523,7 +578,7 @@ export default function WaitingPage() {
                     color: 'var(--foreground)',
                   }}
                 >
-                  {draft.remainingStations}
+                  {remainingStationsText}
                   <span
                     style={{
                       fontSize: 'var(--font-size-xl)',

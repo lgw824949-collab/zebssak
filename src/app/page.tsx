@@ -22,6 +22,19 @@ interface CongestionApiData {
 
 /** 홈 화면 표시용 실시간 이용자 수 (대기 인원과 별개) */
 const ACTIVE_USER_DISPLAY_BASE = 6000
+const SEEK_LINE_OPTIONS = [
+  { label: '서울 1호선', shortLabel: '1호선', badge: '1', color: '#0052A4' },
+  { label: '서울 2호선', shortLabel: '2호선', badge: '2', color: '#00A84D' },
+  { label: '서울 3호선', shortLabel: '3호선', badge: '3', color: '#EF7C1C' },
+  { label: '서울 4호선', shortLabel: '4호선', badge: '4', color: '#00A5DE' },
+  { label: '서울 5호선', shortLabel: '5호선', badge: '5', color: '#996CAC' },
+  { label: '서울 6호선', shortLabel: '6호선', badge: '6', color: '#CD7C2F' },
+  { label: '서울 7호선', shortLabel: '7호선', badge: '7', color: '#747F00' },
+  { label: '서울 8호선', shortLabel: '8호선', badge: '8', color: '#E6186C' },
+  { label: '서울 9호선', shortLabel: '9호선', badge: '9', color: '#BDB092' },
+  { label: '인천 1호선', shortLabel: '인천1', badge: '인1', color: '#759CCE' },
+  { label: '인천 2호선', shortLabel: '인천2', badge: '인2', color: '#F5A200' },
+] as const
 
 function authHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}` }
@@ -35,6 +48,25 @@ function getDisplayActiveUserCount(): number {
   const jitter =
     ((now.getHours() * 17 + now.getMinutes() * 3 + now.getDate() * 11) % 201) - 100
   return ACTIVE_USER_DISPLAY_BASE + jitter
+}
+
+function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (v: number) => (v * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function mapLineLabelToApiLine(lineLabel: string): string | null {
+  const normalized = lineLabel.replace(/\s+/g, '')
+  if (normalized === '인천1호선') return 'incheon1'
+  if (normalized === '인천2호선') return 'incheon2'
+  const match = normalized.match(/^서울([1-9])호선$/)
+  if (match?.[1]) return `seoul${match[1]}`
+  return null
 }
 
 function ChevronRightIcon() {
@@ -55,6 +87,7 @@ export default function Home() {
   const [isLoadingData, setIsLoadingData] = useState(true)
   const [isMatchingPaused, setIsMatchingPaused] = useState(false)
   const [activeUserCount, setActiveUserCount] = useState(ACTIVE_USER_DISPLAY_BASE)
+  const [selectedSeekLineLabel, setSelectedSeekLineLabel] = useState<string>('서울 1호선')
 
   const loadHomeData = useCallback(async (token: string) => {
     setIsLoadingData(true)
@@ -124,6 +157,98 @@ export default function Home() {
   const displayName = user?.username ?? '회원'
   const mannerPoints = user?.total_points ?? 0
 
+  async function pushSeekPage(lineLabel: string) {
+    const params = new URLSearchParams({
+      type: 'seek',
+      lineLabel,
+    })
+    router.push(`/boarding?${params.toString()}`)
+  }
+
+  async function startSeekByLineSelection(lineLabel: string) {
+    setSelectedSeekLineLabel(lineLabel)
+
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      await pushSeekPage(lineLabel)
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const apiLine = mapLineLabelToApiLine(lineLabel)
+          let nearestStationName = ''
+
+          if (apiLine) {
+            const response = await fetch(`/api/stations?line=${encodeURIComponent(apiLine)}`, {
+              method: 'GET',
+              cache: 'no-store',
+            })
+            if (response.ok) {
+              const payload = (await response.json()) as {
+                success?: boolean
+                stations?: Array<{
+                  name?: string
+                  lat?: number | null
+                  lng?: number | null
+                }>
+              }
+              if (payload.success && Array.isArray(payload.stations)) {
+                let nearest: { name: string; dist: number } | null = null
+                for (const station of payload.stations) {
+                  if (
+                    !station?.name ||
+                    typeof station.lat !== 'number' ||
+                    typeof station.lng !== 'number'
+                  ) {
+                    continue
+                  }
+                  const dist = distanceKm(
+                    position.coords.latitude,
+                    position.coords.longitude,
+                    station.lat,
+                    station.lng
+                  )
+                  if (!nearest || dist < nearest.dist) {
+                    nearest = { name: station.name, dist }
+                  }
+                }
+                nearestStationName = nearest?.name ?? ''
+              }
+            }
+          }
+
+          try {
+            sessionStorage.setItem(
+              'boardingDetectedLocation',
+              JSON.stringify({
+                lineLabel,
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                nearestStationName,
+                detectedAt: Date.now(),
+              })
+            )
+          } catch {
+            // 저장 실패 시 이동 흐름은 유지합니다.
+          }
+
+          await pushSeekPage(lineLabel)
+        } catch {
+          await pushSeekPage(lineLabel)
+        }
+      },
+      async () => {
+        await pushSeekPage(lineLabel)
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 3000,
+        maximumAge: 120000,
+      }
+    )
+  }
+
   if (!isAuthChecked) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-[#F7F8FA] text-[#888888]">
@@ -134,8 +259,8 @@ export default function Home() {
 
   return (
     <div className="mx-auto min-h-dvh w-full max-w-[480px] bg-[#F7F8FA]">
-      <main className="px-4 pb-8 pt-5">
-        <header className="mb-5 flex items-center justify-between">
+      <main className="px-5 pb-10 pt-6">
+        <header className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0052A4] text-white">
               <span className="text-sm font-extrabold">🚆</span>
@@ -163,26 +288,50 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mb-6 rounded-2xl border border-[#E6E8EB] bg-white p-4 shadow-sm">
-          <h2 className="mb-2 text-lg font-extrabold text-[#1A1A1A]">빠른 시작</h2>
-          <p className="text-sm font-medium text-[#6F7682]">
-            1) 역할 선택 → 2) 호선/열차/방향 선택 → 3) 좌석/목적지 입력
-          </p>
-          {isMatchingPaused && (
-            <p
-              className="mt-3 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
-              role="alert"
-            >
-              현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
-            </p>
-          )}
-        </section>
-
         <section className="mb-6 space-y-3">
+          <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
+            <p className="mb-3 block text-xs font-bold text-[#6F7682]">노선 선택</p>
+            <div className="grid grid-cols-3 gap-x-4 gap-y-5">
+              {SEEK_LINE_OPTIONS.map((line) => {
+                const selected = selectedSeekLineLabel === line.label
+                return (
+                  <button
+                    key={line.label}
+                    type="button"
+                    onClick={() => {
+                      void startSeekByLineSelection(line.label)
+                    }}
+                    className="flex flex-col items-center gap-1"
+                    aria-label={line.label}
+                  >
+                    <span
+                      className="inline-flex h-[58px] w-[58px] items-center justify-center rounded-full text-base font-extrabold text-white"
+                      style={{
+                        background: line.color,
+                        boxShadow: selected ? `0 0 0 3px ${line.color}33` : 'none',
+                        border: selected ? '2px solid #0B1F4B' : '2px solid transparent',
+                      }}
+                    >
+                      {line.badge}
+                    </span>
+                    <span
+                      className="text-xs font-bold leading-tight"
+                      style={{ color: selected ? line.color : '#6F7682' }}
+                    >
+                      {line.shortLabel}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           <button
             type="button"
             disabled={isMatchingPaused}
-            onClick={() => router.push('/boarding?type=seek')}
+            onClick={() => {
+              void startSeekByLineSelection(selectedSeekLineLabel)
+            }}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0B1F4B] py-5 text-xl font-extrabold text-white shadow-[0_8px_20px_rgba(11,31,75,0.24)] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
           >
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
@@ -190,12 +339,26 @@ export default function Home() {
             </span>
             앉고 싶어요
           </button>
+          {isMatchingPaused && (
+            <p
+              className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
+              role="alert"
+            >
+              현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
+            </p>
+          )}
 
           <button
             type="button"
             disabled={isMatchingPaused}
-            onClick={() => router.push('/boarding?type=leave')}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[#D8DCE2] bg-white py-5 text-xl font-extrabold text-[#0B1F4B] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            onClick={() => {
+              const params = new URLSearchParams({
+                type: 'leave',
+                lineLabel: selectedSeekLineLabel,
+              })
+              router.push(`/boarding?${params.toString()}`)
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[#D8DCE2] bg-white py-4 text-lg font-extrabold text-[#0B1F4B] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
           >
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#EEF3FB]">
               <ChevronRightIcon />

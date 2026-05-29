@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
+import {
+  doorNumberFromApiSeat,
+  formatCarDoorPosition,
+  formatStationDisplayName,
+  lineLabelFromStationCode,
+  seatsPerSectionFromStationCode,
+} from '@/lib/match-display'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 
 interface MatchRow {
@@ -16,6 +23,74 @@ interface MatchRequestUserRow {
 
 interface PatchBody {
   action?: unknown
+}
+
+interface MatchRequestDetailRow {
+  id: string
+  user_id: string
+  request_type: string
+  car_number: number | null
+  seat_side: string | null
+  seat_number: number | null
+  remaining_stations: number | null
+  train:
+    | { train_no?: string; line_number?: number }
+    | { train_no?: string; line_number?: number }[]
+    | null
+  destination_station:
+    | { station_name?: string; station_code?: string }
+    | { station_name?: string; station_code?: string }[]
+    | null
+}
+
+function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (value == null) return null
+  return Array.isArray(value) ? value[0] ?? null : value
+}
+
+function buildRequestSummary(row: MatchRequestDetailRow) {
+  const train = unwrapRelation(row.train)
+  const destination = unwrapRelation(row.destination_station)
+  const stationCode = destination?.station_code ?? null
+  const seatsPerSection = seatsPerSectionFromStationCode(stationCode)
+  const seatSide = row.seat_side === 'A' || row.seat_side === 'B' ? row.seat_side : null
+  const seatNumber =
+    typeof row.seat_number === 'number' ? row.seat_number : Number(row.seat_number)
+  const carNumber =
+    typeof row.car_number === 'number' ? row.car_number : Number(row.car_number)
+
+  const doorNumber =
+    seatSide && Number.isInteger(seatNumber)
+      ? doorNumberFromApiSeat(seatNumber, seatsPerSection)
+      : null
+
+  const seatPositionLabel =
+    seatSide &&
+    Number.isInteger(seatNumber) &&
+    Number.isInteger(carNumber) &&
+    carNumber >= 1
+      ? formatCarDoorPosition(carNumber, seatSide, seatNumber, seatsPerSection)
+      : null
+
+  const carDoorShort =
+    doorNumber != null && Number.isInteger(carNumber) && carNumber >= 1
+      ? `${carNumber}-${doorNumber}`
+      : null
+
+  return {
+    request_id: row.id,
+    request_type: row.request_type,
+    car_number: Number.isInteger(carNumber) ? carNumber : null,
+    car_door_short: carDoorShort,
+    seat_side: seatSide,
+    seat_number: Number.isInteger(seatNumber) ? seatNumber : null,
+    seat_position_label: seatPositionLabel,
+    remaining_stations: row.remaining_stations ?? null,
+    train_no: train?.train_no ?? null,
+    line_label: lineLabelFromStationCode(stationCode),
+    destination_station_name: formatStationDisplayName(destination?.station_name),
+    destination_station_code: stationCode,
+  }
 }
 
 function errorResponse(message: string, status: number) {
@@ -66,6 +141,105 @@ async function isSeatSeekerForMatch(
 
   const row = data as { user_id: string; request_type: string }
   return row.user_id === userId && row.request_type === 'seat_seek'
+}
+
+/**
+ * GET /api/matches/[id] — 매칭 결과(양보·착석 상대 정보) 조회
+ */
+export async function GET(
+  request: Request,
+  context: { params: { id: string } }
+) {
+  try {
+    const userId = getUserIdFromRequest(request)
+    if (!userId) {
+      return errorResponse('로그인이 필요합니다.', 401)
+    }
+
+    const matchId = context.params.id?.trim()
+    if (!matchId) {
+      return errorResponse('매칭 ID가 필요합니다.', 400)
+    }
+
+    const supabase = createSupabaseAdminClient()
+
+    const { data: matchRaw, error: matchError } = await supabase
+      .from('matches')
+      .select(
+        `
+        id,
+        status,
+        seat_seek_request_id,
+        leaving_request_id,
+        seat_seek:match_requests!seat_seek_request_id(
+          id,
+          user_id,
+          request_type,
+          car_number,
+          seat_side,
+          seat_number,
+          remaining_stations,
+          train:trains!train_id(train_no, line_number),
+          destination_station:stations!destination_station_id(station_name, station_code)
+        ),
+        leaving:match_requests!leaving_request_id(
+          id,
+          user_id,
+          request_type,
+          car_number,
+          seat_side,
+          seat_number,
+          remaining_stations,
+          train:trains!train_id(train_no, line_number),
+          destination_station:stations!destination_station_id(station_name, station_code)
+        )
+      `
+      )
+      .eq('id', matchId)
+      .maybeSingle()
+
+    if (matchError) {
+      return errorResponse('매칭 정보를 조회할 수 없습니다.', 500)
+    }
+
+    if (!matchRaw) {
+      return errorResponse('매칭을 찾을 수 없습니다.', 404)
+    }
+
+    const match = matchRaw as MatchRow & {
+      seat_seek: MatchRequestDetailRow | MatchRequestDetailRow[] | null
+      leaving: MatchRequestDetailRow | MatchRequestDetailRow[] | null
+    }
+
+    const participant = await isMatchParticipant(supabase, match, userId)
+    if (!participant) {
+      return errorResponse('이 매칭에 접근할 수 없습니다.', 403)
+    }
+
+    const seatSeekRow = unwrapRelation(match.seat_seek)
+    const leavingRow = unwrapRelation(match.leaving)
+
+    if (!seatSeekRow || !leavingRow) {
+      return errorResponse('매칭 요청 정보가 불완전합니다.', 500)
+    }
+
+    const isSeeker = seatSeekRow.user_id === userId
+    const partnerRow = isSeeker ? leavingRow : seatSeekRow
+    const selfRow = isSeeker ? seatSeekRow : leavingRow
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        match_id: match.id,
+        status: match.status,
+        viewer_role: isSeeker ? 'seeker' : 'provider',
+        partner: buildRequestSummary(partnerRow),
+        self: buildRequestSummary(selfRow),
+      },
+    })
+  } catch {
+    return errorResponse('서버 오류가 발생했습니다.', 500)
+  }
 }
 
 /**

@@ -5,11 +5,13 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
  */
 export function createSupabaseAdminClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  const serviceRoleKey =
+    process.env.SUPABASE_SECRET_KEY?.trim() ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 
   if (!url || !serviceRoleKey) {
     throw new Error(
-      'Supabase 서버 환경변수(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)가 없습니다. .env.local을 확인하세요.'
+      'Supabase 서버 환경변수(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY 또는 SUPABASE_SERVICE_ROLE_KEY)가 없습니다. .env.local을 확인하세요.'
     )
   }
 

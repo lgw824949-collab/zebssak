@@ -413,7 +413,8 @@ function sortTrainsByProximity(
 
     if (distA !== distB) return distA - distB
 
-    return (b.is_express ? 1 : 0) - (a.is_express ? 1 : 0)
+    // 기본 목록은 완행을 먼저 보여 줍니다(급행 자동 우선 방지).
+    return (a.is_express ? 1 : 0) - (b.is_express ? 1 : 0)
   })
 }
 
@@ -462,7 +463,10 @@ function filterSeoul1BranchTrains(
   trains: TrainListItem[],
   line: SeoulLineParam
 ): TrainListItem[] {
-  if (line === 'seoul1') return trains
+  // 1호선 분기 노선(인천/천안)일 때만 분기 필터를 적용합니다.
+  if (line !== 'seoul1_incheon' && line !== 'seoul1_cheonan') {
+    return trains
+  }
 
   const branchStations =
     line === 'seoul1_incheon' ? S1_INCHEON_BRANCH_STATIONS : S1_CHEONAN_BRANCH_STATIONS
