@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
-import InstallShortcut from '@/components/InstallShortcut'
+import InstallShortcut, { useInstallShortcutVisible } from '@/components/InstallShortcut'
 
 interface AuthApiResponse {
   success: boolean
@@ -23,6 +23,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const { visible: showInstallShortcut, hide: hideInstallShortcut } = useInstallShortcutVisible()
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -134,9 +135,11 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6">
-            <InstallShortcut compact />
-          </div>
+          {showInstallShortcut ? (
+            <div className="mt-6">
+              <InstallShortcut compact onDismiss={hideInstallShortcut} />
+            </div>
+          ) : null}
 
           <p className="mt-7 text-center text-sm font-medium text-[#7A7A7A]">
             계정이 없으신가요?{' '}

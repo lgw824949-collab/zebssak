@@ -7,6 +7,8 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
+const SHORTCUT_DISMISSED_KEY = 'zebShortcutDismissed'
+
 const APP_ORIGIN =
   typeof window !== 'undefined' ? window.location.origin : 'https://zebssak.vercel.app'
 
@@ -21,6 +23,39 @@ function isStandaloneDisplay() {
     window.matchMedia('(display-mode: standalone)').matches ||
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true
   )
+}
+
+export function isShortcutDismissed() {
+  if (typeof window === 'undefined') return false
+  if (isStandaloneDisplay()) return true
+  try {
+    return localStorage.getItem(SHORTCUT_DISMISSED_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function dismissShortcut() {
+  try {
+    localStorage.setItem(SHORTCUT_DISMISSED_KEY, 'true')
+  } catch {
+    // localStorage 실패 시 화면만 숨깁니다.
+  }
+}
+
+export function useInstallShortcutVisible() {
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    setVisible(!isShortcutDismissed())
+  }, [])
+
+  const hide = useCallback(() => {
+    dismissShortcut()
+    setVisible(false)
+  }, [])
+
+  return { visible, hide }
 }
 
 function downloadInternetShortcutFile() {
@@ -41,25 +76,24 @@ function downloadInternetShortcutFile() {
 
 interface InstallShortcutProps {
   compact?: boolean
+  onDismiss?: () => void
 }
 
 /**
  * PWA 설치 또는 Windows .url 바로가기 다운로드
  */
-export default function InstallShortcut({ compact = false }: InstallShortcutProps) {
+export default function InstallShortcut({ compact = false, onDismiss }: InstallShortcutProps) {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
-  const [isInstalled, setIsInstalled] = useState(false)
-  const [message, setMessage] = useState('')
   const [isBusy, setIsBusy] = useState(false)
 
   const isIos = useMemo(() => isIosDevice(), [])
 
-  useEffect(() => {
-    if (isStandaloneDisplay()) {
-      setIsInstalled(true)
-      setMessage('바탕화면 바로가기로 실행 중입니다.')
-    }
+  const completeAndHide = useCallback(() => {
+    dismissShortcut()
+    onDismiss?.()
+  }, [onDismiss])
 
+  useEffect(() => {
     if ('serviceWorker' in navigator) {
       void navigator.serviceWorker.register('/sw.js').catch(() => {
         // SW 등록 실패 시 .url 다운로드로 폴백합니다.
@@ -72,9 +106,7 @@ export default function InstallShortcut({ compact = false }: InstallShortcutProp
     }
 
     function handleAppInstalled() {
-      setIsInstalled(true)
-      setInstallPrompt(null)
-      setMessage('바탕화면 바로가기가 설치되었습니다.')
+      completeAndHide()
     }
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
@@ -84,7 +116,7 @@ export default function InstallShortcut({ compact = false }: InstallShortcutProp
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
       window.removeEventListener('appinstalled', handleAppInstalled)
     }
-  }, [])
+  }, [completeAndHide])
 
   const handleInstall = useCallback(async () => {
     setIsBusy(true)
@@ -94,31 +126,24 @@ export default function InstallShortcut({ compact = false }: InstallShortcutProp
         await installPrompt.prompt()
         const choice = await installPrompt.userChoice
         if (choice.outcome === 'accepted') {
-          setMessage('설치 중입니다. 바탕화면·시작 메뉴에 추가됩니다.')
-          setInstallPrompt(null)
-        } else {
-          setMessage('설치를 취소했습니다. 「바로가기 다운로드」로 받을 수 있어요.')
+          completeAndHide()
         }
         return
       }
 
       if (isIos) {
-        setMessage('Safari 공유(↑) → 「홈 화면에 추가」를 선택해 주세요.')
+        completeAndHide()
         return
       }
 
       downloadInternetShortcutFile()
-      setMessage('「잽싸게.url」 파일을 바탕화면으로 옮기면 바로가기가 만들어집니다.')
+      completeAndHide()
     } finally {
       setIsBusy(false)
     }
-  }, [installPrompt, isIos])
+  }, [completeAndHide, installPrompt, isIos])
 
-  const buttonLabel = isInstalled
-    ? '바로가기 설치됨'
-    : installPrompt
-      ? '바탕화면에 설치'
-      : '바로가기 다운로드'
+  const buttonLabel = installPrompt ? '바탕화면에 설치' : '바로가기 다운로드'
 
   return (
     <div
@@ -134,20 +159,15 @@ export default function InstallShortcut({ compact = false }: InstallShortcutProp
       </p>
       <button
         type="button"
-        disabled={isBusy || isInstalled}
+        disabled={isBusy}
         onClick={() => {
           void handleInstall()
         }}
-        className="zeb-touch-target mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0B1F4B] px-4 py-3 text-sm font-extrabold text-white transition active:scale-[0.98] disabled:cursor-default disabled:opacity-60"
+        className="zeb-touch-target mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0B1F4B] px-4 py-3 text-sm font-extrabold text-white transition active:scale-[0.98] disabled:opacity-60"
       >
         <span aria-hidden>⬇️</span>
         {buttonLabel}
       </button>
-      {message ? (
-        <p className="mt-2 text-xs font-semibold leading-relaxed text-[#2563EB]" role="status">
-          {message}
-        </p>
-      ) : null}
     </div>
   )
 }

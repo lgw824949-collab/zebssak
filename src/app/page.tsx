@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import CongestionHaltModal from '@/components/CongestionHaltModal'
-import InstallShortcut from '@/components/InstallShortcut'
+import InstallShortcut, { useInstallShortcutVisible } from '@/components/InstallShortcut'
 import {
   fetchCongestionStatus,
   isLineHalted,
@@ -86,6 +86,7 @@ export default function Home() {
   const [showCongestionModal, setShowCongestionModal] = useState(false)
   const [activeUserCount, setActiveUserCount] = useState(ACTIVE_USER_DISPLAY_BASE)
   const [selectedSeekLineLabel, setSelectedSeekLineLabel] = useState<string>('서울 1호선')
+  const { visible: showInstallShortcut, hide: hideInstallShortcut } = useInstallShortcutVisible()
 
   const loadHomeData = useCallback(async (token: string) => {
     setIsLoadingData(true)
@@ -371,9 +372,11 @@ export default function Home() {
           </button>
         </section>
 
-        <section className="mb-6">
-          <InstallShortcut />
-        </section>
+        {showInstallShortcut ? (
+          <section className="mb-6">
+            <InstallShortcut onDismiss={hideInstallShortcut} />
+          </section>
+        ) : null}
 
         <section className="rounded-2xl border border-[#E6E8EB] bg-white p-4 shadow-sm">
           <p className="mb-1 text-sm font-semibold text-[#888888]">지금 이용 중</p>
