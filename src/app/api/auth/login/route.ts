@@ -81,17 +81,14 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message.includes('JWT_SECRET')) {
       return errorResponse(error.message, 500)
     }
-    if (error instanceof Error && error.message.includes('service_role')) {
-      return errorResponse(error.message, 500)
-    }
     if (
       error instanceof Error &&
-      error.message.includes('Legacy API keys are disabled')
+      (error.message.includes('SUPABASE_SECRET_KEY') ||
+        error.message.includes('sb_secret_') ||
+        error.message.includes('anon') ||
+        error.message.includes('Legacy API keys are disabled'))
     ) {
-      return errorResponse(
-        'Supabase 레거시 API 키가 비활성화되었습니다. Vercel에 SUPABASE_SECRET_KEY(sb_secret_…)를 설정해주세요.',
-        500
-      )
+      return errorResponse(error.message, 500)
     }
     return errorResponse('서버 오류가 발생했습니다.', 500)
   }

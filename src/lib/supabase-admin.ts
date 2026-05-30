@@ -1,75 +1,88 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-/**
- * 서버 API용 Supabase service_role 키를 선택합니다.
- * sb_secret가 잘못 설정된 Vercel 환경에서 publishable/anon 키가 쓰이면
- * RLS 때문에 users 조회가 비어 로그인이 항상 실패합니다.
- */
-function resolveServiceRoleKey(): string {
-  const serviceRoleJwt = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-  const secretKey = process.env.SUPABASE_SECRET_KEY?.trim()
-  const publishableKey =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+const MISSING_SERVER_KEY_MESSAGE =
+  'Supabase 서버 키가 없습니다. Vercel에 SUPABASE_SECRET_KEY(sb_secret_…)를 추가한 뒤 Redeploy 해주세요.'
 
-  // 신규 secret 키 우선 (레거시 JWT 비활성화 프로젝트 호환)
-  if (secretKey?.startsWith('sb_secret_')) {
-    return secretKey
-  }
-
-  if (secretKey) {
-    return secretKey
-  }
-
-  if (serviceRoleJwt?.startsWith('eyJ')) {
-    assertJwtServiceRole(serviceRoleJwt)
-    return serviceRoleJwt
-  }
-
-  if (serviceRoleJwt) {
-    if (
-      serviceRoleJwt.startsWith('sb_publishable_') ||
-      (publishableKey && serviceRoleJwt === publishableKey)
-    ) {
-      throw new Error(
-        'SUPABASE_SERVICE_ROLE_KEY에 클라이언트용(publishable/anon) 키가 들어가 있습니다. Supabase 대시보드의 service_role JWT를 넣어주세요.'
-      )
-    }
-    return serviceRoleJwt
-  }
-
-  throw new Error(
-    'Supabase 서버 환경변수(SUPABASE_SERVICE_ROLE_KEY 또는 SUPABASE_SECRET_KEY)가 없습니다.'
-  )
-}
+const ANON_KEY_MESSAGE =
+  'Supabase 서버 키가 클라이언트용(anon)으로 설정되어 있습니다. Vercel → Settings → Environment Variables에서 SUPABASE_SECRET_KEY에 Supabase 대시보드 API의 Secret key(sb_secret_…)만 넣고, SUPABASE_SERVICE_ROLE_KEY의 publishable/anon 값은 삭제한 뒤 Redeploy 해주세요.'
 
 /**
- * JWT payload의 role이 service_role인지 검사합니다.
+ * JWT payload에서 role 클레임을 읽습니다.
  */
-function assertJwtServiceRole(jwt: string): void {
+function decodeJwtRole(jwt: string): string | null {
   try {
     const segment = jwt.split('.')[1]
-    if (!segment) return
+    if (!segment) {
+      return null
+    }
     const payload = JSON.parse(
       Buffer.from(segment.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(
         'utf8'
       )
     ) as { role?: string }
-    if (payload.role && payload.role !== 'service_role') {
-      throw new Error(
-        `Supabase 키 role이 "${payload.role}"입니다. service_role JWT를 SUPABASE_SERVICE_ROLE_KEY에 설정해주세요.`
-      )
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('service_role')) {
-      throw error
-    }
-    // payload 파싱 실패 시 키 문자열 형식만으로 진행
+    return payload.role ?? null
+  } catch {
+    return null
   }
 }
 
 /**
- * 서버 전용 Supabase 클라이언트 (service role, RLS 우회)
+ * publishable/anon 키가 서버 변수에 들어갔는지 검사합니다.
+ */
+function assertNotClientKey(key: string, envName: string): void {
+  const publishableKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+
+  if (
+    key.startsWith('sb_publishable_') ||
+    (publishableKey && key === publishableKey)
+  ) {
+    throw new Error(ANON_KEY_MESSAGE)
+  }
+
+  if (key.startsWith('eyJ') && decodeJwtRole(key) === 'anon') {
+    throw new Error(ANON_KEY_MESSAGE)
+  }
+
+  if (key.startsWith('eyJ')) {
+    const role = decodeJwtRole(key)
+    if (role && role !== 'service_role') {
+      throw new Error(
+        `Supabase 키 role이 "${role}"입니다. ${envName}에는 Secret key(sb_secret_…)만 사용해주세요.`
+      )
+    }
+  }
+}
+
+/**
+ * 서버 API용 Supabase 키를 선택합니다 (RLS 우회용).
+ */
+function resolveServiceRoleKey(): string {
+  const secretKey = process.env.SUPABASE_SECRET_KEY?.trim()
+  const serviceRoleJwt = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+
+  if (secretKey) {
+    assertNotClientKey(secretKey, 'SUPABASE_SECRET_KEY')
+    if (secretKey.startsWith('sb_secret_')) {
+      return secretKey
+    }
+    return secretKey
+  }
+
+  if (serviceRoleJwt) {
+    assertNotClientKey(serviceRoleJwt, 'SUPABASE_SERVICE_ROLE_KEY')
+    if (serviceRoleJwt.startsWith('eyJ')) {
+      return serviceRoleJwt
+    }
+    return serviceRoleJwt
+  }
+
+  throw new Error(MISSING_SERVER_KEY_MESSAGE)
+}
+
+/**
+ * 서버 전용 Supabase 클라이언트 (service role / secret, RLS 우회)
  */
 export function createSupabaseAdminClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
