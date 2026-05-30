@@ -36,6 +36,9 @@ const SEEK_LINE_OPTIONS = [
   { label: '인천 2호선', shortLabel: '인천2', badge: '인2', color: '#F5A200' },
 ] as const
 
+type HomeFlowMode = 'seek' | 'leave'
+type HomeStep = 'mode' | 'line'
+
 function HomeGallery() {
   return (
     <section className="mb-6" aria-label="지하철 갤러리">
@@ -101,7 +104,9 @@ export default function Home() {
   const [congestionStatus, setCongestionStatus] = useState<CongestionStatus | null>(null)
   const [showCongestionModal, setShowCongestionModal] = useState(false)
   const [activeUserCount, setActiveUserCount] = useState(ACTIVE_USER_DISPLAY_BASE)
-  const [selectedSeekLineLabel, setSelectedSeekLineLabel] = useState<string>('서울 1호선')
+  const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 1호선')
+  const [homeStep, setHomeStep] = useState<HomeStep>('mode')
+  const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
   const { visible: showInstallShortcut, hide: hideInstallShortcut } = useInstallShortcutVisible()
 
   const loadHomeData = useCallback(async (token: string) => {
@@ -114,12 +119,13 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    const paused = isLineHalted(congestionStatus, selectedSeekLineLabel)
+    const lineLabel = homeStep === 'line' ? selectedLineLabel : '서울 1호선'
+    const paused = isLineHalted(congestionStatus, lineLabel)
     setIsMatchingPaused(paused)
-    if (paused && !isLoadingData) {
+    if (paused && !isLoadingData && homeStep === 'line') {
       setShowCongestionModal(true)
     }
-  }, [congestionStatus, selectedSeekLineLabel, isLoadingData])
+  }, [congestionStatus, selectedLineLabel, isLoadingData, homeStep])
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -145,12 +151,39 @@ export default function Home() {
   const displayName = user?.username ?? '회원'
   const mannerPoints = user?.total_points ?? 0
 
-  async function pushSeekPage(lineLabel: string) {
+  async function pushBoardingPage(lineLabel: string, mode: HomeFlowMode) {
     const params = new URLSearchParams({
-      type: 'seek',
+      type: mode,
       lineLabel,
     })
     router.push(`/boarding?${params.toString()}`)
+  }
+
+  async function pushSeekPage(lineLabel: string) {
+    await pushBoardingPage(lineLabel, 'seek')
+  }
+
+  function handleModeSelect(mode: HomeFlowMode) {
+    setHomeMode(mode)
+    setHomeStep('line')
+  }
+
+  function handleBackToModeStep() {
+    setHomeStep('mode')
+    setHomeMode(null)
+  }
+
+  async function proceedToBoarding() {
+    if (!homeMode) return
+    if (isLineHalted(congestionStatus, selectedLineLabel)) {
+      setShowCongestionModal(true)
+      return
+    }
+    if (homeMode === 'seek') {
+      void startSeekByLineSelection(selectedLineLabel)
+      return
+    }
+    void pushBoardingPage(selectedLineLabel, 'leave')
   }
 
   async function saveDetectedLocation(
@@ -184,7 +217,7 @@ export default function Home() {
       setShowCongestionModal(true)
       return
     }
-    setSelectedSeekLineLabel(lineLabel)
+    setSelectedLineLabel(lineLabel)
     // GPS·역 목록 조회를 기다리지 않고 바로 탑승 화면으로 이동합니다.
     void pushSeekPage(lineLabel)
 
@@ -276,7 +309,7 @@ export default function Home() {
       <CongestionHaltModal
         open={showCongestionModal}
         onClose={() => setShowCongestionModal(false)}
-        congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(selectedSeekLineLabel)]}
+        congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(selectedLineLabel)]}
       />
       <main className="px-4 pb-10 pt-6">
         <header className="mb-6 flex items-center justify-between">
@@ -309,86 +342,152 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mb-6 space-y-3">
-          <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
-            <p className="mb-3 block text-xs font-bold text-[#6F7682]">노선 선택</p>
-            <div className="grid grid-cols-3 gap-x-4 gap-y-5">
-              {SEEK_LINE_OPTIONS.map((line) => {
-                const selected = selectedSeekLineLabel === line.label
-                return (
-                  <button
-                    key={line.label}
-                    type="button"
-                    className="zeb-touch-target flex min-h-11 min-w-11 flex-col items-center gap-1"
-                    onClick={() => setSelectedSeekLineLabel(line.label)}
-                    aria-label={line.label}
-                  >
-                    <span
-                      className="inline-flex h-[58px] w-[58px] items-center justify-center rounded-full text-base font-extrabold text-white"
-                      style={{
-                        background: line.color,
-                        boxShadow: selected ? `0 0 0 3px ${line.color}33` : 'none',
-                        border: selected ? '2px solid #0B1F4B' : '2px solid transparent',
-                      }}
-                    >
-                      {line.badge}
-                    </span>
-                    <span
-                      className="text-xs font-bold leading-tight"
-                      style={{ color: selected ? line.color : '#6F7682' }}
-                    >
-                      {line.shortLabel}
-                    </span>
-                  </button>
-                )
-              })}
+        {homeStep === 'mode' ? (
+          <section className="mb-6 space-y-4">
+            <div className="rounded-2xl bg-white px-5 py-6 shadow-sm">
+              <p className="text-center text-xs font-bold uppercase tracking-wide text-[#6F7682]">
+                1 / 2
+              </p>
+              <h2 className="mt-2 text-center text-[22px] font-extrabold leading-snug text-[#1A1A1A]">
+                무엇을 도와드릴까요?
+              </h2>
+              <p className="mt-2 text-center text-sm font-medium text-[#6F7682]">
+                앉을 자리가 필요한지, 내릴 역인지 선택해 주세요
+              </p>
             </div>
-          </div>
 
-          <button
-            type="button"
-            disabled={isMatchingPaused}
-            onClick={() => {
-              void startSeekByLineSelection(selectedSeekLineLabel)
-            }}
-            className="zeb-touch-target flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#0B1F4B] py-5 text-xl font-extrabold text-white shadow-[0_8px_20px_rgba(11,31,75,0.24)] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
-              🧍
-            </span>
-            앉고 싶어요
-          </button>
-          {isMatchingPaused && (
-            <p
-              className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
-              role="alert"
+            <button
+              type="button"
+              disabled={isMatchingPaused}
+              onClick={() => handleModeSelect('seek')}
+              className="zeb-touch-target flex min-h-[72px] w-full items-center gap-4 rounded-2xl bg-[#0B1F4B] px-5 py-4 text-left text-white shadow-[0_8px_20px_rgba(11,31,75,0.24)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
             >
-              현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
-            </p>
-          )}
+              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/20 text-2xl">
+                🧍
+              </span>
+              <span>
+                <span className="block text-lg font-extrabold">앉고 싶어요</span>
+                <span className="mt-0.5 block text-sm font-medium text-white/80">
+                  빈자리를 찾고 있어요
+                </span>
+              </span>
+            </button>
 
-          <button
-            type="button"
-            disabled={isMatchingPaused}
-            onClick={() => {
-              if (isLineHalted(congestionStatus, selectedSeekLineLabel)) {
-                setShowCongestionModal(true)
-                return
-              }
-              const params = new URLSearchParams({
-                type: 'leave',
-                lineLabel: selectedSeekLineLabel,
-              })
-              router.push(`/boarding?${params.toString()}`)
-            }}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[#D8DCE2] bg-white py-4 text-lg font-extrabold text-[#0B1F4B] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#EEF3FB]">
-              <ChevronRightIcon />
-            </span>
-            내릴게요
-          </button>
-        </section>
+            <button
+              type="button"
+              disabled={isMatchingPaused}
+              onClick={() => handleModeSelect('leave')}
+              className="zeb-touch-target flex min-h-[72px] w-full items-center gap-4 rounded-2xl border border-[#D8DCE2] bg-white px-5 py-4 text-left transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#EEF3FB] text-[#0B1F4B]">
+                <ChevronRightIcon />
+              </span>
+              <span>
+                <span className="block text-lg font-extrabold text-[#0B1F4B]">내릴게요</span>
+                <span className="mt-0.5 block text-sm font-medium text-[#6F7682]">
+                  하차할 역을 알려 주세요
+                </span>
+              </span>
+            </button>
+
+            {isMatchingPaused ? (
+              <p
+                className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
+                role="alert"
+              >
+                현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
+              </p>
+            ) : null}
+          </section>
+        ) : (
+          <section className="mb-6 space-y-4">
+            <div className="rounded-2xl bg-white px-5 py-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleBackToModeStep}
+                  className="text-sm font-bold text-[#6F7682]"
+                >
+                  ← 이전
+                </button>
+                <p className="text-xs font-bold text-[#6F7682]">2 / 2</p>
+              </div>
+              <h2 className="mt-3 text-center text-[22px] font-extrabold text-[#1A1A1A]">
+                노선을 선택해 주세요
+              </h2>
+              <p className="mt-2 text-center text-sm font-medium text-[#6F7682]">
+                {homeMode === 'leave'
+                  ? '내릴 노선을 골라 주세요'
+                  : '탑승할 노선을 골라 주세요'}
+              </p>
+              <p className="mt-3 text-center">
+                <span
+                  className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
+                    homeMode === 'leave'
+                      ? 'bg-[#EEF3FB] text-[#0B1F4B]'
+                      : 'bg-[#0B1F4B] text-white'
+                  }`}
+                >
+                  {homeMode === 'leave' ? '내릴게요' : '앉고 싶어요'}
+                </span>
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
+              <div className="grid grid-cols-3 gap-x-4 gap-y-5">
+                {SEEK_LINE_OPTIONS.map((line) => {
+                  const selected = selectedLineLabel === line.label
+                  return (
+                    <button
+                      key={line.label}
+                      type="button"
+                      className="zeb-touch-target flex min-h-11 min-w-11 flex-col items-center gap-1"
+                      onClick={() => setSelectedLineLabel(line.label)}
+                      aria-label={line.label}
+                    >
+                      <span
+                        className="inline-flex h-[58px] w-[58px] items-center justify-center rounded-full text-base font-extrabold text-white"
+                        style={{
+                          background: line.color,
+                          boxShadow: selected ? `0 0 0 3px ${line.color}33` : 'none',
+                          border: selected ? '2px solid #0B1F4B' : '2px solid transparent',
+                        }}
+                      >
+                        {line.badge}
+                      </span>
+                      <span
+                        className="text-xs font-bold leading-tight"
+                        style={{ color: selected ? line.color : '#6F7682' }}
+                      >
+                        {line.shortLabel}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={isMatchingPaused || !homeMode}
+              onClick={() => {
+                void proceedToBoarding()
+              }}
+              className="zeb-touch-target flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#0B1F4B] py-5 text-xl font-extrabold text-white shadow-[0_8px_20px_rgba(11,31,75,0.24)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              다음
+            </button>
+
+            {isMatchingPaused ? (
+              <p
+                className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
+                role="alert"
+              >
+                현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
+              </p>
+            ) : null}
+          </section>
+        )}
 
         {showInstallShortcut ? (
           <section className="mb-6">
