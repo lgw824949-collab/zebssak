@@ -5,6 +5,15 @@ import './globals.css'
 export const metadata: Metadata = {
   title: '잽싸게',
   description: '인천 지하철 실시간 좌석 매칭',
+  applicationName: '잽싸게',
+  appleWebApp: {
+    capable: true,
+    title: '잽싸게',
+    statusBarStyle: 'black-translucent',
+  },
+  formatDetection: {
+    telephone: false,
+  },
 }
 
 export const viewport: Viewport = {
@@ -21,10 +30,7 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <head>
-        <link
-          rel="stylesheet"
-          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css"
-        />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import CongestionHaltModal from '@/components/CongestionHaltModal'
+import InstallShortcut from '@/components/InstallShortcut'
 import {
   fetchCongestionStatus,
   isLineHalted,
@@ -368,6 +369,10 @@ export default function Home() {
             </span>
             내릴게요
           </button>
+        </section>
+
+        <section className="mb-6">
+          <InstallShortcut />
         </section>
 
         <section className="rounded-2xl border border-[#E6E8EB] bg-white p-4 shadow-sm">

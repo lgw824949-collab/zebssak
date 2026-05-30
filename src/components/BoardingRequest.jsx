@@ -474,18 +474,109 @@ async function lookupStationMeta(stationName, lineLabel) {
     stationCode,
     stationName: row.name,
     stationOrder: order,
+    stationIndex: partialIndex,
   };
 }
 
-function resolveRemainingStops(boardingOrder, destinationOrder) {
-  if (
-    Number.isFinite(boardingOrder) &&
-    Number.isFinite(destinationOrder) &&
-    destinationOrder > boardingOrder
-  ) {
-    return Math.max(3, destinationOrder - boardingOrder);
+function normalizeDirectionKeyForStops(direction) {
+  const value = (direction || "").trim();
+  if (value === "상행" || value === "내선" || value === "1") return "up";
+  if (value === "하행" || value === "외선" || value === "2" || value === "0") return "down";
+  return null;
+}
+
+function resolveStationIndexByOrder(stations, stationMeta) {
+  if (!Array.isArray(stations) || stations.length === 0 || !stationMeta) {
+    return -1;
   }
-  return 3;
+
+  const order = stationMeta.stationOrder;
+  if (Number.isFinite(order)) {
+    const byOrder = stations.findIndex((row) => row.order === order);
+    if (byOrder >= 0) {
+      return byOrder;
+    }
+  }
+
+  if (Number.isFinite(stationMeta.stationIndex) && stationMeta.stationIndex >= 0) {
+    const row = stations[stationMeta.stationIndex];
+    if (
+      row &&
+      normalizeStationSearchTerm(row.name) ===
+        normalizeStationSearchTerm(stationMeta.stationName)
+    ) {
+      return stationMeta.stationIndex;
+    }
+  }
+
+  const searchName = normalizeStationSearchTerm(stationMeta.stationName);
+  if (!searchName) return -1;
+  return stations.findIndex(
+    (row) => normalizeStationSearchTerm(row?.name) === searchName
+  );
+}
+
+/** 서울 1~9호선 · 인천 1~2호선 — 동일 노선 역순 기준 남은 역 수 */
+function resolveRemainingStops(
+  stations,
+  boardingMeta,
+  destinationMeta,
+  lineLabel,
+  direction
+) {
+  const boardingIndex = resolveStationIndexByOrder(stations, boardingMeta);
+  const destinationIndex = resolveStationIndexByOrder(stations, destinationMeta);
+  const count = Array.isArray(stations) ? stations.length : 0;
+
+  if (
+    count === 0 ||
+    boardingIndex < 0 ||
+    destinationIndex < 0 ||
+    boardingIndex === destinationIndex
+  ) {
+    return 3;
+  }
+
+  const layoutKey = resolveLineLayoutKey(lineLabel);
+
+  // 2호선: 순환 — 열차 방향 기준 (환승·타 호선 제외, 동일 노선 역 목록만 사용)
+  if (layoutKey === "seoul2") {
+    const dirKey = normalizeDirectionKeyForStops(direction);
+    const distForward = (destinationIndex - boardingIndex + count) % count;
+    const distBackward = (boardingIndex - destinationIndex + count) % count;
+
+    if (dirKey === "down") {
+      return Math.max(3, distForward === 0 ? count : distForward);
+    }
+    if (dirKey === "up") {
+      return Math.max(3, distBackward === 0 ? count : distBackward);
+    }
+    return Math.max(
+      3,
+      Math.min(distForward === 0 ? count : distForward, distBackward === 0 ? count : distBackward)
+    );
+  }
+
+  // 서울 1·3~9호선, 인천 1~2호선: station_order(역 목록 순서) 차이
+  const orderDelta =
+    (destinationMeta?.stationOrder ?? destinationIndex + 1) -
+    (boardingMeta?.stationOrder ?? boardingIndex + 1);
+  const indexDelta = destinationIndex - boardingIndex;
+  const dirKey = normalizeDirectionKeyForStops(direction);
+
+  if (dirKey === "down") {
+    if (indexDelta > 0) return Math.max(3, indexDelta);
+    if (indexDelta < 0) return Math.max(3, Math.abs(indexDelta));
+  }
+  if (dirKey === "up") {
+    if (indexDelta < 0) return Math.max(3, Math.abs(indexDelta));
+    if (indexDelta > 0) return Math.max(3, indexDelta);
+  }
+
+  if (orderDelta !== 0) {
+    return Math.max(3, Math.abs(orderDelta));
+  }
+  return Math.max(3, Math.abs(indexDelta));
 }
 
 /** 열차 방면 표시(예: 역삼 방면) → 빠른하차 drtnInfo */
@@ -1954,6 +2045,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     setSubmitError("");
 
     try {
+      const stations = await fetchStationsForLine(normalizedLine);
       const destinationMeta = await lookupStationMeta(station, normalizedLine);
       if (!destinationMeta?.stationCode) {
         stopSubmitting("하차역 정보를 찾을 수 없습니다.");
@@ -1966,11 +2058,15 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
           stationCode: `${resolveStationCodePrefixFromLineProp(normalizedLine)}-01`,
           stationName: boardingName,
           stationOrder: 1,
+          stationIndex: 0,
         };
 
       const remainingStops = resolveRemainingStops(
-        boardingMeta.stationOrder,
-        destinationMeta.stationOrder
+        stations,
+        boardingMeta,
+        destinationMeta,
+        normalizedLine,
+        trainDirection
       );
 
       const response = await fetch("/api/match-requests", {
@@ -2109,6 +2205,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     setSubmitError("");
     try {
       const lineNumber = resolveLineNumberFromLineProp(normalizedLine);
+      const stations = await fetchStationsForLine(normalizedLine);
       const destinationMeta = await lookupStationMeta(station, normalizedLine);
       if (!destinationMeta?.stationCode) {
         stopSubmitting("하차역 정보를 찾을 수 없습니다.");
@@ -2121,20 +2218,24 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
           stationCode: `${resolveStationCodePrefixFromLineProp(normalizedLine)}-01`,
           stationName: boardingName,
           stationOrder: 1,
+          stationIndex: 0,
         };
 
       if (
-        Number.isFinite(boardingMeta.stationOrder) &&
-        Number.isFinite(destinationMeta.stationOrder) &&
-        destinationMeta.stationOrder <= boardingMeta.stationOrder
+        Number.isFinite(boardingMeta.stationIndex) &&
+        Number.isFinite(destinationMeta.stationIndex) &&
+        boardingMeta.stationIndex === destinationMeta.stationIndex
       ) {
-        stopSubmitting("하차역은 현재 탑승 위치보다 앞쪽 역일 수 없습니다.");
+        stopSubmitting("하차역은 현재 역과 달라야 합니다.");
         return;
       }
 
       const remainingStops = resolveRemainingStops(
-        boardingMeta.stationOrder,
-        destinationMeta.stationOrder
+        stations,
+        boardingMeta,
+        destinationMeta,
+        normalizedLine,
+        trainDirection
       );
 
       const body = {

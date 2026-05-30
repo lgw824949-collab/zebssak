@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
+import InstallShortcut from '@/components/InstallShortcut'
 
 interface AuthApiResponse {
   success: boolean
@@ -132,6 +133,10 @@ export default function LoginPage() {
               {isLoading ? '로그인 중...' : '로그인'}
             </button>
           </form>
+
+          <div className="mt-6">
+            <InstallShortcut compact />
+          </div>
 
           <p className="mt-7 text-center text-sm font-medium text-[#7A7A7A]">
             계정이 없으신가요?{' '}
