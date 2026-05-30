@@ -47,6 +47,17 @@ export async function GET() {
       recorded_at: latestByLine[lineNumber]?.recorded_at ?? null,
     }))
 
+    const haltedByLine: Record<number, boolean> = { 1: false, 2: false }
+    for (const lineNumber of lines) {
+      const { data: halted, error: haltError } = await supabase.rpc('is_congestion_halted', {
+        p_line_number: lineNumber,
+      })
+      if (haltError) {
+        return errorResponse('혼잡도 정지 여부를 확인할 수 없습니다.', 500)
+      }
+      haltedByLine[lineNumber] = halted === true
+    }
+
     const { count: waitingCountRaw, error: waitingCountError } = await supabase
       .from('match_requests')
       .select('id', { count: 'exact', head: true })
@@ -62,6 +73,7 @@ export async function GET() {
       data: {
         latest_by_line: latestByLine,
         lines: lineSummaries,
+        halted_by_line: haltedByLine,
         waiting_count: waitingCountRaw ?? 0,
       },
     })

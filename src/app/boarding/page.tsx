@@ -1,8 +1,15 @@
 'use client'
 
-import { Suspense, useEffect } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import BoardingRequest from '@/components/BoardingRequest'
+import CongestionHaltModal from '@/components/CongestionHaltModal'
+import {
+  fetchCongestionStatus,
+  isLineHalted,
+  resolveLineNumberFromLabel,
+  type CongestionStatus,
+} from '@/lib/congestion'
 
 function BoardingPageContent() {
   const router = useRouter()
@@ -10,6 +17,11 @@ function BoardingPageContent() {
   const lineLabelParam = searchParams.get('lineLabel')
   const lineLabel = lineLabelParam && lineLabelParam.trim() ? lineLabelParam.trim() : '서울 1호선'
   const type = searchParams.get('type')?.trim()
+  const [congestionStatus, setCongestionStatus] = useState<CongestionStatus | null>(null)
+  const [showCongestionModal, setShowCongestionModal] = useState(false)
+  const [isCongestionChecked, setIsCongestionChecked] = useState(false)
+
+  const isHalted = isLineHalted(congestionStatus, lineLabel)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -58,14 +70,45 @@ function BoardingPageContent() {
     )
   }, [router, lineLabel, type])
 
+  useEffect(() => {
+    let active = true
+
+    void (async () => {
+      const token = localStorage.getItem('token')
+      const status = await fetchCongestionStatus(token)
+      if (!active) return
+      setCongestionStatus(status)
+      setIsCongestionChecked(true)
+      if (isLineHalted(status, lineLabel)) {
+        setShowCongestionModal(true)
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [lineLabel])
+
   const mode = type === 'leave' ? 'leave' : 'seek'
 
   return (
-    <BoardingRequest
-      key={`${lineLabel}-${mode}`}
-      line={lineLabel}
-      mode={mode}
-    />
+    <>
+      <CongestionHaltModal
+        open={showCongestionModal}
+        onClose={() => {
+          setShowCongestionModal(false)
+          router.replace('/')
+        }}
+        congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(lineLabel)]}
+      />
+      {isCongestionChecked && !isHalted ? (
+        <BoardingRequest key={`${lineLabel}-${mode}`} line={lineLabel} mode={mode} />
+      ) : !isCongestionChecked ? (
+        <div className="flex min-h-dvh items-center justify-center bg-[#F7F8FA] text-sm font-semibold text-[#888888]">
+          로딩 중...
+        </div>
+      ) : null}
+    </>
   )
 }
 

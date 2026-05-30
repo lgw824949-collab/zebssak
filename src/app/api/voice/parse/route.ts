@@ -119,7 +119,7 @@ function findDestinationFromTranscript(
 }
 
 function extractModeFromTranscript(transcript: string): VoiceMode | null {
-  if (transcript.includes('내릴')) {
+  if (/내려요|내릴게요|내려|내릴/u.test(transcript)) {
     return 'leave'
   }
   // 음성 인식 오타(안고) 및 앉고 싶어 표현

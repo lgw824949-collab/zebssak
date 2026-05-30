@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 /** LineSelect.jsx 노선색과 동일 */
 const LINE_COLORS = {
@@ -18,10 +18,13 @@ const LINE_COLORS = {
 };
 
 const LINE_COLOR_FALLBACK = "#1A56A0";
+const ELDERLY_COLOR = "#FF8F00";
+const AISLE_BG_ALPHA = "1A";
+const ALIGHTING_BG_ALPHA = "26";
 
 const PRIORITY = 3;
-/** 좌석 구역 수 · 표시 출입문 1~4 (1-1 ~ 1-4) */
-const SECTIONS = 4;
+/** 좌석 구역 수 · 출입문 1-1 ~ 1-3 · 일반석 3구역 */
+const SECTIONS = 3;
 
 /** 호선별 객실 레이아웃 (P3: 3~9호선·인천 6호차·7석) */
 const LINE_CAR_LAYOUT = {
@@ -181,23 +184,25 @@ function applyAlightingToSeats(baseSeats, alightingKeys) {
   return next;
 }
 
-function Seat({ side, status, lineColor, selected, recommended, onClick, seatLetter, seatBadge }) {
+function Seat({ side, status, lineColor, selected, recommended, onClick, seatLetter }) {
   const isAlighting = status === "alighting";
   const isElderly = status === "elderly";
   const facesLeft = side === "right";
-  const displayLabel = isElderly ? seatBadge : seatLetter;
 
-  const fill = isElderly ? "#FFE0B2" : isAlighting ? lineColor : "#F1F5F9";
+  const fill = isElderly
+    ? "rgba(255, 143, 0, 0.14)"
+    : isAlighting
+      ? `${lineColor}${ALIGHTING_BG_ALPHA}`
+      : "#FFFFFF";
   const border = isElderly
-    ? "#FFB74D"
+    ? ELDERLY_COLOR
     : recommended
       ? "#F59E0B"
-      : isAlighting
-        ? lineColor
-        : "#E2E8F0";
-  const wallAccent = isElderly ? "#FFB74D" : isAlighting ? lineColor : "#CBD5E1";
+      : lineColor;
+  const wallAccent = isElderly ? ELDERLY_COLOR : lineColor;
+  const borderWidth = isElderly ? 1.5 : 1;
 
-  const baseBorder = `1.5px solid ${border}`;
+  const baseBorder = `${borderWidth}px solid ${border}`;
   const wallInset = facesLeft
     ? `inset -3px 0 0 0 ${wallAccent}`
     : `inset 3px 0 0 0 ${wallAccent}`;
@@ -205,17 +210,20 @@ function Seat({ side, status, lineColor, selected, recommended, onClick, seatLet
   return (
     <button
       type="button"
+      className="zeb-seat-btn"
       onClick={onClick}
       style={{
-        width: 32,
-        height: 28,
+        width: 40,
+        height: 40,
+        minWidth: 40,
+        minHeight: 40,
         borderRadius: 6,
         background: fill,
         border: baseBorder,
         boxShadow: recommended
           ? `0 0 0 2px #F59E0B, ${wallInset}`
           : wallInset,
-        outline: selected ? "2px solid #334155" : "none",
+        outline: selected ? `2px solid ${lineColor}` : "none",
         outlineOffset: 1,
         cursor:
           status === "elderly"
@@ -234,27 +242,27 @@ function Seat({ side, status, lineColor, selected, recommended, onClick, seatLet
         justifyContent: "center",
       }}
     >
-      {displayLabel ? (
+      {seatLetter && !isElderly ? (
         <span
           style={{
-            fontSize: isElderly ? 8 : 10,
-            fontWeight: 800,
-            color: isAlighting || isElderly ? "#fff" : "#64748B",
+            fontFamily: "'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif",
+            fontSize: 10,
+            fontWeight: 700,
+            color: "#475569",
             lineHeight: 1,
             letterSpacing: 0,
-            fontFeatureSettings: '"tnum"',
             pointerEvents: "none",
             userSelect: "none",
           }}
         >
-          {displayLabel}
+          {seatLetter}
         </span>
       ) : null}
     </button>
   );
 }
 
-function PriorityBlock({ side, placement, lineColor }) {
+function PriorityBlock({ side, placement }) {
   const isLeft = side === "left";
 
   return (
@@ -270,12 +278,12 @@ function PriorityBlock({ side, placement, lineColor }) {
         padding: isLeft ? "4px 0 4px 2px" : "4px 2px 4px 0",
         margin: placement === "top" ? "0 0 2px" : "2px 0 0",
         borderRadius: 8,
-        background: "rgba(255, 183, 77, 0.12)",
+        background: "rgba(255, 143, 0, 0.1)",
         boxSizing: "border-box",
       }}
     >
       {placement === "top" ? (
-        <span style={{ fontSize: 9, fontWeight: 700, color: "#E65100", lineHeight: 1.2 }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: ELDERLY_COLOR, lineHeight: 1.2 }}>
           노약자
         </span>
       ) : null}
@@ -284,11 +292,11 @@ function PriorityBlock({ side, placement, lineColor }) {
           key={`el-${placement}-${index}`}
           side={side}
           status="elderly"
-          lineColor={lineColor}
+          lineColor={ELDERLY_COLOR}
         />
       ))}
       {placement === "bottom" ? (
-        <span style={{ fontSize: 9, fontWeight: 700, color: "#E65100", lineHeight: 1.2 }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: ELDERLY_COLOR, lineHeight: 1.2 }}>
           노약자
         </span>
       ) : null}
@@ -296,44 +304,26 @@ function PriorityBlock({ side, placement, lineColor }) {
   );
 }
 
-/** 구역 경계 출입문 안내 — 통로(좌·우) 가장자리 */
-function AisleDoorText({ align }) {
-  return (
-    <span
-      style={{
-        fontSize: 10,
-        fontWeight: 700,
-        color: "#78909C",
-        letterSpacing: "0.1em",
-        lineHeight: 1.2,
-        userSelect: "none",
-        pointerEvents: "none",
-        whiteSpace: "nowrap",
-        alignSelf: align === "left" ? "flex-start" : "flex-end",
-      }}
-    >
-      출입문
-    </span>
-  );
-}
-
-/** 좌석 구역 그룹 레이블 (1-1, 1-2 …) — 구역 정중앙 표기용 */
-function SectionGroupLabel({ label, lineColor, highlighted }) {
+/** 통로 가운데 구역 배지 (1-1, 1-2, 1-3) */
+function AisleSectionBadge({ label, lineColor, highlighted }) {
   return (
     <span
       style={{
         fontSize: 11,
         fontWeight: 700,
-        color: highlighted ? "#B45309" : lineColor,
-        background: highlighted ? "rgba(245, 158, 11, 0.18)" : "rgba(255, 255, 255, 0.94)",
-        padding: "5px 12px",
-        borderRadius: 8,
-        border: `1.5px solid ${highlighted ? "#F59E0B" : lineColor}`,
-        lineHeight: 1.2,
-        letterSpacing: "0.04em",
-        boxShadow: "0 1px 4px rgba(15, 23, 42, 0.08)",
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontVariantNumeric: "tabular-nums",
+        color: highlighted ? "#FFFFFF" : lineColor,
+        background: highlighted ? "#F59E0B" : "#FFFFFF",
+        padding: "6px 11px",
+        borderRadius: 999,
+        border: `2px solid ${highlighted ? "#F59E0B" : lineColor}`,
+        lineHeight: 1,
+        letterSpacing: 0,
+        boxShadow: "0 1px 4px rgba(15, 23, 42, 0.1)",
         pointerEvents: "none",
         userSelect: "none",
+        whiteSpace: "nowrap",
       }}
     >
       {label}
@@ -341,9 +331,54 @@ function SectionGroupLabel({ label, lineColor, highlighted }) {
   );
 }
 
+/** 출입문 구분 (통로만) */
+function AisleDoorDivider({ label, lineColor }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        width: "100%",
+        padding: "3px 0",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
+      <div
+        style={{
+          width: 48,
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: `${lineColor}${AISLE_BG_ALPHA}`,
+          borderRadius: 6,
+          padding: "2px 0",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 600,
+            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+            fontVariantNumeric: "tabular-nums",
+            color: lineColor,
+            opacity: 0.75,
+            lineHeight: 1.2,
+            userSelect: "none",
+            pointerEvents: "none",
+          }}
+        >
+          {label}
+        </span>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
+    </div>
+  );
+}
+
 /**
  * 지하철 호차 내 좌석 배치도
- * 구조: 노약자 → 출입문 → (A~F·1-N)·출입문 ×4 → 출입문 → 노약자
+ * 구조: 노약자 → 출입문1-1 → A~F → 출입문1-2 → A~F → 출입문1-3 → A~F → 출입문1-4 → 노약자
  */
 function canSelectSeatStatus(status, interactionMode) {
   if (status === "elderly") return false;
@@ -543,25 +578,65 @@ export default function SubwaySeatMap({
       ? quickExitHint.door
       : null;
 
-  const aisleColumnStyle = {
-    width: 52,
-    flexShrink: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-    zIndex: 1,
-    pointerEvents: "none",
-  };
+  const carBodyRef = useRef(null);
+  const sectionRefs = useRef([]);
+  const [aisleBadges, setAisleBadges] = useState([]);
 
-  const aisleDoorRowStyle = {
-    ...aisleColumnStyle,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "0 1px",
-  };
+  const aisleColumnStyle = useMemo(
+    () => ({
+      width: 48,
+      flexShrink: 0,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      background: `${lineColor}${AISLE_BG_ALPHA}`,
+      position: "relative",
+      zIndex: 1,
+      pointerEvents: "none",
+    }),
+    [lineColor]
+  );
+
+  const updateAisleBadges = useCallback(() => {
+    const body = carBodyRef.current;
+    if (!body) return;
+
+    const bodyRect = body.getBoundingClientRect();
+    const next = sectionRefs.current
+      .map((el, sectionIndex) => {
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        const doorNo = sectionIndex + 1;
+        return {
+          top: rect.top - bodyRect.top + rect.height / 2,
+          label: `${carNum}-${doorNo}`,
+          highlighted: recommendedDoor === doorNo,
+        };
+      })
+      .filter(Boolean);
+
+    setAisleBadges(next);
+  }, [carNum, recommendedDoor]);
+
+  useLayoutEffect(() => {
+    updateAisleBadges();
+
+    const observer = new ResizeObserver(() => {
+      updateAisleBadges();
+    });
+
+    if (carBodyRef.current) observer.observe(carBodyRef.current);
+    sectionRefs.current.forEach((el) => {
+      if (el) observer.observe(el);
+    });
+
+    window.addEventListener("resize", updateAisleBadges);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateAisleBadges);
+    };
+  }, [updateAisleBadges, leftSeats, rightSeats, activeCar, lineColor]);
 
   const renderSeatSectionColumn = (side, sectionIndex, seats, doorNo) => {
     const door = doorNo;
@@ -618,7 +693,7 @@ export default function SubwaySeatMap({
           display: "flex",
           flexDirection: "column",
           alignItems: isLeft ? "flex-start" : "flex-end",
-          gap: 5,
+          gap: 4,
           justifyContent: "flex-start",
           position: "relative",
           zIndex: 2,
@@ -629,27 +704,7 @@ export default function SubwaySeatMap({
     );
   };
 
-  const renderAisleDoorTextRow = (rowKey) => (
-    <div
-      key={rowKey}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 4,
-        width: "100%",
-        padding: "5px 0",
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
-      <div style={aisleDoorRowStyle} aria-hidden>
-        <AisleDoorText align="left" />
-        <AisleDoorText align="right" />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
-    </div>
-  );
-
-  /** 노약자 → 출입문 → (A~F·1-N)·출입문 ×4 → 출입문 → 노약자 */
+  /** 노약자 → 출입문1-1 → A~F → … → 출입문1-4 → 노약자 */
   const renderCarBody = () => {
     const rows = [
       <div
@@ -657,23 +712,28 @@ export default function SubwaySeatMap({
         style={{ display: "flex", alignItems: "stretch", gap: 4, width: "100%" }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <PriorityBlock side="left" placement="top" lineColor={lineColor} />
+          <PriorityBlock side="left" placement="top" />
         </div>
-        <div style={aisleColumnStyle} />
+        <div style={aisleColumnStyle} aria-hidden />
         <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
-          <PriorityBlock side="right" placement="top" lineColor={lineColor} />
+          <PriorityBlock side="right" placement="top" />
         </div>
       </div>,
-      renderAisleDoorTextRow("door-after-prio-top"),
     ];
+
+    rows.push(
+      <AisleDoorDivider key="door-1" label={`${carNum}-1`} lineColor={lineColor} />
+    );
 
     for (let sectionIndex = 0; sectionIndex < SECTIONS; sectionIndex += 1) {
       const doorNo = sectionIndex + 1;
-      const groupLabel = `${carNum}-${doorNo}`;
-      const groupHighlighted = recommendedDoor === doorNo;
+
       rows.push(
         <div
           key={`row-section-${sectionIndex}`}
+          ref={(el) => {
+            sectionRefs.current[sectionIndex] = el;
+          }}
           style={{
             display: "flex",
             alignItems: "stretch",
@@ -684,13 +744,7 @@ export default function SubwaySeatMap({
           <div style={{ flex: 1, minWidth: 0, position: "relative", zIndex: 2 }}>
             {renderSeatSectionColumn("left", sectionIndex, leftSeats, doorNo)}
           </div>
-          <div style={aisleColumnStyle} aria-hidden>
-            <SectionGroupLabel
-              label={groupLabel}
-              lineColor={lineColor}
-              highlighted={groupHighlighted}
-            />
-          </div>
+          <div style={aisleColumnStyle} aria-hidden />
           <div
             style={{
               flex: 1,
@@ -705,8 +759,21 @@ export default function SubwaySeatMap({
           </div>
         </div>
       );
-      rows.push(renderAisleDoorTextRow(`door-after-section-${sectionIndex}`));
+
+      if (sectionIndex < SECTIONS - 1) {
+        rows.push(
+          <AisleDoorDivider
+            key={`door-${sectionIndex + 2}`}
+            label={`${carNum}-${sectionIndex + 2}`}
+            lineColor={lineColor}
+          />
+        );
+      }
     }
+
+    rows.push(
+      <AisleDoorDivider key="door-4" label={`${carNum}-4`} lineColor={lineColor} />
+    );
 
     rows.push(
       <div
@@ -714,17 +781,18 @@ export default function SubwaySeatMap({
         style={{ display: "flex", alignItems: "stretch", gap: 4, width: "100%" }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <PriorityBlock side="left" placement="bottom" lineColor={lineColor} />
+          <PriorityBlock side="left" placement="bottom" />
         </div>
-        <div style={aisleColumnStyle} />
+        <div style={aisleColumnStyle} aria-hidden />
         <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
-          <PriorityBlock side="right" placement="bottom" lineColor={lineColor} />
+          <PriorityBlock side="right" placement="bottom" />
         </div>
       </div>
     );
 
     return (
       <div
+        ref={carBodyRef}
         style={{
           position: "relative",
           display: "flex",
@@ -733,20 +801,48 @@ export default function SubwaySeatMap({
           width: "100%",
         }}
       >
+        <div style={{ position: "relative", zIndex: 1 }}>{rows}</div>
         <div
           aria-hidden
           style={{
             position: "absolute",
             left: "50%",
-            top: 8,
-            bottom: 8,
+            top: 0,
+            bottom: 0,
+            width: 48,
             transform: "translateX(-50%)",
-            borderLeft: "1.5px dashed #D1D5DB",
+            background: `${lineColor}${AISLE_BG_ALPHA}`,
             pointerEvents: "none",
             zIndex: 0,
           }}
         />
-        <div style={{ position: "relative", zIndex: 1 }}>{rows}</div>
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            zIndex: 4,
+          }}
+        >
+          {aisleBadges.map((badge) => (
+            <div
+              key={badge.label}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: badge.top,
+                transform: "translate(-50%, -50%)",
+              }}
+            >
+              <AisleSectionBadge
+                label={badge.label}
+                lineColor={lineColor}
+                highlighted={badge.highlighted}
+              />
+            </div>
+          ))}
+        </div>
       </div>
     );
   };
@@ -758,7 +854,7 @@ export default function SubwaySeatMap({
         maxWidth: 380,
         width: "100%",
         margin: "0 auto",
-        padding: "0 4px 16px",
+        padding: "0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))",
         boxSizing: "border-box",
       }}
     >
@@ -776,12 +872,15 @@ export default function SubwaySeatMap({
             <button
               key={i}
               type="button"
+              className="zeb-tab-btn"
               onClick={() => {
                 setActiveCar(i);
                 setSelectedSeat(null);
               }}
               style={{
                 padding: "7px 2px",
+                minHeight: 44,
+                minWidth: 44,
                 borderRadius: 8,
                 border: `1.5px solid ${i === activeCar ? lineColor : "#ddd"}`,
                 background: i === activeCar ? lineColor : "#fff",
@@ -807,12 +906,13 @@ export default function SubwaySeatMap({
         >
           <span
             style={{
-              background: "rgba(26, 86, 160, 0.1)",
+              background: `${lineColor}${ALIGHTING_BG_ALPHA}`,
               borderRadius: 20,
               padding: "3px 12px",
               fontSize: 12,
               color: lineColor,
               fontWeight: 600,
+              border: `1px solid ${lineColor}`,
             }}
           >
             곧 하차 {carAlightingCount}명
@@ -910,12 +1010,12 @@ export default function SubwaySeatMap({
           lineHeight: 1.4,
         }}
       >
-        맨 위부터 노약자 → 문 사이 좌·우 각 6석(A~F) · 스크롤로 전체 확인
+        맨 위부터 노약자 → 출입문 1-1~1-3 구역 · 좌·우 각 6석(A~F)
       </p>
       <div
         style={{
-          background: "#fff",
-          border: "2px solid #ddd",
+          background: "#FFFFFF",
+          border: `2px solid ${lineColor}`,
           borderRadius: 14,
           padding: "10px 8px",
           display: "flex",
@@ -966,12 +1066,12 @@ export default function SubwaySeatMap({
         }}
       >
         {[
-          { bg: "#FFE0B2", border: "#FFB74D", label: "노약자석" },
+          { bg: "rgba(255, 143, 0, 0.14)", border: ELDERLY_COLOR, label: "노약자석" },
           interactionMode === "leave"
-            ? { bg: "#F1F5F9", border: "#94A3B8", label: "내 자리 (탭)" }
-            : { bg: "#F1F5F9", border: "#E2E8F0", label: "빈 자리 (탭)" },
+            ? { bg: "#FFFFFF", border: lineColor, label: "내 자리 (탭)" }
+            : { bg: "#FFFFFF", border: lineColor, label: "빈 자리 (탭)" },
           ...(interactionMode === "seek"
-            ? [{ bg: lineColor, border: lineColor, label: "곧 하차" }]
+            ? [{ bg: `${lineColor}${ALIGHTING_BG_ALPHA}`, border: lineColor, label: "곧 하차" }]
             : []),
         ].map((item) => (
           <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>

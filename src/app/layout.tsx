@@ -1,10 +1,16 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: '잽싸게',
   description: '인천 지하철 실시간 좌석 매칭',
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({
@@ -14,16 +20,29 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-     <body className="antialiased">
-  <Script src="https://www.googletagmanager.com/gtag/js?id=G-6SD2XF6RH5" strategy="afterInteractive" />
-  <Script id="ga" strategy="afterInteractive">{`
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-6SD2XF6RH5');
-  `}</Script>
-  {children}
-</body>
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css"
+        />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+        />
+      </head>
+      <body className="antialiased">
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-6SD2XF6RH5"
+          strategy="afterInteractive"
+        />
+        <Script id="ga" strategy="afterInteractive">{`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-6SD2XF6RH5');
+        `}</Script>
+        {children}
+      </body>
     </html>
   )
 }

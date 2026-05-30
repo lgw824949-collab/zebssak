@@ -2,7 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── v0.dev 홈 디자인 시스템 ── */
+/* ── Pretendard + JetBrains Mono (CDN는 layout.tsx에서 로드) ── */
+
+/* Zeb UI: 본문은 Pretendard, 숫자(0-9)만 JetBrains Mono */
+@font-face {
+  font-family: 'Zeb UI';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/packages/pretendard/dist/web/static/woff2/Pretendard-Regular.woff2')
+    format('woff2');
+  unicode-range: U+0000-002F, U+003A-10FFFF;
+}
+
+@font-face {
+  font-family: 'Zeb UI';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/packages/pretendard/dist/web/static/woff2/Pretendard-Bold.woff2')
+    format('woff2');
+  unicode-range: U+0000-002F, U+003A-10FFFF;
+}
+
+@font-face {
+  font-family: 'Zeb UI';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKxjPQ.ttf')
+    format('truetype');
+  unicode-range: U+0030-0039;
+}
+
+@font-face {
+  font-family: 'Zeb UI';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8L6tjPQ.ttf')
+    format('truetype');
+  unicode-range: U+0030-0039;
+}
+
+/* ── 모바일 최적화 · v0 디자인 토큰 ── */
 
 @layer base {
   :root {
@@ -22,6 +65,26 @@
     --line-2: #00a84d;
     --warning: #f97316;
     --danger: #ef4444;
+
+    --font-sans: 'Zeb UI', 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    --space-page-x: 1rem;
+    --space-page-x-lg: 1.25rem;
+    /* 기존 대비 +1~2px */
+    --font-size-base: 1.0625rem;
+    --font-size-sm: 0.9375rem;
+    --font-size-lg: 1.1875rem;
+    --font-size-xl: 1.3125rem;
+    --font-size-2xl: 1.625rem;
+    --font-size-3xl: 2rem;
+    --touch-target-min: 2.75rem;
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+    --body-line-height: 1.6;
+    --body-letter-spacing: -0.3px;
   }
 
   * {
@@ -31,6 +94,7 @@
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
@@ -38,11 +102,124 @@
     min-height: 100dvh;
     background-color: var(--background);
     color: var(--foreground);
-    font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', sans-serif;
+    font-family: var(--font-sans);
+    font-size: max(17px, var(--font-size-base));
+    line-height: var(--body-line-height);
+    letter-spacing: var(--body-letter-spacing);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    padding-top: var(--safe-area-top);
+    padding-bottom: var(--safe-area-bottom);
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font-family: inherit;
+    line-height: var(--body-line-height);
+    letter-spacing: var(--body-letter-spacing);
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: max(17px, var(--font-size-base));
+  }
+
+  button:not(.zeb-seat-btn),
+  [role='button']:not(.zeb-seat-btn),
+  .zeb-btn,
+  .zeb-touch-target {
+    min-height: var(--touch-target-min);
+    min-width: var(--touch-target-min);
+    -webkit-tap-highlight-color: transparent;
   }
 }
+
+@layer components {
+  .zeb-page {
+    min-height: 100dvh;
+    padding-left: max(var(--space-page-x), var(--safe-area-left));
+    padding-right: max(var(--space-page-x), var(--safe-area-right));
+    padding-bottom: max(var(--space-page-x), var(--safe-area-bottom));
+    font-family: var(--font-sans);
+    line-height: var(--body-line-height);
+    letter-spacing: var(--body-letter-spacing);
+  }
+
+  .zeb-page-header {
+    padding-top: max(0.75rem, var(--safe-area-top));
+  }
+
+  .zeb-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0 1.25rem;
+    border-radius: 0.75rem;
+    font-family: var(--font-sans);
+    font-size: max(17px, var(--font-size-base));
+    font-weight: 700;
+    line-height: var(--body-line-height);
+    letter-spacing: var(--body-letter-spacing);
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
+  }
+
+  .zeb-btn--block {
+    width: 100%;
+  }
+
+  .zeb-btn--ghost {
+    background: transparent;
+    color: var(--foreground);
+  }
+
+  .zeb-btn--secondary {
+    background: #fff;
+    color: var(--foreground);
+    border: 1px solid var(--border);
+  }
+
+  .zeb-btn--line1 {
+    background: var(--line-1);
+    color: #fff;
+  }
+
+  .zeb-field {
+    font-family: var(--font-sans);
+    font-size: max(17px, var(--font-size-base));
+    line-height: var(--body-line-height);
+    letter-spacing: var(--body-letter-spacing);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .zeb-seat-btn {
+    min-height: var(--touch-target-min);
+    min-width: var(--touch-target-min);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 호차 탭·숫자 라벨 — JetBrains Mono 우선 */
+  .zeb-tab-btn,
+  .zeb-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+
+  .zeb-tab-btn {
+    min-height: var(--touch-target-min);
+    min-width: var(--touch-target-min);
+    font-size: max(17px, 0.8125rem);
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* ── v0.dev 홈 디자인 시스템 (레거시 주석) ── */
 
 /*
  * ========== 기존 globals.css (보존) ==========

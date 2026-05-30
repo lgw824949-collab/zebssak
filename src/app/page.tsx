@@ -3,21 +3,18 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
+import CongestionHaltModal from '@/components/CongestionHaltModal'
+import {
+  fetchCongestionStatus,
+  isLineHalted,
+  resolveLineNumberFromLabel,
+  type CongestionStatus,
+} from '@/lib/congestion'
 
 interface StoredUser {
   username: string
   nickname?: string | null
   total_points?: number
-}
-
-interface CongestionLine {
-  line_number: number
-  congestion_level: number
-}
-
-interface CongestionApiData {
-  lines?: CongestionLine[]
-  latest_by_line?: Record<string, { congestion_level?: number } | null>
 }
 
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
@@ -37,10 +34,6 @@ const SEEK_LINE_OPTIONS = [
   { label: '인천 1호선', shortLabel: '인천1', badge: '인1', color: '#759CCE' },
   { label: '인천 2호선', shortLabel: '인천2', badge: '인2', color: '#F5A200' },
 ] as const
-
-function authHeaders(token: string): HeadersInit {
-  return { Authorization: `Bearer ${token}` }
-}
 
 /**
  * 시간대에 따라 소폭 변동되는 표시용 이용자 수 (~5,900–6,100명)
@@ -88,6 +81,8 @@ export default function Home() {
   const [isAuthChecked, setIsAuthChecked] = useState(false)
   const [isLoadingData, setIsLoadingData] = useState(true)
   const [isMatchingPaused, setIsMatchingPaused] = useState(false)
+  const [congestionStatus, setCongestionStatus] = useState<CongestionStatus | null>(null)
+  const [showCongestionModal, setShowCongestionModal] = useState(false)
   const [activeUserCount, setActiveUserCount] = useState(ACTIVE_USER_DISPLAY_BASE)
   const [selectedSeekLineLabel, setSelectedSeekLineLabel] = useState<string>('서울 1호선')
 
@@ -95,45 +90,18 @@ export default function Home() {
     setIsLoadingData(true)
     setActiveUserCount(getDisplayActiveUserCount())
 
-    let matchingPaused = false
-
-    try {
-      const congestionRes = await fetch('/api/congestion', {
-        headers: authHeaders(token),
-        cache: 'no-store',
-      })
-
-      if (congestionRes.ok) {
-        const congestionJson = (await congestionRes.json()) as {
-          success?: boolean
-          data?: CongestionApiData
-        }
-
-        if (congestionJson.success && congestionJson.data) {
-          const data = congestionJson.data
-
-          if (Array.isArray(data.lines)) {
-            for (const row of data.lines) {
-              if (row.congestion_level >= 7) matchingPaused = true
-            }
-          } else if (data.latest_by_line) {
-            for (const key of Object.keys(data.latest_by_line)) {
-              const level = data.latest_by_line[key]?.congestion_level
-              if (typeof level === 'number' && level >= 7) {
-                matchingPaused = true
-                break
-              }
-            }
-          }
-        }
-      }
-    } catch {
-      // 혼잡도 API 미연동 시 무시
-    }
-
-    setIsMatchingPaused(matchingPaused)
+    const status = await fetchCongestionStatus(token)
+    setCongestionStatus(status)
     setIsLoadingData(false)
   }, [])
+
+  useEffect(() => {
+    const paused = isLineHalted(congestionStatus, selectedSeekLineLabel)
+    setIsMatchingPaused(paused)
+    if (paused && !isLoadingData) {
+      setShowCongestionModal(true)
+    }
+  }, [congestionStatus, selectedSeekLineLabel, isLoadingData])
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -194,6 +162,10 @@ export default function Home() {
   }
 
   async function startSeekByLineSelection(lineLabel: string) {
+    if (isLineHalted(congestionStatus, lineLabel)) {
+      setShowCongestionModal(true)
+      return
+    }
     setSelectedSeekLineLabel(lineLabel)
     // GPS·역 목록 조회를 기다리지 않고 바로 탑승 화면으로 이동합니다.
     void pushSeekPage(lineLabel)
@@ -282,8 +254,13 @@ export default function Home() {
   }
 
   return (
-    <div className="mx-auto min-h-dvh w-full max-w-[480px] bg-[#F7F8FA]">
-      <main className="px-5 pb-10 pt-6">
+    <div className="mx-auto min-h-dvh w-full max-w-[480px] bg-[#F7F8FA] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+      <CongestionHaltModal
+        open={showCongestionModal}
+        onClose={() => setShowCongestionModal(false)}
+        congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(selectedSeekLineLabel)]}
+      />
+      <main className="px-4 pb-10 pt-6">
         <header className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0052A4] text-white">
@@ -322,8 +299,8 @@ export default function Home() {
                   <button
                     key={line.label}
                     type="button"
+                    className="zeb-touch-target flex min-h-11 min-w-11 flex-col items-center gap-1"
                     onClick={() => setSelectedSeekLineLabel(line.label)}
-                    className="flex flex-col items-center gap-1"
                     aria-label={line.label}
                   >
                     <span
@@ -354,7 +331,7 @@ export default function Home() {
             onClick={() => {
               void startSeekByLineSelection(selectedSeekLineLabel)
             }}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0B1F4B] py-5 text-xl font-extrabold text-white shadow-[0_8px_20px_rgba(11,31,75,0.24)] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            className="zeb-touch-target flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#0B1F4B] py-5 text-xl font-extrabold text-white shadow-[0_8px_20px_rgba(11,31,75,0.24)] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
           >
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
               🧍
@@ -374,6 +351,10 @@ export default function Home() {
             type="button"
             disabled={isMatchingPaused}
             onClick={() => {
+              if (isLineHalted(congestionStatus, selectedSeekLineLabel)) {
+                setShowCongestionModal(true)
+                return
+              }
               const params = new URLSearchParams({
                 type: 'leave',
                 lineLabel: selectedSeekLineLabel,
