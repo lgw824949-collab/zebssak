@@ -156,6 +156,34 @@ const GPS_MAX_RADIUS_KM = 1;
 const BOARDING_GPS_CACHE_TTL_MS = 5 * 60 * 1000;
 const TRAIN_LIST_REFRESH_MS = 30000;
 const TRAIN_DISPLAY_LIMIT = 2;
+const SEEK_DOOR_OPTIONS = ["1-1", "1-2", "1-3"];
+
+/** seek 모드 출입문 라벨(1-1 등) → API 제출용 car / seat_side / seat_number */
+function mapSeekDoorToSubmission(doorLabel, lineLabel) {
+  const match = String(doorLabel || "").match(/^(\d+)-(\d+)$/);
+  if (!match) return null;
+
+  const car = Number.parseInt(match[1], 10);
+  const door = Number.parseInt(match[2], 10);
+  if (!Number.isInteger(car) || car < 1 || !Number.isInteger(door) || door < 1 || door > 3) {
+    return null;
+  }
+
+  const layout = resolveCarLayout(lineLabel);
+  const seatInSection = Math.floor(layout.seatsPerSection / 2);
+  const seatApi = mapSeatIdToApi(`left-d${door}-s${seatInSection}`, layout.seatsPerSection);
+  if (!seatApi?.seatSide || !seatApi?.seatNumber) {
+    return null;
+  }
+
+  return {
+    car,
+    door,
+    doorLabel,
+    seatSide: seatApi.seatSide,
+    seatNumber: seatApi.seatNumber,
+  };
+}
 
 function distanceKm(lat1, lng1, lat2, lng2) {
   const toRad = (value) => (value * Math.PI) / 180;
@@ -1406,13 +1434,86 @@ function StepTrain({
   );
 }
 
-// ─── Step 3: 호차 + 좌석 선택 ──────────────────────────────────────
+// ─── Step 3 (seek): 출입문 선택 ────────────────────────────────────
+function StepSeekDoor({ line, onNext, onBack, isSubmitting = false }) {
+  const [selectedDoor, setSelectedDoor] = useState(null);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
+      <Header step={3} onBack={onBack} title="출입문 선택" line={line} />
+      <div style={{ flex: 1, overflow: "auto", padding: "16px 16px 0", position: "relative" }}>
+        {isSubmitting ? <SubmitSkeletonOverlay /> : null}
+        <StepDots step={3} />
+
+        <div style={{ marginTop: 24 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 8, lineHeight: 1.5 }}>
+            현재 몇 번 출입문 앞에 계세요?
+          </div>
+          <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>
+            승차할 출입문 번호를 선택해 주세요
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {SEEK_DOOR_OPTIONS.map((doorLabel) => (
+              <button
+                key={doorLabel}
+                type="button"
+                className="zeb-touch-target"
+                disabled={isSubmitting}
+                onClick={() => setSelectedDoor(doorLabel)}
+                style={{
+                  width: "100%",
+                  minHeight: 56,
+                  padding: "14px 18px",
+                  borderRadius: 12,
+                  border: `1.5px solid ${selectedDoor === doorLabel ? C.primary : C.border}`,
+                  background: selectedDoor === doorLabel ? C.primaryLight : C.card,
+                  color: selectedDoor === doorLabel ? C.primary : C.text,
+                  fontSize: 18,
+                  fontWeight: 700,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  cursor: isSubmitting ? "default" : "pointer",
+                  transition: "all 0.15s",
+                  opacity: isSubmitting ? 0.55 : 1,
+                  textAlign: "center",
+                }}
+              >
+                {doorLabel}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <BottomButton
+        label={selectedDoor ? "요청 등록하기" : "출입문을 선택해주세요"}
+        onClick={() => {
+          const mapped = mapSeekDoorToSubmission(selectedDoor, line);
+          if (!mapped) return;
+          onNext({
+            doorLabel: selectedDoor,
+            car: mapped.car,
+            door: mapped.door,
+            seat: {
+              doorLabel: selectedDoor,
+              car: mapped.car,
+              door: mapped.door,
+              seatSide: mapped.seatSide,
+              seatNumber: mapped.seatNumber,
+            },
+          });
+        }}
+        disabled={!selectedDoor}
+        loading={isSubmitting}
+      />
+    </div>
+  );
+}
+
+// ─── Step 3 (leave): 호차 + 좌석 선택 ──────────────────────────────
 function StepSeat({
   line,
   station,
   trainId,
   lineNumber,
-  mode,
   direction,
   drtnInfo,
   currentStation,
@@ -1420,22 +1521,17 @@ function StepSeat({
   onBack,
   isSubmitting = false,
 }) {
-  const isLeaveMode = mode === "leave";
   const isSeoulLine = isSeoulLineFromLineProp(line);
-  const requireSeatOnLeave = isLeaveMode && isSeoulLine;
+  const requireSeatOnLeave = isSeoulLine;
   const carCount = resolveCarCountFromLineProp(line);
   const carNumbers = Array.from({ length: carCount }, (_, index) => index + 1);
-  const [selectedCar, setSelectedCar] = useState(() => (isLeaveMode ? null : 1));
+  const [selectedCar, setSelectedCar] = useState(null);
   const [selectedSeat, setSelectedSeat] = useState(null);
 
   useEffect(() => {
-    if (isLeaveMode) {
-      setSelectedCar((prev) => (prev != null && prev > carCount ? null : prev));
-    } else {
-      setSelectedCar((prev) => (prev != null && prev <= carCount ? prev : 1));
-    }
+    setSelectedCar((prev) => (prev != null && prev > carCount ? null : prev));
     setSelectedSeat(null);
-  }, [line, carCount, isLeaveMode]);
+  }, [line, carCount]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
@@ -1477,14 +1573,13 @@ function StepSeat({
           </div>
         </div>
 
-        {selectedCar && (!isLeaveMode || isSeoulLine) ? (
+        {selectedCar && isSeoulLine ? (
           <div style={{ marginTop: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>
-              {selectedCar}번 호차 좌석
-              {isLeaveMode ? " · 앉은 자리를 탭하세요" : ""}
+              {selectedCar}번 호차 좌석 · 앉은 자리를 탭하세요
             </div>
             <SubwaySeatMap
-              key={`${trainId}-${selectedCar}-${mode}`}
+              key={`${trainId}-${selectedCar}-leave`}
               line={line}
               station={station || currentStation || ""}
               trainNo={trainId}
@@ -1492,14 +1587,14 @@ function StepSeat({
               direction={direction}
               drtnInfo={drtnInfo}
               car={selectedCar}
-              interactionMode={isLeaveMode ? "leave" : "seek"}
+              interactionMode="leave"
               selectedSeatId={selectedSeat?.id}
               onSeatClick={(seat) => setSelectedSeat((prev) => (prev?.id === seat.id ? null : seat))}
             />
           </div>
         ) : null}
 
-        {isLeaveMode && !isSeoulLine ? (
+        {!isSeoulLine ? (
           <div style={{ textAlign: "center", padding: "24px 0 0", color: "#7B8794", fontSize: 13 }}>
             인천 노선은 호차 번호만 선택하면 등록할 수 있어요
           </div>
@@ -1507,26 +1602,14 @@ function StepSeat({
       </div>
       <BottomButton
         label={
-          isLeaveMode
-            ? !selectedCar
-              ? "호차를 먼저 선택해주세요"
-              : requireSeatOnLeave && !selectedSeat
-                ? "앉은 자리를 선택해주세요"
-                : "하차 등록하기"
-            : selectedSeat
-              ? selectedSeat.status === "alighting"
-                ? "이 자리 요청하기"
-                : "요청 등록하기"
-              : selectedCar
-                ? "좌석을 선택해주세요"
-                : "호차를 먼저 선택해주세요"
+          !selectedCar
+            ? "호차를 먼저 선택해주세요"
+            : requireSeatOnLeave && !selectedSeat
+              ? "앉은 자리를 선택해주세요"
+              : "하차 등록하기"
         }
         onClick={() => onNext({ car: selectedCar, seat: selectedSeat })}
-        disabled={
-          isLeaveMode
-            ? !selectedCar || (requireSeatOnLeave && !selectedSeat)
-            : !selectedSeat
-        }
+        disabled={!selectedCar || (requireSeatOnLeave && !selectedSeat)}
         loading={isSubmitting}
       />
     </div>
@@ -1537,6 +1620,8 @@ function StepSeat({
 function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaiting }) {
   const isLeaveMode = mode === "leave";
   const matchedOnRegister = seat?.matched === true;
+  const seekDoorLabel =
+    seat?.doorLabel || (seat?.car && seat?.door ? `${seat.car}-${seat.door}` : "");
   const seatLabel =
     seat?.car && seat?.door
       ? ` · ${seat.car}-${seat.door}번 문 옆`
@@ -1558,8 +1643,18 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
       </div>
       <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.7, marginBottom: 32 }}>
         {line}<br />
-        열차 <strong style={{ color: C.text }}>{trainId}</strong> · <strong style={{ color: C.text }}>{car}번 호차</strong>
-        {seatLabel ? <>{seatLabel}</> : null}
+        {isLeaveMode ? (
+          <>
+            열차 <strong style={{ color: C.text }}>{trainId}</strong> ·{" "}
+            <strong style={{ color: C.text }}>{car}번 호차</strong>
+            {seatLabel ? <>{seatLabel}</> : null}
+          </>
+        ) : (
+          <>
+            열차 <strong style={{ color: C.text }}>{trainId}</strong> ·{" "}
+            <strong style={{ color: C.text }}>{seekDoorLabel || "출입문"}</strong> 출입문 앞
+          </>
+        )}
         <br />
         {isLeaveMode ? (
           <>
@@ -1760,21 +1855,21 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       stopSubmitting("로그인이 필요합니다.");
       return;
     }
-    if (!trainId || !info?.car || !info?.seat || !station) {
-      stopSubmitting("열차, 호차, 좌석, 하차역을 확인해 주세요.");
+    if (!trainId || !info?.doorLabel || !station) {
+      stopSubmitting("열차, 출입문, 하차역을 확인해 주세요.");
       return;
     }
 
-    const layout = resolveCarLayout(normalizedLine);
-    const seatApi =
-      info.seat.seatSide && info.seat.seatNumber
-        ? { seatSide: info.seat.seatSide, seatNumber: info.seat.seatNumber }
-        : mapSeatIdToApi(info.seat.id, layout.seatsPerSection);
-
-    if (!seatApi?.seatSide || !seatApi?.seatNumber) {
-      stopSubmitting("좌석 정보를 변환할 수 없습니다.");
+    const mapped = mapSeekDoorToSubmission(info.doorLabel, normalizedLine);
+    if (!mapped?.seatSide || !mapped?.seatNumber) {
+      stopSubmitting("출입문 정보를 변환할 수 없습니다.");
       return;
     }
+
+    const seatApi = {
+      seatSide: mapped.seatSide,
+      seatNumber: mapped.seatNumber,
+    };
 
     setSubmitError("");
 
@@ -1809,7 +1904,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
           train_id: trainId,
           line_number: lineNumber,
           direction: normalizeDirectionForStorage(trainDirection || "하행"),
-          car_number: info.car,
+          car_number: mapped.car,
           seat_side: seatApi.seatSide,
           seat_number: seatApi.seatNumber,
           destination_id: destinationMeta.stationCode,
@@ -1853,7 +1948,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         lineLabel: normalizedLine,
         lineNumber,
         trainNo: trainId,
-        carNumber: info.car,
+        carNumber: mapped.car,
         direction: normalizeDirectionForStorage(trainDirection || "하행"),
         boardingStationId: boardingMeta.stationCode,
         boardingStationName: boardingMeta.stationName,
@@ -1862,6 +1957,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         remainingStations: remainingStops,
         seatSide: seatApi.seatSide,
         seatNumber: seatApi.seatNumber,
+        doorLabel: info.doorLabel,
       };
 
       try {
@@ -2171,27 +2267,35 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       )}
       {step === 3 && (
         <StepFade stepKey={`step-3-${mode}-${trainId ?? ""}`}>
-        <StepSeat
-          line={normalizedLine}
-          station={station}
-          trainId={trainId}
-          lineNumber={lineNumber}
-          mode={mode}
-          direction={trainDirection}
-          drtnInfo={trainDrtnInfo}
-          currentStation={trainCurrentStation || currentStationName}
-          isSubmitting={isSubmitting}
-          onNext={(info) => {
-            setSubmitError("");
-            setIsSubmitting(true);
-            if (isLeaveMode) {
+        {isLeaveMode ? (
+          <StepSeat
+            line={normalizedLine}
+            station={station}
+            trainId={trainId}
+            lineNumber={lineNumber}
+            direction={trainDirection}
+            drtnInfo={trainDrtnInfo}
+            currentStation={trainCurrentStation || currentStationName}
+            isSubmitting={isSubmitting}
+            onNext={(info) => {
+              setSubmitError("");
+              setIsSubmitting(true);
               void submitLeaveRequest(info);
-              return;
-            }
-            void submitSeekRequest(info);
-          }}
-          onBack={handleBackFromStep3}
-        />
+            }}
+            onBack={handleBackFromStep3}
+          />
+        ) : (
+          <StepSeekDoor
+            line={normalizedLine}
+            isSubmitting={isSubmitting}
+            onNext={(info) => {
+              setSubmitError("");
+              setIsSubmitting(true);
+              void submitSeekRequest(info);
+            }}
+            onBack={handleBackFromStep3}
+          />
+        )}
         </StepFade>
       )}
       {submitError ? (

@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 import {
+  filterTrainsTowardDestination,
+  normalizeDirectionKey,
+} from '@/lib/train-direction'
+import {
   MOCK_LINE_1_STATIONS,
   MOCK_LINE_2_STATIONS,
   MOCK_LINE_S1_STATIONS,
@@ -114,7 +118,6 @@ const STATION_ORDER_BY_LINE: Record<SupportedLine, readonly string[]> = {
   incheon2: MOCK_LINE_2_STATIONS.map((s) => s.name),
 }
 
-type DirectionKey = 'up' | 'down'
 
 /** 상행·내선(1) / 하행·외선(2) 종착역명 (현재 위치 → 해당 방면) */
 const TERMINAL_BY_LINE: Record<SupportedLine, { up: string; down: string }> = {
@@ -237,14 +240,6 @@ function toBaseSeoulLine(seoulLine: SeoulLineParam): 'seoul1' | 'seoul2' | 'seou
 
 function normalizeStationName(name: string): string {
   return name.trim().replace(/\s+/g, '')
-}
-
-function normalizeDirectionKey(direction: string): DirectionKey | null {
-  const value = direction.trim()
-  if (value === '상행' || value === '내선' || value === '1') return 'up'
-  if (value === '하행' || value === '외선' || value === '2') return 'down'
-  if (value === '0') return 'down'
-  return null
 }
 
 function getPublicDataApiKey(): string | null {
@@ -561,14 +556,15 @@ async function fetchSeoulTrains(
 }
 
 /**
- * GET /api/trains?line=seoul1~seoul9|incheon1|incheon2&current_station=송내
- * — 호선별 열차 목록 (방향 표시 + 현재 역 기준 가까운 순, 동일 거리면 급행 우선)
+ * GET /api/trains?line=seoul1~seoul9|incheon1|incheon2&current_station=송내&station=강남
+ * — 호선별 열차 목록 (목적지 방향 필터 + 현재 역 기준 가까운 순)
  */
 export async function GET(request: Request) {
   try {
     const searchParams = new URL(request.url).searchParams
     const line = searchParams.get('line')?.trim()
     const currentStation = searchParams.get('current_station')?.trim() || null
+    const destinationStation = searchParams.get('station')?.trim() || null
 
     if (!line) {
       return errorResponse('line 파라미터가 필요합니다.', 400)
@@ -601,6 +597,13 @@ export async function GET(request: Request) {
       )
     }
 
+    trains = filterTrainsTowardDestination(
+      trains,
+      line,
+      stationOrder,
+      currentStation,
+      destinationStation
+    )
     trains = sortTrainsByProximity(trains, stationOrder, currentStation)
 
     return NextResponse.json(
