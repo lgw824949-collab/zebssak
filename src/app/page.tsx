@@ -36,48 +36,17 @@ const SEEK_LINE_OPTIONS = [
   { label: '인천 2호선', shortLabel: '인천2', badge: '인2', color: '#F5A200' },
 ] as const
 
-const HOME_GALLERY_IMAGES = [
-  { src: '/home-gallery/train-interior.png', alt: '지하철 객실 내부' },
-  { src: '/home-gallery/train-exterior.png', alt: '지하철 열차 외부' },
-  { src: '/home-gallery/platform.png', alt: '지하철 승강장' },
-] as const
-
 function HomeGallery() {
-  const [main, topRight, bottomRight] = HOME_GALLERY_IMAGES
-
   return (
     <section className="mb-6" aria-label="지하철 갤러리">
-      <div
-        className="grid grid-cols-2 grid-rows-2 gap-1"
-        style={{ aspectRatio: '16 / 10' }}
-      >
-        <div className="relative row-span-2 min-h-0 overflow-hidden rounded-lg">
-          <img
-            src={main.src}
-            alt={main.alt}
-            className="h-full w-full object-cover"
-            loading="eager"
-            decoding="async"
-          />
-        </div>
-        <div className="relative min-h-0 overflow-hidden rounded-lg">
-          <img
-            src={topRight.src}
-            alt={topRight.alt}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            decoding="async"
-          />
-        </div>
-        <div className="relative min-h-0 overflow-hidden rounded-lg">
-          <img
-            src={bottomRight.src}
-            alt={bottomRight.alt}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            decoding="async"
-          />
-        </div>
+      <div className="overflow-hidden rounded-lg" style={{ aspectRatio: '16 / 10' }}>
+        <img
+          src="/home-gallery/hero.png"
+          alt="지하철 객실 내부"
+          className="h-full w-full object-cover"
+          loading="eager"
+          decoding="async"
+        />
       </div>
     </section>
   )
