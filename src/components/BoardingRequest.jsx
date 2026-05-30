@@ -1430,7 +1430,7 @@ function StepTrain({
                     {train.id}
                   </div>
                   <div style={{ marginTop: 4, fontSize: 13, color: C.muted }}>
-                    {train.current}역 · {train.eta}
+                    {train.eta}
                   </div>
                 </div>
                 <span
