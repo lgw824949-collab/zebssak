@@ -25,15 +25,18 @@ function isStandaloneDisplay() {
 
 function downloadInternetShortcutFile() {
   const content = `[InternetShortcut]\r\nURL=${APP_ORIGIN}/\r\nIconIndex=0\r\nHotKey=0\r\n`
-  const blob = new Blob([content], { type: 'application/internet-shortcut' })
+  const blob = new Blob([content], { type: 'application/octet-stream' })
   const objectUrl = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = objectUrl
   anchor.download = '잽싸게.url'
+  anchor.style.display = 'none'
   document.body.appendChild(anchor)
   anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(objectUrl)
+  window.setTimeout(() => {
+    anchor.remove()
+    URL.revokeObjectURL(objectUrl)
+  }, 0)
 }
 
 interface InstallShortcutProps {
@@ -54,6 +57,7 @@ export default function InstallShortcut({ compact = false }: InstallShortcutProp
   useEffect(() => {
     if (isStandaloneDisplay()) {
       setIsInstalled(true)
+      setMessage('바탕화면 바로가기로 실행 중입니다.')
     }
 
     if ('serviceWorker' in navigator) {
@@ -83,7 +87,6 @@ export default function InstallShortcut({ compact = false }: InstallShortcutProp
   }, [])
 
   const handleInstall = useCallback(async () => {
-    setMessage('')
     setIsBusy(true)
 
     try {
@@ -94,7 +97,7 @@ export default function InstallShortcut({ compact = false }: InstallShortcutProp
           setMessage('설치 중입니다. 바탕화면·시작 메뉴에 추가됩니다.')
           setInstallPrompt(null)
         } else {
-          setMessage('설치를 취소했습니다. 아래 다운로드로 바로가기를 받을 수 있어요.')
+          setMessage('설치를 취소했습니다. 「바로가기 다운로드」로 받을 수 있어요.')
         }
         return
       }
@@ -111,19 +114,11 @@ export default function InstallShortcut({ compact = false }: InstallShortcutProp
     }
   }, [installPrompt, isIos])
 
-  if (isInstalled) {
-    return (
-      <div
-        className={
-          compact
-            ? 'rounded-xl border border-[#D8DCE2] bg-white px-3 py-2.5 text-xs font-semibold text-[#6F7682]'
-            : 'rounded-2xl border border-[#D8DCE2] bg-white px-4 py-3 text-sm font-semibold text-[#6F7682]'
-        }
-      >
-        앱 바로가기가 설치되어 있습니다.
-      </div>
-    )
-  }
+  const buttonLabel = isInstalled
+    ? '바로가기 설치됨'
+    : installPrompt
+      ? '바탕화면에 설치'
+      : '바로가기 다운로드'
 
   return (
     <div
@@ -135,20 +130,18 @@ export default function InstallShortcut({ compact = false }: InstallShortcutProp
     >
       <p className="text-sm font-bold text-[#0B1F4B]">바탕화면 바로가기</p>
       <p className="mt-1 text-xs font-medium leading-relaxed text-[#6F7682]">
-        {installPrompt
-          ? '한 번에 설치하면 PC·휴대폰 바탕화면에 잽싸게 아이콘이 생겨요.'
-          : '다운로드 받아 바탕화면에 두면 앱처럼 바로 열 수 있어요.'}
+        다운로드 또는 설치하면 바탕화면에서 앱처럼 바로 열 수 있어요.
       </p>
       <button
         type="button"
-        disabled={isBusy}
+        disabled={isBusy || isInstalled}
         onClick={() => {
           void handleInstall()
         }}
-        className="zeb-touch-target mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0B1F4B] px-4 py-3 text-sm font-extrabold text-white transition active:scale-[0.98] disabled:opacity-60"
+        className="zeb-touch-target mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0B1F4B] px-4 py-3 text-sm font-extrabold text-white transition active:scale-[0.98] disabled:cursor-default disabled:opacity-60"
       >
         <span aria-hidden>⬇️</span>
-        {installPrompt ? '바탕화면에 설치' : '바로가기 다운로드'}
+        {buttonLabel}
       </button>
       {message ? (
         <p className="mt-2 text-xs font-semibold leading-relaxed text-[#2563EB]" role="status">
