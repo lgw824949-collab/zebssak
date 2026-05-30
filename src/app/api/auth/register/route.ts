@@ -42,6 +42,12 @@ function mapDatabaseError(message: string, code?: string) {
       500
     )
   }
+  if (message.includes('Legacy API keys are disabled')) {
+    return errorResponse(
+      'Supabase 레거시 API 키가 비활성화되었습니다. Vercel에 SUPABASE_SECRET_KEY(sb_secret_…)를 설정해주세요.',
+      500
+    )
+  }
   if (process.env.NODE_ENV === 'development') {
     return errorResponse(`회원가입 실패: ${message}`, 500)
   }

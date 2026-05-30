@@ -12,17 +12,18 @@ function resolveServiceRoleKey(): string {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
 
-  if (serviceRoleJwt?.startsWith('eyJ')) {
-    assertJwtServiceRole(serviceRoleJwt)
-    return serviceRoleJwt
-  }
-
+  // 신규 secret 키 우선 (레거시 JWT 비활성화 프로젝트 호환)
   if (secretKey?.startsWith('sb_secret_')) {
     return secretKey
   }
 
   if (secretKey) {
     return secretKey
+  }
+
+  if (serviceRoleJwt?.startsWith('eyJ')) {
+    assertJwtServiceRole(serviceRoleJwt)
+    return serviceRoleJwt
   }
 
   if (serviceRoleJwt) {
