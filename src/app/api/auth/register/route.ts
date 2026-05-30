@@ -4,11 +4,13 @@ import {
   checkSuspended,
   errorResponse,
   getAdminClient,
+  normalizeUsername,
   parseJsonBody,
   successResponse,
   toPublicUser,
   validateCredentials,
 } from '../_utils'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 interface RegisterBody {
   username?: unknown
@@ -17,6 +19,9 @@ interface RegisterBody {
   phone?: unknown
   is_vulnerable?: unknown
 }
+
+const REGISTER_USER_COLUMNS =
+  'id, username, nickname, phone, is_vulnerable, no_show_count, suspended_until, total_points, created_at'
 
 /**
  * Supabase DB 오류를 사용자용 메시지로 변환합니다.
@@ -31,10 +36,76 @@ function mapDatabaseError(message: string, code?: string) {
   if (code === '23505') {
     return errorResponse('이미 사용 중인 아이디입니다.', 409)
   }
+  if (code === '23503' || message.includes('auth.users')) {
+    return errorResponse(
+      '계정 DB 연동 오류입니다. Supabase에서 custom auth migration(002)을 실행해주세요.',
+      500
+    )
+  }
   if (process.env.NODE_ENV === 'development') {
     return errorResponse(`회원가입 실패: ${message}`, 500)
   }
   return errorResponse('회원가입에 실패했습니다.', 500)
+}
+
+/**
+ * auth.users FK가 남아 있는 DB에서 회원가입을 처리합니다.
+ */
+async function registerWithAuthUser(
+  supabase: SupabaseClient,
+  username: string,
+  password: string,
+  passwordHash: string,
+  insertPayload: Record<string, string | boolean>
+) {
+  const email = `${username}@users.zebssak.app`
+
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { username },
+  })
+
+  if (authError || !authData.user) {
+    return mapDatabaseError(authError?.message ?? 'auth 사용자 생성 실패', authError?.code)
+  }
+
+  const userId = authData.user.id
+
+  const { data: updated, error: updateError } = await supabase
+    .from('users')
+    .update({
+      username,
+      password_hash: passwordHash,
+      email,
+      ...insertPayload,
+    })
+    .eq('id', userId)
+    .select(REGISTER_USER_COLUMNS)
+    .maybeSingle()
+
+  if (!updateError && updated) {
+    return updated
+  }
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('users')
+    .insert({
+      id: userId,
+      email,
+      username,
+      password_hash: passwordHash,
+      ...insertPayload,
+    })
+    .select(REGISTER_USER_COLUMNS)
+    .single()
+
+  if (insertError) {
+    return mapDatabaseError(insertError.message, insertError.code)
+  }
+
+  return inserted
 }
 
 /**
@@ -52,7 +123,7 @@ export async function POST(request: Request) {
       return errorResponse(validationError, 400)
     }
 
-    const username = (body.username as string).trim()
+    const username = normalizeUsername(body.username as string)
     const password = body.password as string
 
     const supabaseOrResponse = getAdminClient()
@@ -95,20 +166,34 @@ export async function POST(request: Request) {
     const { data, error } = await supabase
       .from('users')
       .insert(insertPayload)
-      .select(
-        'id, username, nickname, phone, is_vulnerable, no_show_count, suspended_until, total_points, created_at'
-      )
+      .select(REGISTER_USER_COLUMNS)
       .single()
 
+    let userRow: Record<string, unknown> | null = data as Record<string, unknown> | null
+
     if (error) {
-      return mapDatabaseError(error.message, error.code)
+      if (error.code === '23503' || error.message.includes('auth.users')) {
+        const fallback = await registerWithAuthUser(
+          supabase,
+          username,
+          password,
+          passwordHash,
+          insertPayload
+        )
+        if (fallback instanceof Response) {
+          return fallback
+        }
+        userRow = fallback as Record<string, unknown>
+      } else {
+        return mapDatabaseError(error.message, error.code)
+      }
     }
 
-    if (!data) {
+    if (!userRow) {
       return errorResponse('회원가입에 실패했습니다.', 500)
     }
 
-    const user = toPublicUser(data as Record<string, unknown>)
+    const user = toPublicUser(userRow as Record<string, unknown>)
     const suspendedMessage = checkSuspended(user)
     if (suspendedMessage) {
       return errorResponse(suspendedMessage, 403)
@@ -119,6 +204,9 @@ export async function POST(request: Request) {
     return successResponse({ user, token }, 201)
   } catch (error) {
     if (error instanceof Error && error.message.includes('JWT_SECRET')) {
+      return errorResponse(error.message, 500)
+    }
+    if (error instanceof Error && error.message.includes('service_role')) {
       return errorResponse(error.message, 500)
     }
     return errorResponse('서버 오류가 발생했습니다.', 500)

@@ -69,6 +69,10 @@ export default function RegisterPage() {
               id="username"
               type="text"
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="text"
               required
               minLength={4}
               maxLength={20}
@@ -91,6 +95,8 @@ export default function RegisterPage() {
               id="password"
               type="password"
               autoComplete="new-password"
+              autoCapitalize="none"
+              autoCorrect="off"
               required
               minLength={6}
               value={password}

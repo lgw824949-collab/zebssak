@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
+import type { PostgrestError } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
+
+const LOGIN_USER_COLUMNS =
+  'id, username, password_hash, nickname, phone, is_vulnerable, no_show_count, suspended_until, total_points, created_at'
 
 export interface PublicUser {
   id: string
@@ -53,6 +57,54 @@ export function successResponse(
 /**
  * 아이디·비밀번호 필수값을 검증합니다.
  */
+/**
+ * 로그인·회원가입용 아이디를 정규화합니다 (모바일 대소문자 오입력 방지).
+ */
+export function normalizeUsername(username: string): string {
+  return username.trim().toLowerCase()
+}
+
+/**
+ * 아이디로 사용자 행을 조회합니다 (소문자 우선, 레거시 대소문자 혼용 호환).
+ */
+export async function findUserByUsername(
+  supabase: SupabaseClient,
+  usernameInput: string
+): Promise<{
+  data: Record<string, unknown> | null
+  error: PostgrestError | null
+}> {
+  const trimmed = usernameInput.trim()
+  const lowered = normalizeUsername(trimmed)
+
+  const lookup = async (name: string) =>
+    supabase
+      .from('users')
+      .select(LOGIN_USER_COLUMNS)
+      .eq('username', name)
+      .maybeSingle()
+
+  let result = await lookup(lowered)
+  if (result.error) {
+    return { data: null, error: result.error }
+  }
+  if (result.data) {
+    return { data: result.data as Record<string, unknown>, error: null }
+  }
+
+  if (trimmed !== lowered) {
+    result = await lookup(trimmed)
+    if (result.error) {
+      return { data: null, error: result.error }
+    }
+    if (result.data) {
+      return { data: result.data as Record<string, unknown>, error: null }
+    }
+  }
+
+  return { data: null, error: null }
+}
+
 export function validateCredentials(
   username: unknown,
   password: unknown
@@ -60,11 +112,11 @@ export function validateCredentials(
   if (typeof username !== 'string' || !username.trim()) {
     return '아이디를 입력해주세요.'
   }
-  const trimmedUsername = username.trim()
+  const trimmedUsername = normalizeUsername(username)
   if (trimmedUsername.length < 4 || trimmedUsername.length > 20) {
     return '아이디는 4~20자여야 합니다.'
   }
-  if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
+  if (!/^[a-z0-9_]+$/.test(trimmedUsername)) {
     return '아이디는 영문, 숫자, 밑줄(_)만 사용할 수 있습니다.'
   }
   if (typeof password !== 'string' || password.length < 6) {

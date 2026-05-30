@@ -1,9 +1,11 @@
-import { verifyPassword } from '@/lib/password'
+import { upgradePlainPasswordHash, verifyPassword } from '@/lib/password'
 import { signAccessToken } from '@/lib/jwt'
 import {
   checkSuspended,
   errorResponse,
+  findUserByUsername,
   getAdminClient,
+  normalizeUsername,
   parseJsonBody,
   successResponse,
   toPublicUser,
@@ -30,7 +32,7 @@ export async function POST(request: Request) {
       return errorResponse(validationError, 400)
     }
 
-    const username = (body.username as string).trim()
+    const username = normalizeUsername(body.username as string)
     const password = body.password as string
 
     const supabaseOrResponse = getAdminClient()
@@ -39,15 +41,16 @@ export async function POST(request: Request) {
     }
     const supabase = supabaseOrResponse
 
-    const { data, error } = await supabase
-      .from('users')
-      .select(
-        'id, username, password_hash, nickname, phone, is_vulnerable, no_show_count, suspended_until, total_points, created_at'
-      )
-      .eq('username', username)
-      .maybeSingle()
+    const { data, error } = await findUserByUsername(supabase, username)
 
-    if (error || !data) {
+    if (error) {
+      return errorResponse(
+        '로그인 서버 설정을 확인해주세요. (Supabase service_role 키)',
+        500
+      )
+    }
+
+    if (!data) {
       return errorResponse('아이디 또는 비밀번호가 올바르지 않습니다.', 401)
     }
 
@@ -58,7 +61,14 @@ export async function POST(request: Request) {
       return errorResponse('아이디 또는 비밀번호가 올바르지 않습니다.', 401)
     }
 
-    const user = toPublicUser(data as Record<string, unknown>)
+    const userId = String(data.id)
+    try {
+      await upgradePlainPasswordHash(supabase, userId, password, passwordHash)
+    } catch {
+      // 해시 갱신 실패해도 로그인은 허용
+    }
+
+    const user = toPublicUser(data)
     const suspendedMessage = checkSuspended(user)
     if (suspendedMessage) {
       return errorResponse(suspendedMessage, 403)
@@ -69,6 +79,9 @@ export async function POST(request: Request) {
     return successResponse({ user, token })
   } catch (error) {
     if (error instanceof Error && error.message.includes('JWT_SECRET')) {
+      return errorResponse(error.message, 500)
+    }
+    if (error instanceof Error && error.message.includes('service_role')) {
       return errorResponse(error.message, 500)
     }
     return errorResponse('서버 오류가 발생했습니다.', 500)
