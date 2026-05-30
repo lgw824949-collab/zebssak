@@ -37,8 +37,8 @@ const SEEK_LINE_OPTIONS = [
 ] as const
 
 const HOME_GALLERY_IMAGES = [
-  { src: '/home-gallery/train-exterior.png', alt: '지하철 열차 외부' },
   { src: '/home-gallery/train-interior.png', alt: '지하철 객실 내부' },
+  { src: '/home-gallery/train-exterior.png', alt: '지하철 열차 외부' },
   { src: '/home-gallery/platform.png', alt: '지하철 승강장' },
 ] as const
 
