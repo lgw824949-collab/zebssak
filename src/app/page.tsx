@@ -20,6 +20,8 @@ interface CongestionApiData {
   latest_by_line?: Record<string, { congestion_level?: number } | null>
 }
 
+/** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
+const GPS_MAX_RADIUS_KM = 1
 /** 홈 화면 표시용 실시간 이용자 수 (대기 인원과 별개) */
 const ACTIVE_USER_DISPLAY_BASE = 6000
 const SEEK_LINE_OPTIONS = [
@@ -165,81 +167,103 @@ export default function Home() {
     router.push(`/boarding?${params.toString()}`)
   }
 
+  async function saveDetectedLocation(
+    lineLabel: string,
+    lat: number,
+    lng: number,
+    nearestStationName: string,
+    within1km: boolean,
+    distanceKm: number | null
+  ) {
+    try {
+      sessionStorage.setItem(
+        'boardingDetectedLocation',
+        JSON.stringify({
+          lineLabel,
+          lat,
+          lng,
+          nearestStationName,
+          detectedAt: Date.now(),
+          within1km,
+          distanceKm,
+        })
+      )
+    } catch {
+      // 저장 실패 시 탑승 흐름은 유지합니다.
+    }
+  }
+
   async function startSeekByLineSelection(lineLabel: string) {
     setSelectedSeekLineLabel(lineLabel)
+    // GPS·역 목록 조회를 기다리지 않고 바로 탑승 화면으로 이동합니다.
+    void pushSeekPage(lineLabel)
 
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      await pushSeekPage(lineLabel)
       return
     }
 
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const apiLine = mapLineLabelToApiLine(lineLabel)
-          let nearestStationName = ''
+      (position) => {
+        void (async () => {
+          try {
+            const apiLine = mapLineLabelToApiLine(lineLabel)
 
-          if (apiLine) {
-            const response = await fetch(`/api/stations?line=${encodeURIComponent(apiLine)}`, {
-              method: 'GET',
-              cache: 'no-store',
-            })
-            if (response.ok) {
-              const payload = (await response.json()) as {
-                success?: boolean
-                stations?: Array<{
-                  name?: string
-                  lat?: number | null
-                  lng?: number | null
-                }>
-              }
-              if (payload.success && Array.isArray(payload.stations)) {
-                let nearest: { name: string; dist: number } | null = null
-                for (const station of payload.stations) {
-                  if (
-                    !station?.name ||
-                    typeof station.lat !== 'number' ||
-                    typeof station.lng !== 'number'
-                  ) {
-                    continue
+            if (apiLine) {
+              const response = await fetch(`/api/stations?line=${encodeURIComponent(apiLine)}`, {
+                method: 'GET',
+                cache: 'default',
+              })
+              if (response.ok) {
+                const payload = (await response.json()) as {
+                  success?: boolean
+                  stations?: Array<{
+                    name?: string
+                    lat?: number | null
+                    lng?: number | null
+                  }>
+                }
+                if (payload.success && Array.isArray(payload.stations)) {
+                  let nearestWithinRadius: { name: string; dist: number } | null = null
+                  for (const station of payload.stations) {
+                    if (
+                      !station?.name ||
+                      typeof station.lat !== 'number' ||
+                      typeof station.lng !== 'number'
+                    ) {
+                      continue
+                    }
+                    const dist = distanceKm(
+                      position.coords.latitude,
+                      position.coords.longitude,
+                      station.lat,
+                      station.lng
+                    )
+                    if (dist <= GPS_MAX_RADIUS_KM) {
+                      if (!nearestWithinRadius || dist < nearestWithinRadius.dist) {
+                        nearestWithinRadius = { name: station.name, dist }
+                      }
+                    }
                   }
-                  const dist = distanceKm(
-                    position.coords.latitude,
-                    position.coords.longitude,
-                    station.lat,
-                    station.lng
-                  )
-                  if (!nearest || dist < nearest.dist) {
-                    nearest = { name: station.name, dist }
+                  if (nearestWithinRadius?.name) {
+                    await saveDetectedLocation(
+                      lineLabel,
+                      position.coords.latitude,
+                      position.coords.longitude,
+                      nearestWithinRadius.name,
+                      true,
+                      nearestWithinRadius.dist
+                    )
                   }
                 }
-                nearestStationName = nearest?.name ?? ''
               }
             }
-          }
-
-          try {
-            sessionStorage.setItem(
-              'boardingDetectedLocation',
-              JSON.stringify({
-                lineLabel,
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-                nearestStationName,
-                detectedAt: Date.now(),
-              })
-            )
           } catch {
-            // 저장 실패 시 이동 흐름은 유지합니다.
+            // 백그라운드 위치 저장 실패는 무시합니다.
           }
-
-          await pushSeekPage(lineLabel)
-        } catch {
-          await pushSeekPage(lineLabel)
-        }
+        })()
       },
-      async () => {
-        await pushSeekPage(lineLabel)
+      () => {
+        // 위치 거부 시에도 탑승 화면 이동은 이미 완료됨
       },
       {
         enableHighAccuracy: false,
@@ -298,9 +322,7 @@ export default function Home() {
                   <button
                     key={line.label}
                     type="button"
-                    onClick={() => {
-                      void startSeekByLineSelection(line.label)
-                    }}
+                    onClick={() => setSelectedSeekLineLabel(line.label)}
                     className="flex flex-col items-center gap-1"
                     aria-label={line.label}
                   >

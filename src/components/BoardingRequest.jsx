@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import SubwaySeatMap, { mapSeatIdToApi } from "@/components/SubwaySeatMap";
+import { handleUnauthorizedResponse } from "@/lib/auth-client";
 import { normalizeDirectionForStorage } from "@/lib/match-direction";
 
 function resolveApiLineFromLineProp(lineLabel) {
@@ -109,23 +110,36 @@ function resolveApiLineKeyFromLineProp(lineLabel) {
   return "seoul2";
 }
 
-/** 호선별 역 목록 (서버 API — DB/RLS 없이 한글 역명 보장) */
+const STATION_LIST_CACHE_MS = 30 * 60 * 1000;
+/** @type {Map<string, { stations: unknown[], fetchedAt: number }>} */
+const stationListCache = new Map();
+
+/** 호선별 역 목록 (서버 API — 클라이언트 메모리 캐시로 중복 요청 방지) */
 async function fetchStationsForLine(lineLabel) {
   const apiLine = resolveApiLineFromLineProp(lineLabel);
   if (!apiLine) return null;
 
+  const cached = stationListCache.get(apiLine);
+  if (cached && Date.now() - cached.fetchedAt < STATION_LIST_CACHE_MS) {
+    return cached.stations;
+  }
+
   try {
     const response = await fetch(
       `/api/stations?line=${encodeURIComponent(apiLine)}`,
-      { cache: "no-store" }
+      { cache: "default" }
     );
     const payload = await response.json();
     if (!response.ok || !payload?.success || !Array.isArray(payload.stations)) {
-      return null;
+      return cached?.stations ?? null;
     }
+    stationListCache.set(apiLine, {
+      stations: payload.stations,
+      fetchedAt: Date.now(),
+    });
     return payload.stations;
   } catch {
-    return null;
+    return cached?.stations ?? null;
   }
 }
 
@@ -134,6 +148,249 @@ function stationMatchesSearch(stationName, rawQuery) {
   const searchTerm = normalizeStationSearchTerm(rawQuery);
   if (!searchTerm) return false;
   return searchName.includes(searchTerm);
+}
+
+const VOICE_PARSE_PENDING_KEY = "voiceParsePending";
+/** GPS 자동 출발역 설정 최대 반경 (km) */
+const GPS_MAX_RADIUS_KM = 1;
+const BOARDING_GPS_CACHE_TTL_MS = 5 * 60 * 1000;
+const TRAIN_LIST_REFRESH_MS = 30000;
+const TRAIN_DISPLAY_LIMIT = 2;
+
+function distanceKm(lat1, lng1, lat2, lng2) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * GPS 좌표로 현재 노선 1km 이내 가장 가까운 역 탐색
+ * @returns {{ stationName: string | null, reason: string }}
+ */
+function detectNearestStationFromGps(lineLabel) {
+  if (typeof window === "undefined" || !navigator.geolocation) {
+    return Promise.resolve({ stationName: null, reason: "unsupported" });
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        void (async () => {
+          try {
+            const stations = await fetchStationsForLine(lineLabel);
+            if (!stations?.length) {
+              resolve({ stationName: null, reason: "no_coords" });
+              return;
+            }
+
+            let nearestWithinRadius = null;
+            let nearestAny = null;
+            for (const station of stations) {
+              if (
+                !station?.name ||
+                typeof station.lat !== "number" ||
+                typeof station.lng !== "number"
+              ) {
+                continue;
+              }
+              const dist = distanceKm(
+                position.coords.latitude,
+                position.coords.longitude,
+                station.lat,
+                station.lng
+              );
+              if (!nearestAny || dist < nearestAny.dist) {
+                nearestAny = { name: station.name, dist };
+              }
+              if (dist <= GPS_MAX_RADIUS_KM) {
+                if (!nearestWithinRadius || dist < nearestWithinRadius.dist) {
+                  nearestWithinRadius = { name: station.name, dist };
+                }
+              }
+            }
+
+            if (nearestWithinRadius?.name) {
+              resolve({
+                stationName: nearestWithinRadius.name,
+                reason: "ok",
+                distanceKm: nearestWithinRadius.dist,
+              });
+              return;
+            }
+
+            if (nearestAny?.name) {
+              resolve({ stationName: null, reason: "out_of_range" });
+              return;
+            }
+
+            resolve({ stationName: null, reason: "no_coords" });
+          } catch {
+            resolve({ stationName: null, reason: "weak" });
+          }
+        })();
+      },
+      () => resolve({ stationName: null, reason: "denied" }),
+      {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 60000,
+      }
+    );
+  });
+}
+
+function normalizeStationLabel(name) {
+  return normalizeStationSearchTerm((name || "").trim().replace(/역$/u, ""));
+}
+
+/** 현재 역 기준 표시할 열차 1~2대 (해당 역에 있는 열차 우선) */
+function pickTrainsForCurrentStation(trains, currentStation) {
+  if (!Array.isArray(trains) || trains.length === 0) {
+    return [];
+  }
+
+  const target = normalizeStationLabel(currentStation);
+  if (!target) {
+    return trains.slice(0, TRAIN_DISPLAY_LIMIT);
+  }
+
+  const atCurrentStation = trains.filter(
+    (train) => normalizeStationLabel(train.current) === target
+  );
+  if (atCurrentStation.length > 0) {
+    return atCurrentStation.slice(0, TRAIN_DISPLAY_LIMIT);
+  }
+
+  return trains.slice(0, TRAIN_DISPLAY_LIMIT);
+}
+
+function saveBoardingGpsLocation(
+  lineLabel,
+  stationName,
+  { within1km = true, distanceKmValue = null } = {}
+) {
+  try {
+    sessionStorage.setItem(
+      "boardingDetectedLocation",
+      JSON.stringify({
+        lineLabel,
+        nearestStationName: stationName,
+        within1km,
+        manual: !within1km,
+        distanceKm: distanceKmValue,
+        detectedAt: Date.now(),
+      })
+    );
+  } catch {
+    // 저장 실패 시 화면 상태만 유지합니다.
+  }
+}
+
+/** /api/voice/parse로 음성 텍스트에서 목적지·모드 추출 */
+async function parseVoiceIntentWithApi(transcript) {
+  const token = localStorage.getItem("token");
+  const response = await fetch("/api/voice/parse", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ transcript }),
+  });
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("음성 해석 응답을 처리할 수 없습니다.");
+  }
+
+  if (handleUnauthorizedResponse(response)) {
+    throw new Error("로그인이 필요합니다.");
+  }
+
+  if (!response.ok || payload?.success === false) {
+    throw new Error(
+      typeof payload?.error === "string" && payload.error.trim()
+        ? payload.error
+        : "음성 해석에 실패했습니다."
+    );
+  }
+
+  const destination =
+    typeof payload?.data?.destination === "string"
+      ? payload.data.destination.trim().replace(/역$/u, "")
+      : "";
+  const mode = payload?.data?.mode === "leave" ? "leave" : payload?.data?.mode === "seek" ? "seek" : null;
+
+  return {
+    destination: destination || null,
+    mode,
+  };
+}
+
+/** 음성 문장에서 노선 역 목록 기준 목적지(마지막 매칭 역) 추출 */
+function findDestinationInTranscript(transcript, stationRows) {
+  const normalizedText = (transcript || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/역/gu, "");
+  if (!normalizedText || !Array.isArray(stationRows)) {
+    return null;
+  }
+
+  const matches = [];
+  for (const row of stationRows) {
+    const name = row?.name?.trim();
+    if (!name) continue;
+    const normalizedStation = name.replace(/\s+/g, "").replace(/역$/u, "");
+    if (normalizedStation.length < 2) continue;
+    const index = normalizedText.indexOf(normalizedStation);
+    if (index >= 0) {
+      matches.push({ name, index });
+    }
+  }
+
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => a.index - b.index);
+  return matches[matches.length - 1].name;
+}
+
+/** 음성 문장에서 모드 추출 — seek/leave 공통 */
+function extractModeFromVoiceTranscript(transcript) {
+  const text = (transcript || "").trim();
+  if (/내려|내릴/u.test(text)) {
+    return "leave";
+  }
+  if (/앉고|안고|싶어/u.test(text)) {
+    return "seek";
+  }
+  return null;
+}
+
+/** 파싱된 목적지 문자열을 현재 노선 역 목록에서 매칭 */
+async function resolveStationNameFromDestination(destination, lineLabel) {
+  const term = normalizeStationSearchTerm(destination);
+  if (!term) return null;
+
+  const stations = await fetchStationsForLine(lineLabel);
+  if (!stations?.length) return null;
+
+  const exact = stations.find(
+    (row) => normalizeStationSearchTerm(row?.name) === term
+  );
+  if (exact?.name) return exact.name.trim();
+
+  const partialMatches = stations
+    .map((row) => row?.name?.trim())
+    .filter((name) => name && stationMatchesSearch(name, destination))
+    .sort((a, b) => a.length - b.length);
+
+  return partialMatches[0] ?? null;
 }
 
 /** 역명으로 station_code·순서 조회 */
@@ -290,23 +547,164 @@ function BottomButton({ label, onClick, disabled }) {
   );
 }
 
-// ─── Step 1: 하차역 검색 ─────────────────────────────────────────
-function StepStation({ line, mode, onNext, onBack }) {
-  const isLeaveMode = mode === "leave";
+// ─── Step 1: 목적지 선택 (출발역은 GPS 자동) ─────────────────────
+function StepStation({
+  line,
+  mode,
+  boardingStationName,
+  isDetectingBoardingStation,
+  needsManualBoardingStation,
+  boardingGpsMessage,
+  onBoardingStationChange,
+  onNext,
+  onBack,
+  onParsedModeChange,
+}) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [results, setResults] = useState([]);
+  const [boardingQuery, setBoardingQuery] = useState("");
+  const [boardingResults, setBoardingResults] = useState([]);
   const [searchError, setSearchError] = useState("");
+  const [boardingSearchError, setBoardingSearchError] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [isParsingVoice, setIsParsingVoice] = useState(false);
   const inputRef = useRef(null);
+  const boardingInputRef = useRef(null);
   const apiLine = resolveApiLineFromLineProp(line);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    if (needsManualBoardingStation) {
+      boardingInputRef.current?.focus();
+      return;
+    }
+    inputRef.current?.focus();
+  }, [needsManualBoardingStation]);
+
+  async function applyParsedVoice({ destination, parsedMode }) {
+    if (parsedMode && parsedMode !== mode) {
+      try {
+        if (destination) {
+          sessionStorage.setItem(
+            VOICE_PARSE_PENDING_KEY,
+            JSON.stringify({ destination })
+          );
+        }
+      } catch {
+        // sessionStorage 실패 시 모드만 변경합니다.
+      }
+      onParsedModeChange?.(parsedMode);
+      return;
+    }
+
+    if (!destination) {
+      setVoiceError("목적지를 찾지 못했습니다. 역 이름을 다시 말씀해 주세요.");
+      return;
+    }
+
+    const stationName = await resolveStationNameFromDestination(destination, line);
+    if (!stationName) {
+      setQuery(destination);
+      setSelected(null);
+      setVoiceError(`"${destination}" 역을 이 노선에서 찾지 못했습니다.`);
+      return;
+    }
+
+    setQuery(stationName);
+    setSelected(stationName);
+    setVoiceError("");
+    onNext(stationName);
+  }
+
+  async function resolveVoiceParse(transcript) {
+    const localMode = extractModeFromVoiceTranscript(transcript);
+    const stations = await fetchStationsForLine(line);
+    const localDestination = findDestinationInTranscript(transcript, stations);
+    let destination = localDestination
+      ? localDestination.replace(/역$/u, "")
+      : null;
+    let apiMode = null;
+
+    if (!destination) {
+      try {
+        const parsed = await parseVoiceIntentWithApi(transcript);
+        destination = parsed.destination;
+        apiMode = parsed.mode;
+      } catch {
+        // API 실패 시 로컬 목적지·모드만 사용합니다.
+      }
+    }
+
+    return {
+      destination,
+      mode: localMode ?? apiMode ?? null,
+    };
+  }
+
+  async function processVoiceTranscript(transcript) {
+    setIsParsingVoice(true);
+    setVoiceError("");
+    setSearchError("");
+    try {
+      const parsed = await resolveVoiceParse(transcript);
+      await applyParsedVoice({
+        destination: parsed.destination,
+        parsedMode: parsed.mode,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message ? err.message : "음성 처리 중 오류가 발생했습니다.";
+      setVoiceError(message);
+      setSelected(null);
+    } finally {
+      setIsParsingVoice(false);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    const runPendingVoice = async () => {
+      try {
+        const raw = sessionStorage.getItem(VOICE_PARSE_PENDING_KEY);
+        if (!raw) return;
+        sessionStorage.removeItem(VOICE_PARSE_PENDING_KEY);
+        const pending = JSON.parse(raw);
+        const destination =
+          typeof pending?.destination === "string" ? pending.destination.trim() : "";
+        if (!destination || !active) return;
+
+        const stationName = await resolveStationNameFromDestination(destination, line);
+        if (!active) return;
+
+        if (stationName) {
+          setQuery(stationName);
+          setSelected(stationName);
+          setVoiceError("");
+          onNext(stationName);
+          return;
+        }
+
+        setQuery(destination);
+        setVoiceError(`"${destination}" 역을 이 노선에서 찾지 못했습니다.`);
+      } catch {
+        if (!active) return;
+        setVoiceError("음성으로 받은 목적지를 처리하지 못했습니다.");
+      }
+    };
+
+    void runPendingVoice();
+    return () => {
+      active = false;
+    };
+  }, [line, onNext]);
 
   function startVoiceSearch() {
     setVoiceError("");
     if (typeof window === "undefined") return;
+    if (isParsingVoice) return;
+
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -323,8 +721,7 @@ function StepStation({ line, mode, onNext, onBack }) {
       recognition.onresult = (event) => {
         const transcript = event.results?.[0]?.[0]?.transcript?.trim();
         if (transcript) {
-          setQuery(transcript);
-          setSelected(null);
+          void processVoiceTranscript(transcript);
         }
       };
       recognition.onerror = () => {
@@ -389,28 +786,196 @@ function StepStation({ line, mode, onNext, onBack }) {
       }
     };
 
-    void loadStations();
+    const debounceTimer = setTimeout(() => {
+      void loadStations();
+    }, 280);
+
     return () => {
       active = false;
+      clearTimeout(debounceTimer);
     };
   }, [query, line, apiLine]);
+
+  useEffect(() => {
+    if (!needsManualBoardingStation) {
+      setBoardingQuery("");
+      setBoardingResults([]);
+      setBoardingSearchError("");
+      return;
+    }
+
+    let active = true;
+    const trimmed = boardingQuery.trim();
+    const searchTerm = normalizeStationSearchTerm(trimmed);
+    if (searchTerm.length < 1) {
+      setBoardingResults([]);
+      setBoardingSearchError("");
+      return () => {
+        active = false;
+      };
+    }
+
+    if (!apiLine) {
+      setBoardingResults([]);
+      setBoardingSearchError("이 노선은 역 검색을 지원하지 않습니다.");
+      return () => {
+        active = false;
+      };
+    }
+
+    const loadBoardingStations = async () => {
+      setBoardingSearchError("");
+      try {
+        const stations = await fetchStationsForLine(line);
+        if (!active) return;
+        if (!stations) {
+          setBoardingResults([]);
+          setBoardingSearchError("역 목록을 불러오지 못했습니다.");
+          return;
+        }
+        const names = stations
+          .map((row) => row?.name?.trim())
+          .filter((name) => name && stationMatchesSearch(name, trimmed))
+          .slice(0, 8);
+        setBoardingResults(names);
+      } catch {
+        if (!active) return;
+        setBoardingResults([]);
+        setBoardingSearchError("역 검색 중 오류가 발생했습니다.");
+      }
+    };
+
+    const debounceTimer = setTimeout(() => {
+      void loadBoardingStations();
+    }, 280);
+
+    return () => {
+      active = false;
+      clearTimeout(debounceTimer);
+    };
+  }, [boardingQuery, line, apiLine, needsManualBoardingStation]);
+
+  const canProceedToTrainStep =
+    Boolean(selected) && Boolean(boardingStationName) && !isDetectingBoardingStation;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
       <Header
         step={1}
         onBack={onBack}
-        title={isLeaveMode ? "내릴 역 선택" : "하차역 선택"}
+        title="목적지 선택"
         line={line}
       />
       <div style={{ flex: 1, overflow: "auto", padding: "16px 16px 0" }}>
         <StepDots step={1} />
-        <div style={{ marginTop: 16, position: "relative" }}>
+        <div
+          style={{
+            marginTop: 16,
+            padding: "10px 14px",
+            borderRadius: 10,
+            background: needsManualBoardingStation ? "#FFF7ED" : "#F0F4F8",
+            border: `1px solid ${needsManualBoardingStation ? "#FDBA74" : C.border}`,
+          }}
+        >
+          <p style={{ margin: 0, fontSize: 12, color: C.muted }}>현재 위치 (GPS 1km 이내)</p>
+          <p style={{ margin: "4px 0 0", fontSize: 15, fontWeight: 700, color: C.text }}>
+            {isDetectingBoardingStation
+              ? "위치 확인 중…"
+              : boardingStationName
+                ? formatStationDisplayName(boardingStationName)
+                : "자동 설정되지 않음"}
+          </p>
+          {needsManualBoardingStation && boardingGpsMessage ? (
+            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#C2410C", lineHeight: 1.45 }}>
+              {boardingGpsMessage}
+            </p>
+          ) : null}
+        </div>
+
+        {needsManualBoardingStation ? (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: C.text }}>
+              현재 역 직접 선택
+            </p>
+            <div style={{ position: "relative" }}>
+              <input
+                ref={boardingInputRef}
+                value={boardingQuery}
+                onChange={(e) => setBoardingQuery(e.target.value)}
+                placeholder="현재 역 검색 (예: 신도림)"
+                style={{
+                  width: "100%",
+                  padding: "13px 16px 13px 42px",
+                  border: `1.5px solid ${boardingQuery ? C.primary : C.border}`,
+                  borderRadius: 12,
+                  fontSize: 15,
+                  background: C.card,
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              <span
+                style={{
+                  position: "absolute",
+                  left: 14,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  fontSize: 18,
+                  color: C.muted,
+                }}
+              >
+                📍
+              </span>
+            </div>
+            {boardingSearchError ? (
+              <p style={{ marginTop: 6, fontSize: 12, color: "#DC2626" }}>{boardingSearchError}</p>
+            ) : null}
+            {boardingResults.length > 0 ? (
+              <div
+                style={{
+                  marginTop: 8,
+                  background: C.card,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 12,
+                  overflow: "hidden",
+                }}
+              >
+                {boardingResults.map((station, i) => (
+                  <button
+                    key={`boarding-${station}`}
+                    type="button"
+                    onClick={() => {
+                      onBoardingStationChange?.(station);
+                      setBoardingQuery(station);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "13px 16px",
+                      background:
+                        boardingStationName === station ? C.primaryLight : C.card,
+                      border: "none",
+                      borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      fontSize: 15,
+                      color: boardingStationName === station ? C.primary : C.text,
+                      fontWeight: boardingStationName === station ? 600 : 400,
+                    }}
+                  >
+                    {formatStationDisplayName(station)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div style={{ marginTop: 12, position: "relative" }}>
           <input
             ref={inputRef}
             value={query}
             onChange={e => { setQuery(e.target.value); setSelected(null); }}
-            placeholder="역 이름 검색 (예: 간석, 강남)"
+            placeholder={mode === "leave" ? "내릴 역 검색 (예: 강남)" : "목적지 검색 (예: 강남)"}
             style={{
               width: "100%", padding: "13px 16px 13px 42px",
               border: `1.5px solid ${query ? C.primary : C.border}`,
@@ -438,21 +1003,25 @@ function StepStation({ line, mode, onNext, onBack }) {
         <button
           type="button"
           onClick={startVoiceSearch}
-          disabled={isListening}
+          disabled={isListening || isParsingVoice}
           style={{
             marginTop: 8,
             width: "100%",
             padding: "10px 0",
             borderRadius: 10,
             border: `1px solid ${C.border}`,
-            background: isListening ? C.primaryLight : C.card,
+            background: isListening || isParsingVoice ? C.primaryLight : C.card,
             color: C.primary,
             fontSize: 13,
             fontWeight: 600,
-            cursor: isListening ? "default" : "pointer",
+            cursor: isListening || isParsingVoice ? "default" : "pointer",
           }}
         >
-          {isListening ? "듣는 중..." : "🎤 음성으로 역 검색"}
+          {isListening
+            ? "듣는 중..."
+            : isParsingVoice
+              ? "목적지 분석 중..."
+              : "🎤 음성으로 목적지 입력"}
         </button>
         {voiceError ? (
           <p style={{ marginTop: 6, fontSize: 12, color: "#DC2626" }}>{voiceError}</p>
@@ -492,7 +1061,11 @@ function StepStation({ line, mode, onNext, onBack }) {
           </div>
         )}
 
-        {query.length >= 1 && results.length === 0 && (
+        {query.length >= 1 &&
+          results.length === 0 &&
+          !voiceError &&
+          !isParsingVoice &&
+          query.length <= 12 && (
           <div style={{ textAlign: "center", padding: "32px 0", color: C.muted, fontSize: 14 }}>
             &quot;{query}&quot;에 해당하는 역이 없어요
           </div>
@@ -500,96 +1073,49 @@ function StepStation({ line, mode, onNext, onBack }) {
 
         {!query && (
           <div style={{ textAlign: "center", padding: "40px 0 0", color: "#C0C0C0", fontSize: 13, lineHeight: 1.6 }}>
-            {isLeaveMode
-              ? "이번에 내릴 역을 검색해 주세요"
-              : "역 이름을 입력하면 자동으로 나타나요"}
+            {mode === "leave"
+              ? "예: 강남에서 내려요 · 음성 또는 검색으로 내릴 역을 선택하세요"
+              : "예: 강남 가고 싶어 · 음성 또는 검색으로 목적지를 선택하세요"}
           </div>
         )}
       </div>
       <BottomButton
-        label={isLeaveMode ? "다음 — 열차 선택" : "다음 — 열차 선택"}
+        label="다음 — 열차 선택"
         onClick={() => onNext(selected)}
-        disabled={!selected}
+        disabled={!canProceedToTrainStep}
       />
     </div>
   );
 }
 
-// ─── Step 2: 열차 선택 ───────────────────────────────────────────
-function StepTrain({ line, station, currentStation, mode, onNext, onBack }) {
-  const isLeaveMode = mode === "leave";
-  const [selected, setSelected] = useState(null);
+// ─── Step 2: 열차 선택 (탭 1회 → 매칭 시도) ───────────────────────
+function StepTrain({
+  line,
+  station,
+  currentStation,
+  mode,
+  isMatching,
+  onTrainPick,
+  onBack,
+}) {
   const [trains, setTrains] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [platformHint, setPlatformHint] = useState("");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const apiLine = resolveApiLineFromLineProp(line);
-
-  useEffect(() => {
-    const hintStation = (currentStation || "").trim().replace(/역$/, "");
-    if (!hintStation || !apiLine) {
-      setPlatformHint("");
-      return;
-    }
-
-    let active = true;
-    const lineParam = hintStation && line ? line.match(/(\d)호선/)?.[1] : null;
-
-    const loadPlatformHint = async () => {
-      try {
-        const seoulLine = line.match(/서울\s*([1-9])호선/u);
-        const incheonLine = line.match(/인천\s*([12])호선/u);
-        const lineNm = seoulLine?.[1]
-          ? `${seoulLine[1]}호선`
-          : incheonLine?.[1]
-            ? `${incheonLine[1]}호선`
-            : lineParam
-              ? `${lineParam}호선`
-              : "";
-
-        if (!lineNm || incheonLine) {
-          if (active) setPlatformHint("");
-          return;
-        }
-
-        const params = new URLSearchParams({
-          station: hintStation,
-          line: lineNm,
-        });
-        const response = await fetch(`/api/quick-exit?${params.toString()}`, {
-          cache: "no-store",
-        });
-        const payload = await response.json();
-        if (!active || !response.ok) return;
-
-        const items = Array.isArray(payload?.items) ? payload.items : [];
-        const first = items[0];
-        if (first?.plfmCmgFac) {
-          setPlatformHint(`승강장 ${first.plfmCmgFac} 근처 · ${first.qckgffVhclDoorNo ?? ""}`.trim());
-        } else {
-          setPlatformHint("");
-        }
-      } catch {
-        if (active) setPlatformHint("");
-      }
-    };
-
-    void loadPlatformHint();
-    return () => {
-      active = false;
-    };
-  }, [currentStation, line, apiLine]);
+  const displayTrains = pickTrainsForCurrentStation(trains, currentStation);
 
   useEffect(() => {
     if (!apiLine) {
       setTrains([]);
-      setSelected(null);
       return;
     }
 
     let active = true;
 
-    const loadTrains = async () => {
-      setIsLoading(true);
+    const loadTrains = async ({ silent = false } = {}) => {
+      if (!silent) {
+        setIsLoading(true);
+      }
       try {
         const params = new URLSearchParams({
           line: apiLine,
@@ -620,150 +1146,140 @@ function StepTrain({ line, station, currentStation, mode, onNext, onBack }) {
           .filter((row) => row.id);
 
         setTrains(mapped);
-        setSelected((prev) => {
-          if (prev && mapped.some((train) => train.id === prev)) return prev;
-          return mapped[0]?.id ?? null;
-        });
+        setLastUpdatedAt(Date.now());
       } catch {
         if (!active) return;
-        setTrains([]);
-        setSelected(null);
+        if (!silent) {
+          setTrains([]);
+        }
       } finally {
-        if (active) {
+        if (active && !silent) {
           setIsLoading(false);
         }
       }
     };
 
     void loadTrains();
+    const timer = setInterval(() => {
+      void loadTrains({ silent: true });
+    }, TRAIN_LIST_REFRESH_MS);
 
     return () => {
       active = false;
+      clearInterval(timer);
     };
   }, [apiLine, station, currentStation]);
+
+  function handleTrainTap(train) {
+    if (!train?.id || isMatching) return;
+    onTrainPick?.(train);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
       <Header step={2} onBack={onBack} title="열차 선택" line={line} />
-      <div style={{ flex: 1, overflow: "auto", padding: "16px 16px 0" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: "16px 16px 24px" }}>
         <StepDots step={2} />
-        {station ? (
-          <div style={{
-            marginTop: 16, background: C.primaryLight,
-            border: `1px solid ${C.primaryBorder}`,
-            borderRadius: 10, padding: "10px 14px",
-            fontSize: 13, color: C.primary,
-          }}>
-            {isLeaveMode ? (
-              <>
-                <strong>{station}</strong>에서 내립니다
-              </>
-            ) : (
-              <>
-                하차 목적지: <strong>{station}</strong>
-              </>
-            )}
+        <div
+          style={{
+            marginTop: 16,
+            padding: "10px 14px",
+            borderRadius: 10,
+            background: "#F0F4F8",
+            border: `1px solid ${C.border}`,
+            fontSize: 13,
+            color: C.text,
+            lineHeight: 1.5,
+          }}
+        >
+          <div>
+            현재 역:{" "}
+            <strong>
+              {currentStation
+                ? formatStationDisplayName(currentStation)
+                : "확인 중"}
+            </strong>
           </div>
-        ) : null}
-        {platformHint ? (
-          <div style={{ marginTop: 10, fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
-            {platformHint}
-          </div>
-        ) : null}
-        <div style={{ marginTop: 16 }}>
-          {isLoading ? (
-            <div style={{ color: C.muted, fontSize: 14 }}>열차 목록 불러오는 중…</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {trains.map((train) => {
-                const isSelected = selected === train.id;
-                return (
-                  <button
-                    key={train.id}
-                    type="button"
-                    onClick={() => setSelected(train.id)}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      padding: "14px 16px",
-                      borderRadius: 12,
-                      border: `1.5px solid ${isSelected ? C.primary : C.border}`,
-                      background: isSelected ? C.primary : C.card,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: isSelected ? "rgba(255,255,255,0.75)" : C.muted,
-                          }}
-                        >
-                          열차 번호
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 20,
-                            fontWeight: 700,
-                            color: isSelected ? "#fff" : C.text,
-                          }}
-                        >
-                          {train.id}
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: isSelected ? "#fff" : C.primary,
-                        }}
-                      >
-                        {train.eta}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 10,
-                        paddingTop: 10,
-                        borderTop: `1px solid ${isSelected ? "rgba(255,255,255,0.2)" : C.border}`,
-                        fontSize: 13,
-                        color: isSelected ? "rgba(255,255,255,0.8)" : C.muted,
-                      }}
-                    >
-                      현재 위치:{" "}
-                      <span
-                        style={{
-                          fontWeight: 600,
-                          color: isSelected ? "#fff" : C.text,
-                        }}
-                      >
-                        {train.current}역
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {!isLoading && trains.length === 0 ? (
-            <div style={{ marginTop: 14, color: C.muted, fontSize: 14 }}>
-              해당 노선의 열차 데이터가 없어요
+          {station ? (
+            <div style={{ marginTop: 4, color: C.muted }}>
+              {mode === "leave" ? "내릴 역" : "목적지"}: <strong>{station}</strong>
             </div>
           ) : null}
         </div>
+
+        <p style={{ margin: "14px 0 10px", fontSize: 13, color: C.muted }}>
+          {currentStation
+            ? `${formatStationDisplayName(currentStation)} 역 열차를 탭하면 좌석을 선택해요`
+            : "열차를 탭하면 좌석을 선택해요"}
+          {lastUpdatedAt ? (
+            <span style={{ display: "block", marginTop: 4, fontSize: 12 }}>
+              30초마다 자동 갱신
+            </span>
+          ) : null}
+        </p>
+
+        {isLoading ? (
+          <div style={{ color: C.muted, fontSize: 14 }}>열차 불러오는 중…</div>
+        ) : null}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {displayTrains.map((train) => (
+            <button
+              key={train.id}
+              type="button"
+              disabled={isMatching}
+              onClick={() => handleTrainTap(train)}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                padding: "18px 16px",
+                borderRadius: 14,
+                border: `1.5px solid ${C.primary}`,
+                background: C.card,
+                cursor: isMatching ? "default" : "pointer",
+                opacity: isMatching ? 0.55 : 1,
+                boxShadow: "0 2px 8px rgba(11, 31, 75, 0.08)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>
+                    {train.id}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 13, color: C.muted }}>
+                    {train.current}역 · {train.eta}
+                  </div>
+                </div>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: C.primary,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  탭하여 좌석 선택
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {!isLoading && displayTrains.length === 0 ? (
+          <div style={{ marginTop: 14, color: C.muted, fontSize: 14, lineHeight: 1.5 }}>
+            {currentStation
+              ? `${formatStationDisplayName(currentStation)} 역 근처 열차가 없어요. 잠시 후 자동으로 다시 불러옵니다.`
+              : "표시할 열차가 없어요."}
+          </div>
+        ) : null}
       </div>
-      <BottomButton
-        label="다음 — 호차 선택"
-        onClick={() => onNext(trains.find((row) => row.id === selected) ?? null)}
-        disabled={!selected}
-      />
     </div>
   );
 }
@@ -987,23 +1503,117 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
   const [trainCurrentStation, setTrainCurrentStation] = useState("");
   const [seatInfo, setSeatInfo] = useState(null);
   const [currentStationName, setCurrentStationName] = useState("");
+  const [isDetectingBoardingStation, setIsDetectingBoardingStation] = useState(true);
+  const [needsManualBoardingStation, setNeedsManualBoardingStation] = useState(false);
+  const [boardingGpsMessage, setBoardingGpsMessage] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const lineNumber = resolveLineNumberFromLineProp(normalizedLine);
 
+  // URL·props(호선/모드) 변경 시 단계·열차 선택을 초기화합니다.
   useEffect(() => {
-    if (!isLeaveMode) return;
+    setStep(1);
+    setStation(null);
+    setTrainId(null);
+    setTrainDirection("하행");
+    setTrainDrtnInfo("");
+    setTrainCurrentStation("");
+    setSeatInfo(null);
+    setSubmitError("");
+    setIsSubmitting(false);
+  }, [normalizedLine, mode]);
+
+  // 탑승 화면 진입 시 역 목록을 미리 받아 두어 검색·열차 단계 지연을 줄입니다.
+  useEffect(() => {
+    void fetchStationsForLine(normalizedLine);
+  }, [normalizedLine]);
+
+  function applyBoardingGpsResult(result) {
+    const gpsMessages = {
+      out_of_range: "1km 이내 역이 없습니다. 현재 역을 직접 선택해 주세요.",
+      denied: "위치 권한이 없습니다. 현재 역을 직접 선택해 주세요.",
+      unsupported: "GPS를 사용할 수 없습니다. 현재 역을 직접 선택해 주세요.",
+      no_coords: "역 좌표 정보가 없습니다. 현재 역을 직접 선택해 주세요.",
+      weak: "GPS 신호가 약합니다. 현재 역을 직접 선택해 주세요.",
+    };
+
+    if (result?.stationName) {
+      setCurrentStationName(result.stationName);
+      setNeedsManualBoardingStation(false);
+      setBoardingGpsMessage("");
+      saveBoardingGpsLocation(normalizedLine, result.stationName, {
+        within1km: true,
+        distanceKmValue:
+          typeof result.distanceKm === "number" ? result.distanceKm : null,
+      });
+      return;
+    }
+
+    setCurrentStationName("");
+    setNeedsManualBoardingStation(true);
+    setBoardingGpsMessage(
+      gpsMessages[result?.reason] || "현재 역을 직접 선택해 주세요."
+    );
+  }
+
+  function handleManualBoardingStationChange(stationName) {
+    const trimmed = stationName?.trim();
+    if (!trimmed) return;
+    setCurrentStationName(trimmed);
+    setNeedsManualBoardingStation(false);
+    setBoardingGpsMessage("");
+    saveBoardingGpsLocation(normalizedLine, trimmed, { within1km: false });
+  }
+
+  // GPS·캐시로 출발역(1km 이내 최근접) 자동 설정 — seek/leave 공통
+  useEffect(() => {
+    let active = true;
+    setIsDetectingBoardingStation(true);
+    setNeedsManualBoardingStation(false);
+    setBoardingGpsMessage("");
+
+    const finishDetect = (result) => {
+      if (!active) return;
+      applyBoardingGpsResult(result);
+      setIsDetectingBoardingStation(false);
+    };
+
     try {
       const raw = sessionStorage.getItem("boardingDetectedLocation");
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (typeof parsed?.nearestStationName === "string") {
-        setCurrentStationName(parsed.nearestStationName);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed?.within1km === true &&
+          typeof parsed?.nearestStationName === "string" &&
+          parsed.nearestStationName.trim() &&
+          (!parsed?.lineLabel || parsed.lineLabel === normalizedLine) &&
+          typeof parsed?.detectedAt === "number" &&
+          Date.now() - parsed.detectedAt <= BOARDING_GPS_CACHE_TTL_MS
+        ) {
+          finishDetect({
+            stationName: parsed.nearestStationName.trim(),
+            reason: "ok",
+            distanceKm:
+              typeof parsed?.distanceKm === "number" ? parsed.distanceKm : null,
+          });
+          return () => {
+            active = false;
+          };
+        }
       }
     } catch {
-      // 캐시 파싱 실패 시 무시합니다.
+      // 캐시 파싱 실패 시 GPS로 재시도합니다.
     }
-  }, [isLeaveMode]);
+
+    void detectNearestStationFromGps(normalizedLine).then((result) => {
+      if (!active) return;
+      finishDetect(result);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [normalizedLine]);
 
   async function submitSeekRequest(info) {
     const token = localStorage.getItem("token");
@@ -1077,6 +1687,10 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         payload = await response.json();
       } catch {
         setSubmitError("서버 응답을 처리할 수 없습니다.");
+        return;
+      }
+
+      if (handleUnauthorizedResponse(response)) {
         return;
       }
 
@@ -1234,6 +1848,9 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         setSubmitError("서버 응답을 처리할 수 없습니다.");
         return;
       }
+      if (handleUnauthorizedResponse(response)) {
+        return;
+      }
       if (!response.ok || payload?.success === false) {
         setSubmitError(
           typeof payload?.error === "string" && payload.error.trim()
@@ -1311,6 +1928,36 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     setStep(2);
   }
 
+  function handleTrainPick(train) {
+    if (!train?.id || isSubmitting) {
+      return;
+    }
+
+    setTrainId(train.id);
+    setTrainDirection(train.direction || "하행");
+    setTrainDrtnInfo(resolveDrtnInfoFromDirectionDisplay(train.eta));
+    setTrainCurrentStation(train.current || "");
+    setSubmitError("");
+    setStep(3);
+  }
+
+  function handleVoiceModeChange(nextMode) {
+    if (nextMode !== "seek" && nextMode !== "leave") return;
+    if (nextMode === mode) return;
+
+    const params = new URLSearchParams(
+      typeof window !== "undefined" ? window.location.search : ""
+    );
+    const lineLabelParam = params.get("lineLabel");
+    params.set("type", nextMode === "leave" ? "leave" : "seek");
+    if (lineLabelParam?.trim()) {
+      params.set("lineLabel", lineLabelParam.trim());
+    } else {
+      params.set("lineLabel", normalizedLine);
+    }
+    router.replace(`/boarding?${params.toString()}`);
+  }
+
   return (
     <div style={{
       maxWidth: 390, margin: "0 auto",
@@ -1325,27 +1972,28 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         <StepStation
           line={normalizedLine}
           mode={mode}
+          boardingStationName={currentStationName}
+          isDetectingBoardingStation={isDetectingBoardingStation}
+          needsManualBoardingStation={needsManualBoardingStation}
+          boardingGpsMessage={boardingGpsMessage}
+          onBoardingStationChange={handleManualBoardingStationChange}
           onNext={(s) => {
             setStation(s);
             setStep(2);
           }}
           onBack={exitToHome}
+          onParsedModeChange={handleVoiceModeChange}
         />
       )}
       {step === 2 && (
         <StepTrain
+          key={`${normalizedLine}-${mode}-${station ?? ""}-${currentStationName}`}
           line={normalizedLine}
           mode={mode}
           station={station}
-          currentStation={isLeaveMode ? currentStationName : ""}
-          onNext={(train) => {
-            if (!train) return;
-            setTrainId(train.id);
-            setTrainDirection(train.direction || "하행");
-            setTrainDrtnInfo(resolveDrtnInfoFromDirectionDisplay(train.eta));
-            setTrainCurrentStation(train.current || "");
-            setStep(3);
-          }}
+          currentStation={currentStationName}
+          isMatching={false}
+          onTrainPick={handleTrainPick}
           onBack={handleBackFromStep2}
         />
       )}

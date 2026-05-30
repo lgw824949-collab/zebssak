@@ -38,6 +38,37 @@ function errorResponse(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status })
 }
 
+/** 역 코드에서 호선 접두사 추출 (예: s2-05 → s2, l1-03 → l1) */
+function extractLinePrefixFromStationCode(stationCode: string): string | null {
+  const match = stationCode.trim().toLowerCase().match(/^([a-z]+\d+)-/)
+  return match?.[1] ?? null
+}
+
+function resolveLinePrefix(originCode: string, destinationCode: string): string | null {
+  return (
+    extractLinePrefixFromStationCode(destinationCode) ??
+    extractLinePrefixFromStationCode(originCode)
+  )
+}
+
+/** train_no + 호선 접두사로 trains 테이블 조회·저장 키 생성 */
+function compositeTrainNo(linePrefix: string, trainNo: string): string {
+  return `${linePrefix}:${trainNo}`
+}
+
+function stationCodeFromJoin(
+  station:
+    | { station_code?: string }
+    | { station_code?: string }[]
+    | null
+    | undefined
+): string {
+  if (Array.isArray(station)) {
+    return station[0]?.station_code?.trim() ?? ''
+  }
+  return station?.station_code?.trim() ?? ''
+}
+
 /**
  * API role → DB request_type
  */
@@ -77,18 +108,21 @@ async function ensureStation(
 }
 
 /**
- * 열차 번호로 trains 행을 조회·생성합니다.
- * train_no 중복 행이 있어도 가장 먼저 생성된 id를 사용합니다.
+ * 열차 번호 + 호선 접두사로 trains 행을 조회·생성합니다.
+ * 동일 train_no라도 호선 접두사(s1, s2, l1 등)가 다르면 별도 행으로 관리합니다.
  */
 async function ensureTrain(
   supabase: SupabaseClient,
+  linePrefix: string,
   trainNo: string,
   lineNumber: number
 ): Promise<string | null> {
+  const storedTrainNo = compositeTrainNo(linePrefix, trainNo)
+
   const { data: existingRows, error: selectError } = await supabase
     .from('trains')
     .select('id')
-    .eq('train_no', trainNo)
+    .eq('train_no', storedTrainNo)
     .order('created_at', { ascending: true })
     .limit(1)
 
@@ -102,7 +136,7 @@ async function ensureTrain(
 
   const { data: inserted, error: insertError } = await supabase
     .from('trains')
-    .insert({ train_no: trainNo, line_number: lineNumber })
+    .insert({ train_no: storedTrainNo, line_number: lineNumber })
     .select('id')
     .single()
 
@@ -114,7 +148,7 @@ async function ensureTrain(
     const { data: retryRows, error: retryError } = await supabase
       .from('trains')
       .select('id')
-      .eq('train_no', trainNo)
+      .eq('train_no', storedTrainNo)
       .order('created_at', { ascending: true })
       .limit(1)
 
@@ -127,17 +161,20 @@ async function ensureTrain(
 }
 
 /**
- * 동일 train_no를 가진 모든 train_id (중복 행 대비)
+ * 동일 train_no + 호선 접두사를 가진 train_id (중복 행 대비)
  */
-async function getTrainIdsForTrainNo(
+async function getTrainIdsForLineTrain(
   supabase: SupabaseClient,
+  linePrefix: string,
   trainNo: string,
   lineNumber: number
 ): Promise<string[]> {
+  const storedTrainNo = compositeTrainNo(linePrefix, trainNo)
+
   const { data, error } = await supabase
     .from('trains')
     .select('id')
-    .eq('train_no', trainNo)
+    .eq('train_no', storedTrainNo)
     .eq('line_number', lineNumber)
 
   if (error || !data?.length) {
@@ -253,13 +290,19 @@ async function tryCreateMatch(
   newRequestId: string,
   newRequestType: RequestType,
   trainNo: string,
+  linePrefix: string,
   lineNumber: number,
   direction: string
 ): Promise<string | null> {
   const oppositeType: RequestType =
     newRequestType === 'seat_seek' ? 'leaving' : 'seat_seek'
 
-  const trainIds = await getTrainIdsForTrainNo(supabase, trainNo, lineNumber)
+  const trainIds = await getTrainIdsForLineTrain(
+    supabase,
+    linePrefix,
+    trainNo,
+    lineNumber
+  )
   if (!trainIds.length) {
     return null
   }
@@ -268,7 +311,14 @@ async function tryCreateMatch(
 
   const { data: candidates, error } = await supabase
     .from('match_requests')
-    .select('id, user_id, remaining_stations, requested_at')
+    .select(`
+      id,
+      user_id,
+      remaining_stations,
+      requested_at,
+      destination_station:stations!destination_station_id(station_code),
+      origin_station:stations!origin_station_id(station_code)
+    `)
     .eq('status', 'waiting')
     .eq('request_type', oppositeType)
     .in('direction', directionValues)
@@ -279,8 +329,31 @@ async function tryCreateMatch(
     return null
   }
 
+  const sameLineCandidates = candidates.filter((row) => {
+    const destinationCode = stationCodeFromJoin(
+      row.destination_station as
+        | { station_code?: string }
+        | { station_code?: string }[]
+        | null
+    )
+    const originCode = stationCodeFromJoin(
+      row.origin_station as
+        | { station_code?: string }
+        | { station_code?: string }[]
+        | null
+    )
+    const candidatePrefix =
+      extractLinePrefixFromStationCode(destinationCode) ??
+      extractLinePrefixFromStationCode(originCode)
+    return candidatePrefix === linePrefix
+  })
+
+  if (!sameLineCandidates.length) {
+    return null
+  }
+
   const ranked = sortByMatchingPriority(
-    await attachPriorityFields(supabase, candidates)
+    await attachPriorityFields(supabase, sameLineCandidates)
   )
   const partner = ranked[0]
   if (!partner) {
@@ -443,6 +516,13 @@ export async function POST(request: Request) {
 
     const originCode = boardingStationCode || `l${lineNumber}-01`
     const originName = boardingStationName || `기점(${lineNumber}호선)`
+    const linePrefix = resolveLinePrefix(originCode, destinationCode)
+    if (!linePrefix) {
+      return errorResponse(
+        'destination_id 또는 boarding_station_id에 호선 접두사(s1, s2, l1 등)가 필요합니다.',
+        400
+      )
+    }
     const originOrderMatch = originCode.match(/-(\d+)$/)
     const originOrder = originOrderMatch ? Number(originOrderMatch[1]) : 1
     const destinationOrderMatch = destinationCode.match(/-(\d+)$/)
@@ -469,7 +549,7 @@ export async function POST(request: Request) {
       return errorResponse('역 정보를 저장할 수 없습니다.', 500)
     }
 
-    const trainUuid = await ensureTrain(supabase, trainNo, lineNumber)
+    const trainUuid = await ensureTrain(supabase, linePrefix, trainNo, lineNumber)
     if (!trainUuid) {
       return errorResponse('열차 정보를 저장할 수 없습니다.', 500)
     }
@@ -536,6 +616,7 @@ export async function POST(request: Request) {
       created.id as string,
       requestType,
       trainNo,
+      linePrefix,
       lineNumber,
       directionStored
     )

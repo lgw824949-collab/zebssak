@@ -166,13 +166,17 @@ function formatSeatPositionKorean(guide: RequestSummary): string {
   return fallback.replace(/A측/g, '좌측').replace(/B측/g, '우측')
 }
 
-/** 하차역 표시 (영문 API값 보정) */
+/** 하차역 표시 (영문 API값 보정) — API partner 데이터 우선 */
 function resolveDestinationKorean(guide: RequestSummary): string {
+  const fromApi = (guide.destination_station_name ?? '').trim()
+  if (fromApi) {
+    return formatStationKorean(fromApi)
+  }
   const fromSession = readKoreanDestinationFromSession()
   if (fromSession) {
     return formatStationKorean(fromSession)
   }
-  return formatStationKorean(guide.destination_station_name)
+  return '미확인'
 }
 
 function resolveMatchId(): string | null {

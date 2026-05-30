@@ -20,8 +20,8 @@ const LINE_COLORS = {
 const LINE_COLOR_FALLBACK = "#1A56A0";
 
 const PRIORITY = 3;
-/** 좌석 구역 수 · 표시 출입문 1~3 (1-4 없음) */
-const SECTIONS = 3;
+/** 좌석 구역 수 · 표시 출입문 1~4 (1-1 ~ 1-4) */
+const SECTIONS = 4;
 
 /** 호선별 객실 레이아웃 (P3: 3~9호선·인천 6호차·7석) */
 const LINE_CAR_LAYOUT = {
@@ -296,8 +296,8 @@ function PriorityBlock({ side, placement, lineColor }) {
   );
 }
 
-/** 구역 경계 출입문 안내 (좌·우 컬럼 내측) */
-function AisleDoorTextRow() {
+/** 구역 경계 출입문 안내 — 통로(좌·우) 가장자리 */
+function AisleDoorText({ align }) {
   return (
     <span
       style={{
@@ -307,6 +307,9 @@ function AisleDoorTextRow() {
         letterSpacing: "0.1em",
         lineHeight: 1.2,
         userSelect: "none",
+        pointerEvents: "none",
+        whiteSpace: "nowrap",
+        alignSelf: align === "left" ? "flex-start" : "flex-end",
       }}
     >
       출입문
@@ -340,7 +343,7 @@ function SectionGroupLabel({ label, lineColor, highlighted }) {
 
 /**
  * 지하철 호차 내 좌석 배치도
- * 구조: 노약자 → 출입문 → (A~F·1-N)·출입문 ×3 → 출입문 → 노약자
+ * 구조: 노약자 → 출입문 → (A~F·1-N)·출입문 ×4 → 출입문 → 노약자
  */
 function canSelectSeatStatus(status, interactionMode) {
   if (status === "elderly") return false;
@@ -396,7 +399,8 @@ export default function SubwaySeatMap({
   const [alightingLoadError, setAlightingLoadError] = useState("");
 
   const carNum = activeCar + 1;
-  const showCarTabs = totalCars > 1;
+  // 부모(BoardingRequest)에서 car를 넘기면 호차 선택 UI는 상위에서만 표시합니다.
+  const showCarTabs = totalCars > 1 && controlledCar == null;
   const incheonLine = isIncheonLine(line);
 
   const loadAlighting = useCallback(async () => {
@@ -454,7 +458,7 @@ export default function SubwaySeatMap({
     void loadAlighting();
     const timer = setInterval(() => {
       void loadAlighting();
-    }, 12000);
+    }, 30000);
     return () => clearInterval(timer);
   }, [loadAlighting]);
 
@@ -546,6 +550,17 @@ export default function SubwaySeatMap({
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
+    zIndex: 1,
+    pointerEvents: "none",
+  };
+
+  const aisleDoorRowStyle = {
+    ...aisleColumnStyle,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "0 1px",
   };
 
   const renderSeatSectionColumn = (side, sectionIndex, seats, doorNo) => {
@@ -605,6 +620,8 @@ export default function SubwaySeatMap({
           alignItems: isLeft ? "flex-start" : "flex-end",
           gap: 5,
           justifyContent: "flex-start",
+          position: "relative",
+          zIndex: 2,
         }}
       >
         {seatNodes}
@@ -623,35 +640,16 @@ export default function SubwaySeatMap({
         padding: "5px 0",
       }}
     >
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          display: "flex",
-          justifyContent: "flex-end",
-          alignItems: "center",
-          paddingRight: 2,
-        }}
-      >
-        <AisleDoorTextRow />
+      <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
+      <div style={aisleDoorRowStyle} aria-hidden>
+        <AisleDoorText align="left" />
+        <AisleDoorText align="right" />
       </div>
-      <div style={aisleColumnStyle} aria-hidden />
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          display: "flex",
-          justifyContent: "flex-start",
-          alignItems: "center",
-          paddingLeft: 2,
-        }}
-      >
-        <AisleDoorTextRow />
-      </div>
+      <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
     </div>
   );
 
-  /** 노약자 → 출입문 → (A~F·1-N)·출입문 ×3 → 출입문 → 노약자 */
+  /** 노약자 → 출입문 → (A~F·1-N)·출입문 ×4 → 출입문 → 노약자 */
   const renderCarBody = () => {
     const rows = [
       <div
@@ -677,40 +675,33 @@ export default function SubwaySeatMap({
         <div
           key={`row-section-${sectionIndex}`}
           style={{
-            position: "relative",
             display: "flex",
             alignItems: "stretch",
             gap: 4,
             width: "100%",
           }}
         >
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, position: "relative", zIndex: 2 }}>
             {renderSeatSectionColumn("left", sectionIndex, leftSeats, doorNo)}
           </div>
-          <div style={aisleColumnStyle} aria-hidden />
-          <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
-            {renderSeatSectionColumn("right", sectionIndex, rightSeats, doorNo)}
-          </div>
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              pointerEvents: "none",
-              zIndex: 2,
-            }}
-          >
+          <div style={aisleColumnStyle} aria-hidden>
             <SectionGroupLabel
               label={groupLabel}
               lineColor={lineColor}
               highlighted={groupHighlighted}
             />
+          </div>
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: "flex",
+              justifyContent: "flex-end",
+              position: "relative",
+              zIndex: 2,
+            }}
+          >
+            {renderSeatSectionColumn("right", sectionIndex, rightSeats, doorNo)}
           </div>
         </div>
       );
@@ -933,6 +924,8 @@ export default function SubwaySeatMap({
           overflowY: "auto",
           overflowX: "hidden",
           WebkitOverflowScrolling: "touch",
+          position: "relative",
+          zIndex: 0,
         }}
       >
         {renderCarBody()}

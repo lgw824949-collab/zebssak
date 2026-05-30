@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { handleUnauthorizedResponse } from '@/lib/auth-client'
 import { subscribeMatchRealtime } from '@/lib/match-realtime'
 
 type BoardingLineKey =
@@ -254,6 +255,7 @@ export default function WaitingPage() {
   const [waitingRank, setWaitingRank] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [isReady, setIsReady] = useState(false)
+  const initStartedRef = useRef(false)
 
   useEffect(() => {
     const tokenFromStorage = localStorage.getItem('token')
@@ -262,6 +264,11 @@ export default function WaitingPage() {
       return
     }
     const authToken: string = tokenFromStorage
+
+    if (initStartedRef.current) {
+      return
+    }
+    initStartedRef.current = true
 
     const abortController = new AbortController()
 
@@ -322,6 +329,10 @@ export default function WaitingPage() {
             signal: abortController.signal,
           })
 
+          if (handleUnauthorizedResponse(response)) {
+            return
+          }
+
           const result = (await response.json()) as {
             success: boolean
             error?: string
@@ -359,6 +370,10 @@ export default function WaitingPage() {
               signal: abortController.signal,
             }
           )
+
+          if (handleUnauthorizedResponse(statusResponse)) {
+            return
+          }
 
           const statusResult = (await statusResponse.json()) as {
             success: boolean

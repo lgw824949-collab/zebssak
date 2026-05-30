@@ -92,6 +92,7 @@ const SEOUL_LINE_NUM_BY_PARAM: Record<SeoulLineParam, string> = {
 }
 const PUBLIC_DATA_API_HOST = 'http://openapi.seoul.go.kr:8088'
 const STATION_ORDER_CACHE_TTL_MS = 1000 * 60 * 60 * 12
+const SEOUL_TRAINS_UPSTREAM_TIMEOUT_MS = 4500
 const stationOrderCache = new Map<
   SeoulLineParam,
   { orderedStations: readonly string[]; expiresAt: number }
@@ -227,12 +228,6 @@ function isSeoulLine(value: string): value is SeoulLineParam {
 
 function isSupportedLine(value: string): value is SupportedLine {
   return SUPPORTED_LINES.includes(value as SupportedLine)
-}
-
-function seoulLineLabel(seoulLine: SeoulLineParam): string {
-  if (seoulLine === 'seoul1_incheon') return '1호선(인천방면)'
-  if (seoulLine === 'seoul1_cheonan') return '1호선(천안방면)'
-  return `${seoulLine.replace('seoul', '')}호선`
 }
 
 function toBaseSeoulLine(seoulLine: SeoulLineParam): 'seoul1' | 'seoul2' | 'seoul3' | 'seoul4' | 'seoul5' | 'seoul6' | 'seoul7' | 'seoul8' | 'seoul9' {
@@ -418,6 +413,48 @@ function sortTrainsByProximity(
   })
 }
 
+/** 서울 실시간 API 지연·오류 시 목업 열차로 즉시 응답 */
+function buildSeoulFallbackTrains(
+  seoulLine: SeoulLineParam,
+  currentStation: string | null
+): TrainListItem[] {
+  const order = STATION_ORDER_BY_LINE[seoulLine]
+  const stationIndexMap = buildStationIndexMap(order)
+  const refIdx =
+    resolveStationIndex(currentStation, stationIndexMap) ??
+    Math.floor(order.length / 2)
+  const baseIdx = refIdx >= 0 ? refIdx : 0
+  const lineDigits = toBaseSeoulLine(seoulLine).replace('seoul', '')
+  const templates: Omit<TrainListItem, 'direction_display'>[] = [
+    {
+      train_no: `${lineDigits}01`,
+      station_name: order[baseIdx] ?? order[0],
+      direction: '상행',
+      is_express: false,
+    },
+    {
+      train_no: `${lineDigits}02`,
+      station_name: order[(baseIdx + 1) % order.length] ?? order[0],
+      direction: '하행',
+      is_express: false,
+    },
+    {
+      train_no: `${lineDigits}03`,
+      station_name: order[(baseIdx + 2) % order.length] ?? order[0],
+      direction: '상행',
+      is_express: false,
+    },
+    {
+      train_no: `${lineDigits}04`,
+      station_name: order[(baseIdx + 3) % order.length] ?? order[0],
+      direction: '하행',
+      is_express: false,
+    },
+  ]
+
+  return templates.map((train) => enrichTrain(train, seoulLine, currentStation))
+}
+
 function enrichTrain(
   train: Omit<TrainListItem, 'direction_display'>,
   line: SupportedLine,
@@ -484,7 +521,6 @@ async function fetchSeoulTrains(
   seoulLine: SeoulLineParam,
   currentStation: string | null
 ): Promise<TrainListItem[]> {
-  const lineLabel = seoulLineLabel(seoulLine)
   const seoulApiUrl = new URL('/api/stations/seoul', request.url)
   seoulApiUrl.searchParams.set('line', toBaseSeoulLine(seoulLine))
 
@@ -495,38 +531,26 @@ async function fetchSeoulTrains(
       method: 'GET',
       headers: { Accept: 'application/json' },
       cache: 'no-store',
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(SEOUL_TRAINS_UPSTREAM_TIMEOUT_MS),
     })
   } catch {
-    throw new TrainsApiError(
-      `서울 ${lineLabel} 열차 정보를 불러오지 못했습니다.`,
-      502
-    )
+    return buildSeoulFallbackTrains(seoulLine, currentStation)
   }
 
   let payload: SeoulStationsApiResponse
   try {
     payload = (await upstreamResponse.json()) as SeoulStationsApiResponse
   } catch {
-    throw new TrainsApiError(
-      `서울 ${lineLabel} 열차 응답 파싱에 실패했습니다.`,
-      502
-    )
+    return buildSeoulFallbackTrains(seoulLine, currentStation)
   }
 
   if (!upstreamResponse.ok || payload.success === false) {
-    throw new TrainsApiError(
-      payload.error?.trim() || `서울 ${lineLabel} 열차 정보 조회에 실패했습니다.`,
-      upstreamResponse.ok ? 502 : upstreamResponse.status
-    )
+    return buildSeoulFallbackTrains(seoulLine, currentStation)
   }
 
   const rawTrains = payload.data?.trains
-  if (!Array.isArray(rawTrains)) {
-    throw new TrainsApiError(
-      `서울 ${lineLabel} 열차 데이터 형식이 올바르지 않습니다.`,
-      502
-    )
+  if (!Array.isArray(rawTrains) || rawTrains.length === 0) {
+    return buildSeoulFallbackTrains(seoulLine, currentStation)
   }
 
   return filterSeoul1BranchTrains(
@@ -561,7 +585,11 @@ export async function GET(request: Request) {
     let stationOrder = STATION_ORDER_BY_LINE[line]
 
     if (isSeoulLine(line)) {
-      stationOrder = (await fetchStationOrderFromPublicData(line)) ?? STATION_ORDER_BY_LINE[line]
+      // 공공데이터 역순 조회는 느려 기본 목록으로 정렬하고, 캐시만 백그라운드 갱신합니다.
+      stationOrder = STATION_ORDER_BY_LINE[line]
+      void fetchStationOrderFromPublicData(line).catch(() => {
+        // 역순 캐시 갱신 실패는 무시합니다.
+      })
       trains = await fetchSeoulTrains(request, line, currentStation)
     } else if (line === 'incheon1') {
       trains = INCHEON1_MOCK_TRAINS.map((train) =>

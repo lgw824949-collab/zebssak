@@ -1,12 +1,19 @@
-# .env.local 값을 Vercel CLI 로 업로드 (vercel login 필요)
-# 사용: powershell -ExecutionPolicy Bypass -File scripts/sync-vercel-env.ps1
+# .env.local → Vercel Environment Variables (production)
+# 사용: cd C:\dev\zebssak  후  npm run vercel:env
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$root = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $root '.env.local'
+$vercel = Join-Path $root 'node_modules\.bin\vercel.cmd'
 
 if (-not (Test-Path $envFile)) {
   Write-Error ".env.local 파일이 없습니다: $envFile"
+}
+
+if (-not (Test-Path $vercel)) {
+  Write-Host 'Vercel CLI 설치 중...' -ForegroundColor Yellow
+  Set-Location $root
+  npm install vercel@41.6.0 --save-dev --no-fund --no-audit
 }
 
 $names = @(
@@ -21,22 +28,23 @@ $names = @(
   'ADMIN_SECRET'
 )
 
-Write-Host 'Vercel에 .env.local 환경변수 업로드 (production)...' -ForegroundColor Cyan
+Write-Host 'Vercel에 .env.local 업로드 (production)...' -ForegroundColor Cyan
+Set-Location $root
 
 foreach ($name in $names) {
-  $line = Get-Content $envFile | Where-Object { $_ -match "^\s*$name\s*=" } | Select-Object -First 1
+  $line = Get-Content $envFile -Encoding UTF8 | Where-Object { $_ -match "^\s*$([regex]::Escape($name))\s*=" } | Select-Object -First 1
   if (-not $line) {
-    Write-Host "  skip $name (not in .env.local)" -ForegroundColor DarkYellow
+    Write-Host "  skip $name" -ForegroundColor DarkYellow
     continue
   }
-  $value = ($line -split '=', 2)[1].Trim()
+  $value = ($line -split '=', 2)[1].Trim().Trim('"').Trim("'")
   if (-not $value) {
     Write-Host "  skip $name (empty)" -ForegroundColor DarkYellow
     continue
   }
-  Write-Host "  add $name" -ForegroundColor Green
-  $value | npx vercel@latest env add $name production --yes 2>&1
+  Write-Host "  add $name ..." -ForegroundColor Green
+  $value | & $vercel env add $name production --force 2>&1
 }
 
 Write-Host ''
-Write-Host '완료 후 Vercel Dashboard에서 Redeploy 하세요.' -ForegroundColor Cyan
+Write-Host '완료. 이제 실행: npm run vercel:deploy' -ForegroundColor Cyan

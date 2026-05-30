@@ -74,6 +74,24 @@ const JSON_UTF8_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
 } as const
 
+const STATIONS_RESPONSE_CACHE_TTL_MS = 1000 * 60 * 60
+const stationsResponseCache = new Map<
+  SupportedLine,
+  {
+    body: {
+      success: true
+      line: SupportedLine
+      stations: Array<{ name: string; order: number; lat: number | null; lng: number | null }>
+    }
+    expiresAt: number
+  }
+>()
+
+const stationCoordinatesCache = new Map<
+  SupportedLine,
+  { map: Map<string, { lat: number; lng: number }>; expiresAt: number }
+>()
+
 function errorResponse(message: string, status: number) {
   return NextResponse.json(
     { success: false, error: message },
@@ -92,6 +110,11 @@ function buildStationMasterApiUrl(apiKey: string): string {
 async function fetchStationCoordinatesByLine(
   line: SupportedLine
 ): Promise<Map<string, { lat: number; lng: number }>> {
+  const cached = stationCoordinatesCache.get(line)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.map
+  }
+
   const map = new Map<string, { lat: number; lng: number }>()
   const apiKey = process.env.PUBLIC_DATA_API_KEY?.trim()
   if (!apiKey) return map
@@ -100,8 +123,8 @@ async function fetchStationCoordinatesByLine(
     const response = await fetch(buildStationMasterApiUrl(apiKey), {
       method: 'GET',
       headers: { Accept: 'application/json' },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(5000),
+      cache: 'force-cache',
+      signal: AbortSignal.timeout(3500),
     })
     if (!response.ok) return map
 
@@ -125,9 +148,10 @@ async function fetchStationCoordinatesByLine(
       map.set(normalizeStationName(name), { lat, lng })
     }
   } catch {
-    return map
+    return cached?.map ?? map
   }
 
+  stationCoordinatesCache.set(line, { map, expiresAt: Date.now() + STATIONS_RESPONSE_CACHE_TTL_MS })
   return map
 }
 
@@ -206,18 +230,26 @@ export async function GET(request: Request) {
     // - seoul4: 당고개→오이도
     // - seoul7: 장암→부천종합운동장
     // - incheon2: 운연→검단오류
+    const cachedResponse = stationsResponseCache.get(line)
+    if (cachedResponse && cachedResponse.expiresAt > Date.now()) {
+      return NextResponse.json(cachedResponse.body, { headers: JSON_UTF8_HEADERS })
+    }
+
     const ordered = FALLBACK_STATIONS[line]
     const coords = await fetchStationCoordinatesByLine(line)
     const stations = interpolateCoordinates(ordered, coords)
+    const body = {
+      success: true as const,
+      line,
+      stations,
+    }
 
-    return NextResponse.json(
-      {
-        success: true,
-        line,
-        stations,
-      },
-      { headers: JSON_UTF8_HEADERS }
-    )
+    stationsResponseCache.set(line, {
+      body,
+      expiresAt: Date.now() + STATIONS_RESPONSE_CACHE_TTL_MS,
+    })
+
+    return NextResponse.json(body, { headers: JSON_UTF8_HEADERS })
   } catch {
     return errorResponse('서버 오류가 발생했습니다.', 500)
   }

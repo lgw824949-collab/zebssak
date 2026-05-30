@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "vercel:env": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/vercel-env-from-local.ps1"
+    "vercel:login": "vercel login",
+    "vercel:env": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/sync-vercel-env.ps1",
+    "vercel:deploy": "vercel --prod",
+    "vercel:show-env": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/vercel-env-from-local.ps1",
+    "vercel:paste": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/copy-secret-for-vercel.ps1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",
@@ -27,6 +31,7 @@
     "eslint-config-next": "14.2.35",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vercel": "^41.6.0"
   }
 }

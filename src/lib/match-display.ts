@@ -6,8 +6,8 @@ export function lineLabelFromStationCode(stationCode: string | null | undefined)
   if (code.startsWith('s2')) return '서울 2호선'
   const seoulN = code.match(/^s([3-9])/)
   if (seoulN?.[1]) return `서울 ${seoulN[1]}호선`
-  if (code.startsWith('i1')) return '인천 1호선'
-  if (code.startsWith('i2')) return '인천 2호선'
+  if (code.startsWith('l1') || code.startsWith('i1')) return '인천 1호선'
+  if (code.startsWith('l2') || code.startsWith('i2')) return '인천 2호선'
   return null
 }
 
