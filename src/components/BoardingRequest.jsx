@@ -156,22 +156,48 @@ const GPS_MAX_RADIUS_KM = 1;
 const BOARDING_GPS_CACHE_TTL_MS = 5 * 60 * 1000;
 const TRAIN_LIST_REFRESH_MS = 30000;
 const TRAIN_DISPLAY_LIMIT = 2;
-const SEEK_DOOR_OPTIONS = ["1-1", "1-2", "1-3"];
 
-/** seek 모드 출입문 라벨(1-1 등) → API 제출용 car / seat_side / seat_number */
+/** 호선별 전체 출입문 목록 (예: 1-1 ~ 10-4) */
+function buildSeekDoorGroups(lineLabel) {
+  const layout = resolveCarLayout(lineLabel);
+  return Array.from({ length: layout.carCount }, (_, carIndex) => {
+    const car = carIndex + 1;
+    const doors = Array.from({ length: layout.doorCount }, (_, doorIndex) => {
+      const door = doorIndex + 1;
+      return { label: `${car}-${door}`, car, door };
+    });
+    return { car, doors };
+  });
+}
+
+/** seek 모드 출입문 라벨(2-1 등) → API 제출용 car / seat_side / seat_number */
 function mapSeekDoorToSubmission(doorLabel, lineLabel) {
   const match = String(doorLabel || "").match(/^(\d+)-(\d+)$/);
   if (!match) return null;
 
+  const layout = resolveCarLayout(lineLabel);
   const car = Number.parseInt(match[1], 10);
   const door = Number.parseInt(match[2], 10);
-  if (!Number.isInteger(car) || car < 1 || !Number.isInteger(door) || door < 1 || door > 3) {
+  if (
+    !Number.isInteger(car) ||
+    car < 1 ||
+    car > layout.carCount ||
+    !Number.isInteger(door) ||
+    door < 1 ||
+    door > layout.doorCount
+  ) {
     return null;
   }
 
-  const layout = resolveCarLayout(lineLabel);
-  const seatInSection = Math.floor(layout.seatsPerSection / 2);
-  const seatApi = mapSeatIdToApi(`left-d${door}-s${seatInSection}`, layout.seatsPerSection);
+  const sectionDoor = door <= 3 ? door : 3;
+  const seatInSection =
+    door >= layout.doorCount
+      ? layout.seatsPerSection - 1
+      : Math.floor(layout.seatsPerSection / 2);
+  const seatApi = mapSeatIdToApi(
+    `left-d${sectionDoor}-s${seatInSection}`,
+    layout.seatsPerSection
+  );
   if (!seatApi?.seatSide || !seatApi?.seatNumber) {
     return null;
   }
@@ -1437,6 +1463,8 @@ function StepTrain({
 // ─── Step 3 (seek): 출입문 선택 ────────────────────────────────────
 function StepSeekDoor({ line, onNext, onBack, isSubmitting = false }) {
   const [selectedDoor, setSelectedDoor] = useState(null);
+  const doorGroups = buildSeekDoorGroups(line);
+  const layout = resolveCarLayout(line);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
@@ -1445,46 +1473,98 @@ function StepSeekDoor({ line, onNext, onBack, isSubmitting = false }) {
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
         <StepDots step={3} />
 
-        <div style={{ marginTop: 24 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 8, lineHeight: 1.5 }}>
+        <div style={{ marginTop: 20 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 6, lineHeight: 1.5 }}>
             현재 몇 번 출입문 앞에 계세요?
           </div>
-          <div style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>
-            승차할 출입문 번호를 선택해 주세요
+          <div style={{ fontSize: 13, color: C.muted, marginBottom: 16, lineHeight: 1.5 }}>
+            {layout.carCount}개 호차 · 호차당 {layout.doorCount}개 출입문
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {SEEK_DOOR_OPTIONS.map((doorLabel) => (
-              <button
-                key={doorLabel}
-                type="button"
-                className="zeb-touch-target"
-                disabled={isSubmitting}
-                onClick={() => setSelectedDoor(doorLabel)}
-                style={{
-                  width: "100%",
-                  minHeight: 56,
-                  padding: "14px 18px",
-                  borderRadius: 12,
-                  border: `1.5px solid ${selectedDoor === doorLabel ? C.primary : C.border}`,
-                  background: selectedDoor === doorLabel ? C.primaryLight : C.card,
-                  color: selectedDoor === doorLabel ? C.primary : C.text,
-                  fontSize: 18,
-                  fontWeight: 700,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  cursor: isSubmitting ? "default" : "pointer",
-                  transition: "all 0.15s",
-                  opacity: isSubmitting ? 0.55 : 1,
-                  textAlign: "center",
-                }}
-              >
-                {doorLabel}
-              </button>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+              paddingBottom: 8,
+            }}
+          >
+            {doorGroups.map(({ car, doors }, groupIndex) => (
+              <div key={car}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: C.muted,
+                      letterSpacing: "-0.2px",
+                    }}
+                  >
+                    {car}호차
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      height: 1,
+                      background: groupIndex === 0 ? "transparent" : C.border,
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: `repeat(${layout.doorCount}, minmax(0, 1fr))`,
+                    gap: 8,
+                  }}
+                >
+                  {doors.map(({ label }) => {
+                    const isSelected = selectedDoor === label;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        className="zeb-touch-target"
+                        disabled={isSubmitting}
+                        onClick={() => setSelectedDoor(label)}
+                        style={{
+                          minHeight: 48,
+                          padding: "10px 4px",
+                          borderRadius: 10,
+                          border: `1.5px solid ${isSelected ? C.primary : C.border}`,
+                          background: isSelected ? C.primaryLight : C.card,
+                          color: isSelected ? C.primary : C.text,
+                          fontSize: 15,
+                          fontWeight: 700,
+                          fontFamily: "'JetBrains Mono', monospace",
+                          cursor: isSubmitting ? "default" : "pointer",
+                          transition: "all 0.15s",
+                          opacity: isSubmitting ? 0.55 : 1,
+                          textAlign: "center",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
           </div>
         </div>
       </div>
       <BottomButton
-        label={selectedDoor ? "요청 등록하기" : "출입문을 선택해주세요"}
+        label={
+          selectedDoor
+            ? `${selectedDoor} 출입문 · 요청 등록하기`
+            : "출입문을 선택해주세요"
+        }
         onClick={() => {
           const mapped = mapSeekDoorToSubmission(selectedDoor, line);
           if (!mapped) return;
