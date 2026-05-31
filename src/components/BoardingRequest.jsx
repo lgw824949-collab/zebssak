@@ -630,6 +630,19 @@ function normalizeStationSearchTerm(value) {
   return (value || "").trim().replace(/\s+/g, "").replace(/역$/u, "");
 }
 
+/** 검색어와 역명이 완전히 일치하는 경우만 반환 */
+function findExactStationName(rawQuery, stationRows) {
+  const term = normalizeStationSearchTerm(rawQuery);
+  if (!term || !Array.isArray(stationRows)) return null;
+
+  const matches = stationRows
+    .map((row) => row?.name?.trim())
+    .filter(Boolean)
+    .filter((name) => normalizeStationSearchTerm(name) === term);
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
 function formatStationDisplayName(stationName) {
   const name = (stationName || "").trim();
   if (!name) return "";
@@ -1031,6 +1044,12 @@ function StepStation({
           .slice(0, 8);
 
         setResults(names);
+        const exactDestination = findExactStationName(trimmed, stations);
+        if (exactDestination) {
+          setSelected(exactDestination);
+        } else if (names.length === 1 && normalizeStationSearchTerm(names[0]) === searchTerm) {
+          setSelected(names[0]);
+        }
         if (names.length === 0) {
           setSearchError("");
         }
@@ -1093,6 +1112,18 @@ function StepStation({
           .filter((name) => name && stationMatchesSearch(name, trimmed))
           .slice(0, 8);
         setBoardingResults(names);
+        const exactBoarding = findExactStationName(trimmed, stations);
+        if (exactBoarding) {
+          onBoardingStationChange?.(exactBoarding);
+          setBoardingQuery(exactBoarding);
+          setBoardingSearchError("");
+        } else if (names.length === 0) {
+          setBoardingSearchError(
+            `'${trimmed}' 역을 이 노선에서 찾지 못했습니다. 목록에서 선택해 주세요.`
+          );
+        } else {
+          setBoardingSearchError("");
+        }
       } catch {
         if (!active) return;
         setBoardingResults([]);
@@ -1112,6 +1143,36 @@ function StepStation({
 
   const canProceedToTrainStep =
     Boolean(selected) && Boolean(boardingStationName) && !isDetectingBoardingStation;
+
+  const proceedHint = (() => {
+    if (isDetectingBoardingStation) return "위치 확인 중…";
+    if (needsManualBoardingStation && !boardingStationName) {
+      if (boardingQuery.trim() && boardingResults.length === 0) {
+        return "입력한 역이 이 노선에 없어요. 목록에서 역을 선택해 주세요.";
+      }
+      return "현재 역을 검색한 뒤 목록에서 탭하거나, 이름을 정확히 입력해 주세요.";
+    }
+    if (!selected) {
+      return "목적지를 검색한 뒤 목록에서 탭하거나, 이름을 정확히 입력해 주세요.";
+    }
+    return null;
+  })();
+
+  function confirmBoardingFromKeyboard() {
+    if (boardingResults.length >= 1) {
+      const station = boardingResults[0];
+      onBoardingStationChange?.(station);
+      setBoardingQuery(station);
+      setBoardingSearchError("");
+    }
+  }
+
+  function confirmDestinationFromKeyboard() {
+    if (results.length >= 1) {
+      setSelected(results[0]);
+      setQuery(results[0]);
+    }
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
@@ -1158,6 +1219,12 @@ function StepStation({
                 ref={boardingInputRef}
                 value={boardingQuery}
                 onChange={(e) => setBoardingQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    confirmBoardingFromKeyboard();
+                  }
+                }}
                 placeholder="현재 역 검색 (예: 신도림)"
                 style={{
                   width: "100%",
@@ -1234,6 +1301,12 @@ function StepStation({
             ref={inputRef}
             value={query}
             onChange={e => { setQuery(e.target.value); setSelected(null); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                confirmDestinationFromKeyboard();
+              }
+            }}
             placeholder={mode === "leave" ? "내릴 역 검색 (예: 강남)" : "목적지 검색 (예: 강남)"}
             style={{
               width: "100%", padding: "13px 16px 13px 42px",
@@ -1346,6 +1419,19 @@ function StepStation({
           </div>
         )}
       </div>
+      {proceedHint && !canProceedToTrainStep ? (
+        <p
+          style={{
+            margin: "0 16px 8px",
+            fontSize: 12,
+            lineHeight: 1.45,
+            color: "#C2410C",
+            textAlign: "center",
+          }}
+        >
+          {proceedHint}
+        </p>
+      ) : null}
       <BottomButton
         label="다음 — 열차 선택"
         onClick={() => onNext(selected)}

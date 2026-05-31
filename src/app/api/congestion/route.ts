@@ -1,14 +1,27 @@
 ﻿import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 
-function errorResponse(message: string, status: number) {
-  return NextResponse.json({ success: false, error: message }, { status })
+function buildDefaultCongestionPayload() {
+  return {
+    latest_by_line: {
+      1: null,
+      2: null,
+    },
+    lines: [
+      { line_number: 1, congestion_level: 0, recorded_at: null },
+      { line_number: 2, congestion_level: 0, recorded_at: null },
+    ],
+    halted_by_line: { 1: false, 2: false },
+    waiting_count: 0,
+    degraded: true as const,
+  }
 }
 
 /**
  * GET /api/congestion
  * - congestion_logs 최신 혼잡도
  * - 대기 인원(waiting_count)
+ * - DB·RPC 오류 시 기본값 반환 (로컬·일시 장애에서도 화면은 동작)
  */
 export async function GET() {
   try {
@@ -30,7 +43,10 @@ export async function GET() {
         .maybeSingle()
 
       if (error) {
-        return errorResponse('혼잡도 정보를 불러올 수 없습니다.', 500)
+        return NextResponse.json({
+          success: true,
+          data: buildDefaultCongestionPayload(),
+        })
       }
 
       if (data) {
@@ -53,7 +69,16 @@ export async function GET() {
         p_line_number: lineNumber,
       })
       if (haltError) {
-        return errorResponse('혼잡도 정지 여부를 확인할 수 없습니다.', 500)
+        return NextResponse.json({
+          success: true,
+          data: {
+            latest_by_line: latestByLine,
+            lines: lineSummaries,
+            halted_by_line: haltedByLine,
+            waiting_count: 0,
+            degraded: true,
+          },
+        })
       }
       haltedByLine[lineNumber] = halted === true
     }
@@ -65,7 +90,16 @@ export async function GET() {
       .eq('request_type', 'seat_seek')
 
     if (waitingCountError) {
-      return errorResponse('대기 인원 정보를 불러올 수 없습니다.', 500)
+      return NextResponse.json({
+        success: true,
+        data: {
+          latest_by_line: latestByLine,
+          lines: lineSummaries,
+          halted_by_line: haltedByLine,
+          waiting_count: 0,
+          degraded: true,
+        },
+      })
     }
 
     return NextResponse.json({
@@ -78,6 +112,9 @@ export async function GET() {
       },
     })
   } catch {
-    return errorResponse('서버 오류가 발생했습니다.', 500)
+    return NextResponse.json({
+      success: true,
+      data: buildDefaultCongestionPayload(),
+    })
   }
 }

@@ -25,8 +25,14 @@ function BoardingPageContent() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (!localStorage.getItem('token')) {
-      router.replace('/login')
+
+    const token = localStorage.getItem('token')
+    if (!token) {
+      const params = new URLSearchParams({
+        type: type === 'leave' ? 'leave' : 'seek',
+        lineLabel,
+      })
+      router.replace(`/register?${params.toString()}`)
       return
     }
 

@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import CongestionHaltModal from '@/components/CongestionHaltModal'
-import InstallShortcut, { useInstallShortcutVisible } from '@/components/InstallShortcut'
 import {
   fetchCongestionStatus,
   isLineHalted,
@@ -22,42 +21,23 @@ interface StoredUser {
 const GPS_MAX_RADIUS_KM = 1
 /** 홈 화면 표시용 실시간 이용자 수 (대기 인원과 별개) */
 const ACTIVE_USER_DISPLAY_BASE = 6000
-const SEEK_LINE_OPTIONS = [
+/** 홈 2단계 — 현재 서울 1·2호선만 노출 (다른 노선은 준비 중) */
+const HOME_LINE_OPTIONS = [
   { label: '서울 1호선', shortLabel: '1호선', badge: '1', color: '#0052A4' },
   { label: '서울 2호선', shortLabel: '2호선', badge: '2', color: '#00A84D' },
-  { label: '서울 3호선', shortLabel: '3호선', badge: '3', color: '#EF7C1C' },
-  { label: '서울 4호선', shortLabel: '4호선', badge: '4', color: '#00A5DE' },
-  { label: '서울 5호선', shortLabel: '5호선', badge: '5', color: '#996CAC' },
-  { label: '서울 6호선', shortLabel: '6호선', badge: '6', color: '#CD7C2F' },
-  { label: '서울 7호선', shortLabel: '7호선', badge: '7', color: '#747F00' },
-  { label: '서울 8호선', shortLabel: '8호선', badge: '8', color: '#E6186C' },
-  { label: '서울 9호선', shortLabel: '9호선', badge: '9', color: '#BDB092' },
-  { label: '인천 1호선', shortLabel: '인천1', badge: '인1', color: '#759CCE' },
-  { label: '인천 2호선', shortLabel: '인천2', badge: '인2', color: '#F5A200' },
 ] as const
 
 type HomeFlowMode = 'seek' | 'leave'
 type HomeStep = 'mode' | 'line'
 
-function HomeGallery() {
+function ChevronRightIcon() {
   return (
-    <section className="mb-6" aria-label="지하철 갤러리">
-      <div className="overflow-hidden rounded-lg" style={{ aspectRatio: '16 / 10' }}>
-        <img
-          src="/home-gallery/hero.png"
-          alt="지하철 객실 내부"
-          className="h-full w-full object-cover"
-          loading="eager"
-          decoding="async"
-        />
-      </div>
-    </section>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden className="shrink-0 text-[#B0B5BD]">
+      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   )
 }
 
-/**
- * 시간대에 따라 소폭 변동되는 표시용 이용자 수 (~5,900–6,100명)
- */
 function getDisplayActiveUserCount(): number {
   const now = new Date()
   const jitter =
@@ -84,14 +64,6 @@ function mapLineLabelToApiLine(lineLabel: string): string | null {
   return null
 }
 
-function ChevronRightIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 /**
  * 메인 홈
  */
@@ -107,9 +79,7 @@ export default function Home() {
   const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 1호선')
   const [homeStep, setHomeStep] = useState<HomeStep>('mode')
   const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
-  const { visible: showInstallShortcut, hide: hideInstallShortcut } = useInstallShortcutVisible()
-
-  const loadHomeData = useCallback(async (token: string) => {
+  const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
     setActiveUserCount(getDisplayActiveUserCount())
 
@@ -128,28 +98,27 @@ export default function Home() {
   }, [congestionStatus, selectedLineLabel, isLoadingData, homeStep])
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) {
-      router.replace('/login')
-      return
-    }
-
     try {
+      const token = localStorage.getItem('token')
       const raw = localStorage.getItem('user')
-      if (raw) {
+      if (token && raw) {
         setUser(JSON.parse(raw) as StoredUser)
+      } else {
+        setUser(null)
       }
       setIsAuthChecked(true)
       void loadHomeData(token)
     } catch {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
-      router.replace('/login')
+      setUser(null)
+      setIsAuthChecked(true)
+      void loadHomeData(null)
     }
-  }, [router, loadHomeData])
+  }, [loadHomeData])
 
-  const displayName = user?.username ?? '회원'
-  const mannerPoints = user?.total_points ?? 0
+  const displayName = user?.username ?? null
+  const isLoggedIn = Boolean(displayName)
 
   async function pushBoardingPage(lineLabel: string, mode: HomeFlowMode) {
     const params = new URLSearchParams({
@@ -173,17 +142,41 @@ export default function Home() {
     setHomeMode(null)
   }
 
-  async function proceedToBoarding() {
+  async function proceedToBoarding(lineLabel: string) {
     if (!homeMode) return
-    if (isLineHalted(congestionStatus, selectedLineLabel)) {
+    if (isLineHalted(congestionStatus, lineLabel)) {
+      setSelectedLineLabel(lineLabel)
       setShowCongestionModal(true)
       return
     }
+    setSelectedLineLabel(lineLabel)
     if (homeMode === 'seek') {
-      void startSeekByLineSelection(selectedLineLabel)
+      void startSeekByLineSelection(lineLabel)
       return
     }
-    void pushBoardingPage(selectedLineLabel, 'leave')
+    void pushBoardingPage(lineLabel, 'leave')
+  }
+
+  function handleLinePick(lineLabel: string) {
+    if (isMatchingPaused || !homeMode) return
+
+    if (isLineHalted(congestionStatus, lineLabel)) {
+      setSelectedLineLabel(lineLabel)
+      setShowCongestionModal(true)
+      return
+    }
+
+    const token = localStorage.getItem('token')
+    if (!token) {
+      const params = new URLSearchParams({
+        type: homeMode,
+        lineLabel,
+      })
+      router.push(`/register?${params.toString()}`)
+      return
+    }
+
+    void proceedToBoarding(lineLabel)
   }
 
   async function saveDetectedLocation(
@@ -305,178 +298,111 @@ export default function Home() {
   }
 
   return (
-    <div className="mx-auto min-h-dvh w-full max-w-[480px] bg-[#F7F8FA] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(2.5rem,env(safe-area-inset-bottom))]">
+    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-[#F7F8FA]">
       <CongestionHaltModal
         open={showCongestionModal}
         onClose={() => setShowCongestionModal(false)}
         congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(selectedLineLabel)]}
       />
-      <main className="px-4 pb-10 pt-6">
-        <header className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0052A4] text-white">
-              <span className="text-sm font-extrabold">🚆</span>
-            </div>
-            <p className="text-2xl font-extrabold tracking-tight text-[#1A1A1A]">잽싸게</p>
-          </div>
-          <Link
-            href="/profile"
-            className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white text-sm font-bold text-[#888888] shadow-sm"
-            aria-label="프로필"
-          >
-            {displayName.slice(0, 1).toUpperCase()}
-          </Link>
-        </header>
-
-        <HomeGallery />
-
-        <section className="mb-6">
-          <p className="mb-1 text-sm font-medium text-[#888888]">안녕하세요</p>
-          <div className="flex items-start justify-between gap-3">
-            <h1 className="text-[28px] font-extrabold leading-tight tracking-tight text-[#1A1A1A]">
-              {displayName}님
-            </h1>
-            <span className="shrink-0 rounded-full bg-[#FFEAD9] px-3 py-1.5 text-sm font-bold text-[#F97316]">
-              매너포인트 {mannerPoints.toLocaleString()}
-            </span>
-          </div>
-        </section>
+      <main className="flex flex-1 flex-col pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] pt-5">
+        {homeStep === 'mode' ? (
+          <header className="mb-2 flex shrink-0 items-center justify-end">
+            <Link
+              href={isLoggedIn ? '/profile' : '/login'}
+              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-[#EBEBEB] bg-white text-sm font-bold text-[#888888]"
+              aria-label={isLoggedIn ? '프로필' : '로그인'}
+            >
+              {isLoggedIn ? displayName!.slice(0, 1).toUpperCase() : '👤'}
+            </Link>
+          </header>
+        ) : null}
 
         {homeStep === 'mode' ? (
-          <section className="mb-6 space-y-4">
-            <div className="rounded-2xl bg-white px-5 py-6 shadow-sm">
-              <p className="text-center text-xs font-bold uppercase tracking-wide text-[#6F7682]">
-                1 / 2
-              </p>
-              <h2 className="mt-2 text-center text-[22px] font-extrabold leading-snug text-[#1A1A1A]">
-                무엇을 도와드릴까요?
-              </h2>
-              <p className="mt-2 text-center text-sm font-medium text-[#6F7682]">
-                앉을 자리가 필요한지, 내릴 역인지 선택해 주세요
-              </p>
-            </div>
-
-            <button
-              type="button"
-              disabled={isMatchingPaused}
-              onClick={() => handleModeSelect('seek')}
-              className="zeb-touch-target flex min-h-[72px] w-full items-center gap-4 rounded-2xl bg-[#0B1F4B] px-5 py-4 text-left text-white shadow-[0_8px_20px_rgba(11,31,75,0.24)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/20 text-2xl">
-                🧍
-              </span>
-              <span>
-                <span className="block text-lg font-extrabold">앉고 싶어요</span>
-                <span className="mt-0.5 block text-sm font-medium text-white/80">
-                  빈자리를 찾고 있어요
+          <div className="flex flex-1 flex-col justify-center pb-10">
+            <section className="mb-10 text-center">
+              <h1 className="text-[32px] font-extrabold leading-[1.12] tracking-tight text-[#1A1A1A]">
+                빈자리, 잽싸게
+              </h1>
+              <p className="mt-3 text-[14px] font-medium leading-relaxed text-[#888888]">
+                서울 1·2호선 · 지금{' '}
+                <span className="zeb-mono font-extrabold text-[#F97316]">
+                  {isLoadingData ? '—' : `${activeUserCount.toLocaleString()}명`}
                 </span>
-              </span>
-            </button>
+                {' '}이용 중
+              </p>
+            </section>
 
-            <button
-              type="button"
-              disabled={isMatchingPaused}
-              onClick={() => handleModeSelect('leave')}
-              className="zeb-touch-target flex min-h-[72px] w-full items-center gap-4 rounded-2xl border border-[#D8DCE2] bg-white px-5 py-4 text-left transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#EEF3FB] text-[#0B1F4B]">
-                <ChevronRightIcon />
-              </span>
-              <span>
-                <span className="block text-lg font-extrabold text-[#0B1F4B]">내릴게요</span>
-                <span className="mt-0.5 block text-sm font-medium text-[#6F7682]">
-                  하차할 역을 알려 주세요
-                </span>
-              </span>
-            </button>
-
-            {isMatchingPaused ? (
-              <p
-                className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
-                role="alert"
+            <section>
+              <button
+                type="button"
+                disabled={isMatchingPaused}
+                onClick={() => handleModeSelect('seek')}
+                className="zeb-touch-target flex h-[56px] w-full items-center justify-center rounded-xl bg-[#0B1F4B] text-[18px] font-extrabold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
-              </p>
-            ) : null}
-          </section>
+                앉고 싶어요
+              </button>
+
+              <button
+                type="button"
+                disabled={isMatchingPaused}
+                onClick={() => handleModeSelect('leave')}
+                className="zeb-touch-target mt-3 flex h-11 w-full items-center justify-center text-[15px] font-semibold text-[#888888] transition active:opacity-60 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                내릴게요
+              </button>
+
+              {isMatchingPaused ? (
+                <p
+                  className="mt-4 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
+                  role="alert"
+                >
+                  현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
+                </p>
+              ) : null}
+            </section>
+          </div>
         ) : (
-          <section className="mb-6 space-y-4">
-            <div className="rounded-2xl bg-white px-5 py-5 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
+          <section className="flex flex-1 flex-col">
+            <div className="mb-6 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleBackToModeStep}
+                className="text-[13px] font-semibold text-[#888888]"
+              >
+                ← 이전
+              </button>
+              <p className="text-[13px] font-semibold text-[#1A1A1A]">
+                {homeMode === 'leave' ? '내릴게요' : '앉고 싶어요'}
+              </p>
+            </div>
+
+            <h2 className="mb-4 text-[22px] font-extrabold tracking-tight text-[#1A1A1A]">
+              어느 호선?
+            </h2>
+
+            <div className="flex flex-col gap-3">
+              {HOME_LINE_OPTIONS.map((line) => (
                 <button
+                  key={line.label}
                   type="button"
-                  onClick={handleBackToModeStep}
-                  className="text-sm font-bold text-[#6F7682]"
+                  disabled={isMatchingPaused}
+                  className="zeb-touch-target flex w-full items-center gap-4 rounded-xl border border-[#EBEBEB] bg-white px-4 py-5 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={() => handleLinePick(line.label)}
+                  aria-label={`${line.label} 선택`}
                 >
-                  ← 이전
+                  <span
+                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
+                    style={{ background: line.color }}
+                  >
+                    {line.badge}
+                  </span>
+                  <span className="flex-1 text-left text-[16px] font-extrabold text-[#1A1A1A]">
+                    {line.label}
+                  </span>
+                  <ChevronRightIcon />
                 </button>
-                <p className="text-xs font-bold text-[#6F7682]">2 / 2</p>
-              </div>
-              <h2 className="mt-3 text-center text-[22px] font-extrabold text-[#1A1A1A]">
-                노선을 선택해 주세요
-              </h2>
-              <p className="mt-2 text-center text-sm font-medium text-[#6F7682]">
-                {homeMode === 'leave'
-                  ? '내릴 노선을 골라 주세요'
-                  : '탑승할 노선을 골라 주세요'}
-              </p>
-              <p className="mt-3 text-center">
-                <span
-                  className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
-                    homeMode === 'leave'
-                      ? 'bg-[#EEF3FB] text-[#0B1F4B]'
-                      : 'bg-[#0B1F4B] text-white'
-                  }`}
-                >
-                  {homeMode === 'leave' ? '내릴게요' : '앉고 싶어요'}
-                </span>
-              </p>
+              ))}
             </div>
-
-            <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
-              <div className="grid grid-cols-3 gap-x-4 gap-y-5">
-                {SEEK_LINE_OPTIONS.map((line) => {
-                  const selected = selectedLineLabel === line.label
-                  return (
-                    <button
-                      key={line.label}
-                      type="button"
-                      className="zeb-touch-target flex min-h-11 min-w-11 flex-col items-center gap-1"
-                      onClick={() => setSelectedLineLabel(line.label)}
-                      aria-label={line.label}
-                    >
-                      <span
-                        className="inline-flex h-[58px] w-[58px] items-center justify-center rounded-full text-base font-extrabold text-white"
-                        style={{
-                          background: line.color,
-                          boxShadow: selected ? `0 0 0 3px ${line.color}33` : 'none',
-                          border: selected ? '2px solid #0B1F4B' : '2px solid transparent',
-                        }}
-                      >
-                        {line.badge}
-                      </span>
-                      <span
-                        className="text-xs font-bold leading-tight"
-                        style={{ color: selected ? line.color : '#6F7682' }}
-                      >
-                        {line.shortLabel}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              disabled={isMatchingPaused || !homeMode}
-              onClick={() => {
-                void proceedToBoarding()
-              }}
-              className="zeb-touch-target flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#0B1F4B] py-5 text-xl font-extrabold text-white shadow-[0_8px_20px_rgba(11,31,75,0.24)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              다음
-            </button>
 
             {isMatchingPaused ? (
               <p
@@ -488,22 +414,6 @@ export default function Home() {
             ) : null}
           </section>
         )}
-
-        {showInstallShortcut ? (
-          <section className="mb-6">
-            <InstallShortcut onDismiss={hideInstallShortcut} />
-          </section>
-        ) : null}
-
-        <section className="rounded-2xl border border-[#E6E8EB] bg-white p-4 shadow-sm">
-          <p className="mb-1 text-sm font-semibold text-[#888888]">지금 이용 중</p>
-          <p className="text-4xl font-extrabold leading-none text-[#F97316]">
-            {isLoadingData ? '—' : `${activeUserCount.toLocaleString()}명`}
-          </p>
-          <p className="mt-3 text-sm font-medium text-[#6F7682]">
-            잽싸게를 함께 이용하고 있어요
-          </p>
-        </section>
       </main>
     </div>
   )

@@ -74,25 +74,38 @@ export function isLineHalted(
 export async function fetchCongestionStatus(
   authToken?: string | null
 ): Promise<CongestionStatus | null> {
-  try {
-    const headers: HeadersInit = authToken
-      ? { Authorization: `Bearer ${authToken}` }
-      : {}
-    const response = await fetch('/api/congestion', {
-      headers,
-      cache: 'no-store',
-    })
+  const headers: HeadersInit = authToken ? { Authorization: `Bearer ${authToken}` } : {}
 
-    if (!response.ok) return null
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch('/api/congestion', {
+        headers,
+        cache: 'no-store',
+      })
 
-    const json = (await response.json()) as {
-      success?: boolean
-      data?: CongestionApiPayload
+      if (!response.ok) {
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 400))
+          continue
+        }
+        return null
+      }
+
+      const json = (await response.json()) as {
+        success?: boolean
+        data?: CongestionApiPayload
+      }
+
+      if (!json.success || !json.data) return null
+      return parseCongestionApiData(json.data)
+    } catch {
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        continue
+      }
+      return null
     }
-
-    if (!json.success || !json.data) return null
-    return parseCongestionApiData(json.data)
-  } catch {
-    return null
   }
+
+  return null
 }

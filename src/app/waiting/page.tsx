@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { handleUnauthorizedResponse } from '@/lib/auth-client'
 import { subscribeMatchRealtime } from '@/lib/match-realtime'
 
@@ -255,7 +255,6 @@ export default function WaitingPage() {
   const [waitingRank, setWaitingRank] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [isReady, setIsReady] = useState(false)
-  const initStartedRef = useRef(false)
 
   useEffect(() => {
     const tokenFromStorage = localStorage.getItem('token')
@@ -264,12 +263,7 @@ export default function WaitingPage() {
       return
     }
     const authToken: string = tokenFromStorage
-
-    if (initStartedRef.current) {
-      return
-    }
-    initStartedRef.current = true
-
+    let cancelled = false
     const abortController = new AbortController()
 
     async function initializeWaiting() {
@@ -280,7 +274,7 @@ export default function WaitingPage() {
           sessionStorage.getItem(REGISTERED_FLAG_KEY) === 'true'
 
         const rawUser = localStorage.getItem('user')
-        if (rawUser) {
+        if (rawUser && !cancelled) {
           setUser(JSON.parse(rawUser) as StoredUser)
         }
 
@@ -294,7 +288,9 @@ export default function WaitingPage() {
             router.replace('/home')
             return
           }
-          setDraft(parsedDraft)
+          if (!cancelled) {
+            setDraft(parsedDraft)
+          }
           sessionStorage.setItem(WAITING_DRAFT_KEY, JSON.stringify(parsedDraft))
         }
 
@@ -329,6 +325,8 @@ export default function WaitingPage() {
             signal: abortController.signal,
           })
 
+          if (cancelled) return
+
           if (handleUnauthorizedResponse(response)) {
             return
           }
@@ -361,7 +359,9 @@ export default function WaitingPage() {
             return
           }
 
-          setWaitingRank(result.data.queue_position ?? 1)
+          if (!cancelled) {
+            setWaitingRank(result.data.queue_position ?? 1)
+          }
         } else if (requestId) {
           const statusResponse = await fetch(
             `/api/match-requests/status?request_id=${encodeURIComponent(requestId)}`,
@@ -370,6 +370,8 @@ export default function WaitingPage() {
               signal: abortController.signal,
             }
           )
+
+          if (cancelled) return
 
           if (handleUnauthorizedResponse(statusResponse)) {
             return
@@ -396,7 +398,9 @@ export default function WaitingPage() {
             return
           }
 
-          setWaitingRank(statusResult.data?.queue_position ?? 1)
+          if (!cancelled) {
+            setWaitingRank(statusResult.data?.queue_position ?? 1)
+          }
         }
 
         if (!requestId) {
@@ -405,21 +409,28 @@ export default function WaitingPage() {
           return
         }
 
-        setIsReady(true)
+        if (!cancelled) {
+          setIsReady(true)
+        }
 
-        await subscribeMatchRealtime(
+        void subscribeMatchRealtime(
           requestId,
           authToken,
           (matchId) => {
+            if (cancelled) return
             sessionStorage.setItem('activeMatchId', matchId)
             router.replace('/matching')
           },
           (message) => {
+            if (cancelled) return
             setError(message)
           },
           abortController.signal
-        )
+        ).catch(() => {
+          // Strict Mode cleanup abort — 무시
+        })
       } catch (err) {
+        if (cancelled) return
         if (err instanceof Error && err.name === 'AbortError') {
           return
         }
@@ -428,9 +439,13 @@ export default function WaitingPage() {
       }
     }
 
-    initializeWaiting()
+    void initializeWaiting().catch((err) => {
+      if (cancelled) return
+      if (err instanceof Error && err.name === 'AbortError') return
+    })
 
     return () => {
+      cancelled = true
       abortController.abort()
     }
   }, [router])
@@ -449,7 +464,20 @@ export default function WaitingPage() {
   }
 
   if (!draft && !error) {
-    return <WaitingLoading />
+    return (
+      <div className="zeb-page wait-theme flex flex-col items-center justify-center gap-4 px-4">
+        <p className="text-center text-sm font-medium text-[#475569]">
+          대기 정보를 불러오지 못했습니다.
+        </p>
+        <button
+          type="button"
+          onClick={handleCancel}
+          className="zeb-btn zeb-btn--secondary"
+        >
+          홈으로
+        </button>
+      </div>
+    )
   }
 
   const isVulnerable = user?.is_vulnerable === true
