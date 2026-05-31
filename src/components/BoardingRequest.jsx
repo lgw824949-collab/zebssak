@@ -155,8 +155,6 @@ const VOICE_PARSE_PENDING_KEY = "voiceParsePending";
 const GPS_MAX_RADIUS_KM = 1;
 const BOARDING_GPS_CACHE_TTL_MS = 5 * 60 * 1000;
 const TRAIN_LIST_REFRESH_MS = 30000;
-const TRAIN_DISPLAY_LIMIT = 2;
-
 /** 호선별 전체 출입문 목록 (예: 1-1 ~ 10-4) */
 function buildSeekDoorGroups(lineLabel) {
   const layout = resolveCarLayout(lineLabel);
@@ -299,27 +297,6 @@ function detectNearestStationFromGps(lineLabel) {
 
 function normalizeStationLabel(name) {
   return normalizeStationSearchTerm((name || "").trim().replace(/역$/u, ""));
-}
-
-/** 현재 역 기준 표시할 열차 1~2대 (해당 역에 있는 열차 우선) */
-function pickTrainsForCurrentStation(trains, currentStation) {
-  if (!Array.isArray(trains) || trains.length === 0) {
-    return [];
-  }
-
-  const target = normalizeStationLabel(currentStation);
-  if (!target) {
-    return trains.slice(0, TRAIN_DISPLAY_LIMIT);
-  }
-
-  const atCurrentStation = trains.filter(
-    (train) => normalizeStationLabel(train.current) === target
-  );
-  if (atCurrentStation.length > 0) {
-    return atCurrentStation.slice(0, TRAIN_DISPLAY_LIMIT);
-  }
-
-  return trains.slice(0, TRAIN_DISPLAY_LIMIT);
 }
 
 function saveBoardingGpsLocation(
@@ -609,7 +586,7 @@ const C = {
   primary: "#1A56A0",
   primaryLight: "#E3F0FF",
   primaryBorder: "#90BEF0",
-  bg: "#F8FAFC",
+  bg: "#F7F8FA",
   card: "#FFFFFF",
   border: "#E2E8F0",
   text: "#1A1A1A",
@@ -1144,20 +1121,6 @@ function StepStation({
   const canProceedToTrainStep =
     Boolean(selected) && Boolean(boardingStationName) && !isDetectingBoardingStation;
 
-  const proceedHint = (() => {
-    if (isDetectingBoardingStation) return "위치 확인 중…";
-    if (needsManualBoardingStation && !boardingStationName) {
-      if (boardingQuery.trim() && boardingResults.length === 0) {
-        return "입력한 역이 이 노선에 없어요. 목록에서 역을 선택해 주세요.";
-      }
-      return "현재 역을 검색한 뒤 목록에서 탭하거나, 이름을 정확히 입력해 주세요.";
-    }
-    if (!selected) {
-      return "목적지를 검색한 뒤 목록에서 탭하거나, 이름을 정확히 입력해 주세요.";
-    }
-    return null;
-  })();
-
   function confirmBoardingFromKeyboard() {
     if (boardingResults.length >= 1) {
       const station = boardingResults[0];
@@ -1174,227 +1137,288 @@ function StepStation({
     }
   }
 
+  const lineColor = apiLine === "seoul2" ? "#00A84D" : "#0052A4";
+  const lineColorLight = apiLine === "seoul2" ? "rgba(0, 168, 77, 0.14)" : "rgba(0, 82, 164, 0.14)";
+  const lineDisplayName = (() => {
+    const primary = (line || "").split("·")[0].trim();
+    const compact = primary.replace(/\s+/g, "");
+    if (/^서울1호선$/.test(compact)) return "서울 1호선";
+    if (/^서울2호선$/.test(compact)) return "서울 2호선";
+    return primary || "서울 1호선";
+  })();
+  const searchPlaceholder = apiLine === "seoul2" ? "검색 예: 강남" : "검색 예: 신도림";
+  const voiceHint =
+    apiLine === "seoul2" ? '예: "강남 가고 싶어"' : '예: "신도림 가고 싶어"';
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
-      <Header
-        step={1}
-        onBack={onBack}
-        title="목적지 선택"
-        line={line}
-      />
-      <div style={{ flex: 1, overflow: "auto", padding: "16px 16px 0" }}>
-        <StepDots step={1} />
-        <div
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 16px 10px",
+          borderBottom: `1px solid ${C.border}`,
+          background: C.card,
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+        }}
+      >
+        <button
+          type="button"
+          className="zeb-touch-target"
+          onClick={onBack}
           style={{
-            marginTop: 16,
-            padding: "10px 14px",
-            borderRadius: 10,
-            background: needsManualBoardingStation ? "#FFF7ED" : "#F0F4F8",
-            border: `1px solid ${needsManualBoardingStation ? "#FDBA74" : C.border}`,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+            color: C.text,
+            fontSize: 20,
+            lineHeight: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: MOBILE.touchMin,
+            height: MOBILE.touchMin,
           }}
         >
-          <p style={{ margin: 0, fontSize: 12, color: C.muted }}>현재 위치 (GPS 1km 이내)</p>
-          <p style={{ margin: "4px 0 0", fontSize: 15, fontWeight: 700, color: C.text }}>
-            {isDetectingBoardingStation
-              ? "위치 확인 중…"
-              : boardingStationName
-                ? formatStationDisplayName(boardingStationName)
-                : "자동 설정되지 않음"}
-          </p>
-          {needsManualBoardingStation && boardingGpsMessage ? (
-            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#C2410C", lineHeight: 1.45 }}>
-              {boardingGpsMessage}
-            </p>
-          ) : null}
+          ←
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span
+            style={{
+              display: "inline-block",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#fff",
+              background: lineColor,
+              borderRadius: 999,
+              padding: "3px 10px",
+              marginBottom: 4,
+            }}
+          >
+            {lineDisplayName}
+          </span>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>목적지 선택</div>
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: lineColor,
+            fontWeight: 700,
+            background: lineColorLight,
+            borderRadius: 20,
+            padding: "4px 10px",
+            flexShrink: 0,
+          }}
+        >
+          1 / 3
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: "auto", padding: `12px ${MOBILE.pageX}px 0` }}>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", paddingBottom: 14 }}>
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              style={{
+                width: i === 1 ? 20 : 6,
+                height: 6,
+                borderRadius: 3,
+                background: i === 1 ? lineColor : C.border,
+                transition: "width 0.2s",
+              }}
+            />
+          ))}
         </div>
 
-        {needsManualBoardingStation ? (
-          <div style={{ marginTop: 12 }}>
-            <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: C.text }}>
-              현재 역 직접 선택
+        <div
+          style={{
+            position: "relative",
+            borderRadius: 16,
+            background: lineColor,
+            padding: "16px 18px",
+            color: "#fff",
+            overflow: "hidden",
+          }}
+        >
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 600, opacity: 0.85 }}>현재 위치</p>
+          {needsManualBoardingStation ? (
+            <input
+              className="zeb-field"
+              ref={boardingInputRef}
+              value={boardingQuery}
+              onChange={(e) => setBoardingQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  confirmBoardingFromKeyboard();
+                }
+              }}
+              placeholder="역 검색"
+              style={{
+                marginTop: 8,
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                borderRadius: 10,
+                fontSize: 16,
+                fontWeight: 700,
+                background: "rgba(255,255,255,0.95)",
+                color: C.text,
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          ) : (
+            <p
+              style={{
+                margin: "8px 0 0",
+                fontSize: 28,
+                fontWeight: 800,
+                lineHeight: 1.15,
+                wordBreak: "keep-all",
+              }}
+            >
+              {isDetectingBoardingStation
+                ? "확인 중…"
+                : boardingStationName
+                  ? formatStationDisplayName(boardingStationName)
+                  : "—"}
             </p>
-            <div style={{ position: "relative" }}>
-              <input
-                className="zeb-field"
-                ref={boardingInputRef}
-                value={boardingQuery}
-                onChange={(e) => setBoardingQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    confirmBoardingFromKeyboard();
-                  }
+          )}
+        </div>
+
+        {needsManualBoardingStation && boardingGpsMessage ? (
+          <p style={{ margin: "8px 0 0", fontSize: 12, color: "#C2410C", lineHeight: 1.4 }}>
+            {boardingGpsMessage}
+          </p>
+        ) : null}
+
+        {needsManualBoardingStation && boardingSearchError ? (
+          <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{boardingSearchError}</p>
+        ) : null}
+
+        {needsManualBoardingStation && boardingResults.length > 0 ? (
+          <div
+            style={{
+              marginTop: 8,
+              background: C.card,
+              border: `1px solid ${C.border}`,
+              borderRadius: 12,
+              overflow: "hidden",
+            }}
+          >
+            {boardingResults.map((station, i) => (
+              <button
+                key={`boarding-${station}`}
+                type="button"
+                className="zeb-touch-target"
+                onClick={() => {
+                  onBoardingStationChange?.(station);
+                  setBoardingQuery(station);
                 }}
-                placeholder="현재 역 검색 (예: 신도림)"
                 style={{
                   width: "100%",
-                  padding: "13px 16px 13px 42px",
-                  border: `1.5px solid ${boardingQuery ? C.primary : C.border}`,
-                  borderRadius: 12,
-                  fontSize: MOBILE.inputFontSize,
-                  background: C.card,
-                  outline: "none",
-                  boxSizing: "border-box",
-                }}
-              />
-              <span
-                style={{
-                  position: "absolute",
-                  left: 14,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  fontSize: 18,
-                  color: C.muted,
+                  padding: "12px 14px",
+                  minHeight: MOBILE.touchMin,
+                  background: boardingStationName === station ? lineColorLight : C.card,
+                  border: "none",
+                  borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 15,
+                  color: boardingStationName === station ? lineColor : C.text,
+                  fontWeight: boardingStationName === station ? 600 : 400,
                 }}
               >
-                📍
-              </span>
-            </div>
-            {boardingSearchError ? (
-              <p style={{ marginTop: 6, fontSize: 12, color: "#DC2626" }}>{boardingSearchError}</p>
-            ) : null}
-            {boardingResults.length > 0 ? (
-              <div
-                style={{
-                  marginTop: 8,
-                  background: C.card,
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 12,
-                  overflow: "hidden",
-                }}
-              >
-                {boardingResults.map((station, i) => (
-                  <button
-                    key={`boarding-${station}`}
-                    type="button"
-                    className="zeb-touch-target"
-                    onClick={() => {
-                      onBoardingStationChange?.(station);
-                      setBoardingQuery(station);
-                    }}
-                    style={{
-                      width: "100%",
-                      padding: "13px 16px",
-                      minHeight: MOBILE.touchMin,
-                      background:
-                        boardingStationName === station ? C.primaryLight : C.card,
-                      border: "none",
-                      borderTop: i > 0 ? `1px solid ${C.border}` : "none",
-                      textAlign: "left",
-                      cursor: "pointer",
-                      fontSize: MOBILE.inputFontSize,
-                      color: boardingStationName === station ? C.primary : C.text,
-                      fontWeight: boardingStationName === station ? 600 : 400,
-                    }}
-                  >
-                    {formatStationDisplayName(station)}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+                {formatStationDisplayName(station)}
+              </button>
+            ))}
           </div>
         ) : null}
 
-        <div style={{ marginTop: 12, position: "relative" }}>
+        <div style={{ marginTop: 14 }}>
           <input
             className="zeb-field"
             ref={inputRef}
             value={query}
-            onChange={e => { setQuery(e.target.value); setSelected(null); }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelected(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 confirmDestinationFromKeyboard();
               }
             }}
-            placeholder={mode === "leave" ? "내릴 역 검색 (예: 강남)" : "목적지 검색 (예: 강남)"}
+            placeholder={searchPlaceholder}
             style={{
-              width: "100%", padding: "13px 16px 13px 42px",
-              border: `1.5px solid ${query ? C.primary : C.border}`,
-              borderRadius: 12, fontSize: MOBILE.inputFontSize,
-              background: C.card, outline: "none",
+              width: "100%",
+              padding: "14px 16px",
+              border: `1.5px solid ${query || selected ? lineColor : C.border}`,
+              borderRadius: 12,
+              fontSize: MOBILE.inputFontSize,
+              fontWeight: 500,
+              background: C.card,
+              outline: "none",
               boxSizing: "border-box",
-              transition: "border 0.2s",
             }}
           />
-          <span style={{
-            position: "absolute", left: 14, top: "50%",
-            transform: "translateY(-50%)", fontSize: 18, color: C.muted,
-          }}>🔍</span>
-          {query && (
-            <button onClick={() => { setQuery(""); setSelected(null); }} style={{
-              position: "absolute", right: 12, top: "50%",
-              transform: "translateY(-50%)",
-              background: "#D0D0D0", border: "none",
-              width: 20, height: 20, borderRadius: 10,
-              fontSize: 12, color: "#fff", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>✕</button>
-          )}
         </div>
-        <button
-          type="button"
-          className="zeb-touch-target"
-          onClick={startVoiceSearch}
-          disabled={isListening || isParsingVoice}
-          style={{
-            marginTop: 8,
-            width: "100%",
-            minHeight: MOBILE.touchMin,
-            padding: "10px 16px",
-            borderRadius: 10,
-            border: `1px solid ${C.border}`,
-            background: isListening || isParsingVoice ? C.primaryLight : C.card,
-            color: C.primary,
-            fontSize: MOBILE.inputFontSize,
-            fontWeight: 600,
-            cursor: isListening || isParsingVoice ? "default" : "pointer",
-          }}
-        >
-          {isListening
-            ? "듣는 중..."
-            : isParsingVoice
-              ? "목적지 분석 중..."
-              : "🎤 음성으로 목적지 입력"}
-        </button>
-        {voiceError ? (
-          <p style={{ marginTop: 6, fontSize: 12, color: "#DC2626" }}>{voiceError}</p>
-        ) : null}
+
         {searchError ? (
-          <p style={{ marginTop: 6, fontSize: 12, color: "#DC2626" }}>{searchError}</p>
+          <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{searchError}</p>
         ) : null}
 
-        {/* 검색 결과 */}
         {results.length > 0 && (
-          <div style={{
-            marginTop: 8, background: C.card,
-            border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden",
-          }}>
+          <div
+            style={{
+              marginTop: 8,
+              background: C.card,
+              border: `1px solid ${C.border}`,
+              borderRadius: 12,
+              overflow: "hidden",
+            }}
+          >
             {results.map((station, i) => (
               <button
                 key={station}
                 type="button"
                 className="zeb-touch-target"
-                onClick={() => { setSelected(station); setQuery(station); }}
+                onClick={() => {
+                  setSelected(station);
+                  setQuery(station);
+                }}
                 style={{
-                width: "100%", padding: "13px 16px",
-                minHeight: MOBILE.touchMin,
-                background: selected === station ? C.primaryLight : C.card,
-                border: "none",
-                borderTop: i > 0 ? `1px solid ${C.border}` : "none",
-                textAlign: "left", cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 10,
-                fontSize: MOBILE.inputFontSize,
-                color: selected === station ? C.primary : C.text,
-                fontWeight: selected === station ? 600 : 400,
-              }}>
-                <span style={{
-                  width: 28, height: 28, borderRadius: 8,
-                  background: selected === station ? C.primary : "#F0F4F8",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 13, flexShrink: 0,
-                  color: selected === station ? "#fff" : C.muted,
-                }}>역</span>
+                  width: "100%",
+                  padding: "12px 14px",
+                  minHeight: MOBILE.touchMin,
+                  background: selected === station ? lineColorLight : C.card,
+                  border: "none",
+                  borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  fontSize: 15,
+                  color: selected === station ? lineColor : C.text,
+                  fontWeight: selected === station ? 600 : 400,
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: lineColor,
+                    flexShrink: 0,
+                  }}
+                />
                 {formatStationDisplayName(station)}
               </button>
             ))}
@@ -1406,37 +1430,117 @@ function StepStation({
           !voiceError &&
           !isParsingVoice &&
           query.length <= 12 && (
-          <div style={{ textAlign: "center", padding: "32px 0", color: C.muted, fontSize: 14 }}>
-            &quot;{query}&quot;에 해당하는 역이 없어요
-          </div>
+          <p style={{ margin: "8px 0 0", color: C.muted, fontSize: 13, textAlign: "center" }}>
+            &quot;{query}&quot; 역을 찾지 못했어요
+          </p>
         )}
 
-        {!query && (
-          <div style={{ textAlign: "center", padding: "40px 0 0", color: "#C0C0C0", fontSize: 13, lineHeight: 1.6 }}>
-            {mode === "leave"
-              ? "예: 강남에서 내려요 · 음성 또는 검색으로 내릴 역을 선택하세요"
-              : "예: 강남 가고 싶어 · 음성 또는 검색으로 목적지를 선택하세요"}
-          </div>
-        )}
-      </div>
-      {proceedHint && !canProceedToTrainStep ? (
-        <p
+        <button
+          type="button"
+          className="zeb-touch-target"
+          onClick={startVoiceSearch}
+          disabled={isListening || isParsingVoice}
           style={{
-            margin: "0 16px 8px",
-            fontSize: 12,
-            lineHeight: 1.45,
-            color: "#C2410C",
-            textAlign: "center",
+            marginTop: 14,
+            width: "100%",
+            padding: "14px 16px",
+            borderRadius: 14,
+            border: `1px solid ${C.border}`,
+            background: C.card,
+            cursor: isListening || isParsingVoice ? "default" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            textAlign: "left",
           }}
         >
-          {proceedHint}
-        </p>
-      ) : null}
-      <BottomButton
-        label="다음 — 열차 선택"
-        onClick={() => onNext(selected)}
-        disabled={!canProceedToTrainStep}
-      />
+          <span
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              background: lineColor,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#fff"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+            </svg>
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span
+              style={{
+                display: "block",
+                fontSize: 15,
+                fontWeight: 700,
+                color: C.text,
+                lineHeight: 1.35,
+              }}
+            >
+              {isListening
+                ? "듣는 중…"
+                : isParsingVoice
+                  ? "분석 중…"
+                  : "음성으로 목적지 말씀해 주세요"}
+            </span>
+            {!isListening && !isParsingVoice ? (
+              <span style={{ display: "block", marginTop: 4, fontSize: 13, color: C.muted }}>
+                {voiceHint}
+              </span>
+            ) : null}
+          </span>
+        </button>
+
+        {voiceError ? (
+          <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{voiceError}</p>
+        ) : null}
+      </div>
+
+      <div
+        style={{
+          padding: `12px ${MOBILE.pageX}px max(24px, env(safe-area-inset-bottom))`,
+          background: C.card,
+          borderTop: `1px solid ${C.border}`,
+        }}
+      >
+        <button
+          type="button"
+          className="zeb-touch-target"
+          onClick={() => onNext(selected)}
+          disabled={!canProceedToTrainStep}
+          style={{
+            width: "100%",
+            minHeight: MOBILE.touchMin,
+            padding: "12px 0",
+            background: canProceedToTrainStep ? lineColor : "#D1D5DB",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            fontSize: 16,
+            fontWeight: 700,
+            cursor: canProceedToTrainStep ? "pointer" : "default",
+            transition: "background 0.2s",
+          }}
+        >
+          다음 — 열차 선택
+        </button>
+      </div>
     </div>
   );
 }
@@ -1454,8 +1558,176 @@ function StepTrain({
   const [trains, setTrains] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+  const [selectedTrain, setSelectedTrain] = useState(null);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(
+    Math.floor(TRAIN_LIST_REFRESH_MS / 1000)
+  );
+  const [travelDirectionKey, setTravelDirectionKey] = useState(null);
+  const [stationIndexDebug, setStationIndexDebug] = useState(null);
   const apiLine = resolveApiLineFromLineProp(line);
-  const displayTrains = pickTrainsForCurrentStation(trains, currentStation);
+
+  function resolveTrainDirectionKey(train) {
+    const directionLabel = String(train?.direction ?? "").trim();
+    if (directionLabel) {
+      const fromLabel = normalizeDirectionKeyForStops(directionLabel);
+      if (fromLabel) return fromLabel;
+    }
+
+    const code = String(train?.directionCode ?? train?.updnLine ?? "").trim();
+    if (!code) return null;
+
+    const layoutKey = resolveLineLayoutKey(line);
+    if (layoutKey === "seoul2") {
+      if (code === "1") return "up";
+      if (code === "0") return "down";
+    } else {
+      if (code === "0") return "up";
+      if (code === "1") return "down";
+    }
+
+    return normalizeDirectionKeyForStops(code);
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    const resolveTravelDirection = async () => {
+      if (!currentStation?.trim() || !station?.trim()) {
+        setTravelDirectionKey(null);
+        setStationIndexDebug(null);
+        return;
+      }
+
+      const stations = await fetchStationsForLine(line);
+      if (!active) return;
+
+      if (!Array.isArray(stations) || stations.length === 0) {
+        setTravelDirectionKey(null);
+        setStationIndexDebug(null);
+        return;
+      }
+
+      const findIndex = (name) => {
+        const target = normalizeStationLabel(name);
+        return stations.findIndex((row) => normalizeStationLabel(row?.name) === target);
+      };
+
+      const fromIdx = findIndex(currentStation);
+      const toIdx = findIndex(station);
+      const indexDebug = {
+        currentStation,
+        station,
+        fromIdx,
+        toIdx,
+        stationCount: stations.length,
+      };
+      setStationIndexDebug(indexDebug);
+      console.log("[StepTrain] 역 index 비교", indexDebug);
+
+      if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) {
+        setTravelDirectionKey(null);
+        return;
+      }
+
+      const layoutKey = resolveLineLayoutKey(line);
+      let dirKey = null;
+      if (layoutKey === "seoul2") {
+        const count = stations.length;
+        const distDown = (toIdx - fromIdx + count) % count;
+        const distUp = (fromIdx - toIdx + count) % count;
+        if (distDown < distUp) dirKey = "down";
+        else if (distUp < distDown) dirKey = "up";
+      } else if (toIdx > fromIdx) {
+        dirKey = "down";
+      } else {
+        dirKey = "up";
+      }
+
+      console.log("[StepTrain] 계산된 travelDirectionKey", {
+        layoutKey,
+        dirKey,
+        label: dirKey === "up" ? "상행/내선" : "하행/외선",
+      });
+      setTravelDirectionKey(dirKey);
+    };
+
+    void resolveTravelDirection();
+    return () => {
+      active = false;
+    };
+  }, [line, currentStation, station]);
+
+  const directionFilteredTrains = (() => {
+    if (travelDirectionKey == null) return trains;
+
+    console.log("[StepTrain] 필터 전 열차 목록", trains.map((train) => ({
+      id: train.id,
+      direction: train.direction,
+      directionCode: train.directionCode,
+      updnLine: train.updnLine,
+      resolvedKey: resolveTrainDirectionKey(train),
+    })));
+
+    const filtered = trains.filter(
+      (train) => resolveTrainDirectionKey(train) === travelDirectionKey
+    );
+
+    console.log("[StepTrain] 방향 필터 결과", {
+      travelDirectionKey,
+      before: trains.length,
+      after: filtered.length,
+    });
+
+    if (filtered.length === 0 && trains.length > 0) {
+      console.warn("[StepTrain] 방향 필터링 실패 - 전체 열차 표시", {
+        travelDirectionKey,
+        stationIndexDebug,
+      });
+      return trains;
+    }
+
+    return filtered;
+  })();
+
+  const displayTrains = (() => {
+    const limit = 3;
+    if (!Array.isArray(directionFilteredTrains) || directionFilteredTrains.length === 0) {
+      return [];
+    }
+
+    const target = normalizeStationLabel(currentStation);
+    if (!target) return directionFilteredTrains.slice(0, limit);
+
+    const atCurrentStation = directionFilteredTrains.filter(
+      (train) => normalizeStationLabel(train.current) === target
+    );
+    if (atCurrentStation.length === 0) return directionFilteredTrains.slice(0, limit);
+
+    const seen = new Set(atCurrentStation.map((train) => train.id));
+    const rest = directionFilteredTrains.filter((train) => !seen.has(train.id));
+    return [...atCurrentStation, ...rest].slice(0, limit);
+  })();
+
+  const directionHeading = displayTrains[0]?.eta || "";
+
+  function formatTrainArrivalLabel(train) {
+    const barvlRaw = train.barvlDt;
+    if (barvlRaw != null && barvlRaw !== "") {
+      const totalSeconds = Number(barvlRaw);
+      if (Number.isFinite(totalSeconds) && totalSeconds >= 0) {
+        if (totalSeconds < 60) return "곧 도착";
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        if (seconds > 0) return `${minutes}분 ${seconds}초 후 도착`;
+        return `${minutes}분 후 도착`;
+      }
+    }
+
+    const arvlMsg2 = typeof train.arvlMsg2 === "string" ? train.arvlMsg2.trim() : "";
+    if (arvlMsg2) return arvlMsg2;
+
+    return "도착 정보 확인 중";
+  }
 
   useEffect(() => {
     if (!apiLine) {
@@ -1487,6 +1759,18 @@ function StepTrain({
         const payload = await response.json();
         const apiTrains = Array.isArray(payload?.trains) ? payload.trains : [];
 
+        console.log("[StepTrain] API 첫 번째 열차 원본", apiTrains[0]);
+
+        console.log(
+          "[StepTrain] API 열차 전체 필드",
+          apiTrains.map((row) => ({
+            ...row,
+            rawKeys: row ? Object.keys(row) : [],
+            barvlDt: row?.barvlDt ?? row?.barvl_dt ?? null,
+            arvlMsg2: row?.arvlMsg2 ?? row?.arvl_msg2 ?? null,
+          }))
+        );
+
         if (!active) return;
 
         const mapped = apiTrains
@@ -1495,6 +1779,17 @@ function StepTrain({
             current: row?.station_name?.trim() || "정보 없음",
             eta: row?.direction_display?.trim() || "운행 정보",
             direction: row?.direction?.trim() || "하행",
+            directionCode:
+              row?.direction_code ??
+              row?.updnLine ??
+              row?.directionCode ??
+              null,
+            updnLine: row?.updnLine ?? row?.direction_code ?? null,
+            barvlDt: row?.barvlDt ?? row?.barvl_dt ?? null,
+            arvlMsg2:
+              (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
+              (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
+              null,
           }))
           .filter((row) => row.id);
 
@@ -1523,244 +1818,633 @@ function StepTrain({
     };
   }, [apiLine, station, currentStation]);
 
+  useEffect(() => {
+    if (!lastUpdatedAt) return undefined;
+
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - lastUpdatedAt) / 1000);
+      setSecondsUntilRefresh(
+        Math.max(0, Math.floor(TRAIN_LIST_REFRESH_MS / 1000) - elapsed)
+      );
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [lastUpdatedAt]);
+
+  useEffect(() => {
+    if (!selectedTrain?.id) return;
+    const stillVisible = displayTrains.some((train) => train.id === selectedTrain.id);
+    if (!stillVisible) {
+      setSelectedTrain(null);
+    }
+  }, [displayTrains, selectedTrain?.id]);
+
   function handleTrainTap(train) {
     if (!train?.id || isMatching) return;
-    onTrainPick?.(train);
+    setSelectedTrain((prev) => (prev?.id === train.id ? null : train));
   }
+
+  function handleProceed() {
+    if (!selectedTrain?.id || isMatching) return;
+    onTrainPick?.(selectedTrain);
+  }
+
+  const lineColor = apiLine === "seoul2" ? "#00A84D" : "#0052A4";
+  const lineColorLight =
+    apiLine === "seoul2" ? "rgba(0, 168, 77, 0.14)" : "rgba(0, 82, 164, 0.14)";
+  const lineDisplayName = (() => {
+    const primary = (line || "").split("·")[0].trim();
+    const compact = primary.replace(/\s+/g, "");
+    if (/^서울1호선$/.test(compact)) return "서울 1호선";
+    if (/^서울2호선$/.test(compact)) return "서울 2호선";
+    return primary || "서울 1호선";
+  })();
+  const directionLabel = (line || "").split("·")[1]?.trim() || "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
-      <Header step={2} onBack={onBack} title="열차 선택" line={line} />
-      <div style={{ flex: 1, overflow: "auto", padding: "16px 16px 24px" }}>
-        <StepDots step={2} />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 16px 10px",
+          borderBottom: `1px solid ${C.border}`,
+          background: C.card,
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+        }}
+      >
+        <button
+          type="button"
+          className="zeb-touch-target"
+          onClick={onBack}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+            color: C.text,
+            fontSize: 20,
+            lineHeight: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: MOBILE.touchMin,
+            height: MOBILE.touchMin,
+          }}
+        >
+          ←
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span
+            style={{
+              display: "inline-block",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#fff",
+              background: lineColor,
+              borderRadius: 999,
+              padding: "3px 10px",
+              marginBottom: 4,
+            }}
+          >
+            {lineDisplayName}
+          </span>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>열차 선택</div>
+        </div>
         <div
           style={{
-            marginTop: 16,
-            padding: "10px 14px",
-            borderRadius: 10,
-            background: "#F0F4F8",
+            fontSize: 11,
+            color: lineColor,
+            fontWeight: 700,
+            background: lineColorLight,
+            borderRadius: 20,
+            padding: "4px 10px",
+            flexShrink: 0,
+          }}
+        >
+          2 / 3
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: "auto", padding: `12px ${MOBILE.pageX}px 0` }}>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", paddingBottom: 14 }}>
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              style={{
+                width: i === 2 ? 20 : 6,
+                height: 6,
+                borderRadius: 3,
+                background: i <= 2 ? lineColor : C.border,
+                transition: "width 0.2s",
+              }}
+            />
+          ))}
+        </div>
+
+        <div
+          style={{
+            padding: "14px 16px",
+            borderRadius: 14,
+            background: C.card,
             border: `1px solid ${C.border}`,
-            fontSize: 13,
-            color: C.text,
             lineHeight: 1.5,
           }}
         >
-          <div>
-            현재 역:{" "}
-            <strong>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
               {currentStation
                 ? formatStationDisplayName(currentStation)
-                : "확인 중"}
-            </strong>
+                : "현재 역 확인 중"}
+            </span>
+            {station ? (
+              <>
+                <span style={{ color: C.muted, fontSize: 14 }}>→</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: lineColor }}>
+                  {formatStationDisplayName(station)}
+                </span>
+              </>
+            ) : null}
           </div>
-          {station ? (
-            <div style={{ marginTop: 4, color: C.muted }}>
-              {mode === "leave" ? "내릴 역" : "목적지"}: <strong>{station}</strong>
-            </div>
+          {directionLabel ? (
+            <p style={{ margin: "8px 0 0", fontSize: 13, color: C.muted }}>{directionLabel}</p>
           ) : null}
         </div>
 
-        <p style={{ margin: "14px 0 10px", fontSize: 13, color: C.muted }}>
+        <p style={{ margin: "14px 0 10px", fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
           {currentStation
-            ? `${formatStationDisplayName(currentStation)} 역 열차를 탭하면 좌석을 선택해요`
-            : "열차를 탭하면 좌석을 선택해요"}
+            ? `${formatStationDisplayName(currentStation)} 역 열차를 선택해 주세요`
+            : "열차를 선택해 주세요"}
           {lastUpdatedAt ? (
-            <span style={{ display: "block", marginTop: 4, fontSize: 12 }}>
-              30초마다 자동 갱신
+            <span style={{ display: "block", marginTop: 4, fontSize: 12, color: lineColor }}>
+              {secondsUntilRefresh}초 후 자동 갱신
             </span>
           ) : null}
         </p>
 
         {isLoading ? (
-          <div style={{ color: C.muted, fontSize: 14 }}>열차 불러오는 중…</div>
+          <div style={{ color: C.muted, fontSize: 14, marginBottom: 10 }}>열차 불러오는 중…</div>
+        ) : null}
+
+        {!isLoading && directionHeading ? (
+          <p
+            style={{
+              margin: "0 0 10px",
+              fontSize: 15,
+              fontWeight: 700,
+              color: lineColor,
+            }}
+          >
+            {directionHeading}
+          </p>
         ) : null}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {displayTrains.map((train) => (
-            <button
-              key={train.id}
-              type="button"
-              disabled={isMatching}
-              onClick={() => handleTrainTap(train)}
-              style={{
-                width: "100%",
-                textAlign: "left",
-                padding: "18px 16px",
-                borderRadius: 14,
-                border: `1.5px solid ${C.primary}`,
-                background: C.card,
-                cursor: isMatching ? "default" : "pointer",
-                opacity: isMatching ? 0.55 : 1,
-                boxShadow: "0 2px 8px rgba(11, 31, 75, 0.08)",
-              }}
-            >
-              <div
+          {displayTrains.map((train, index) => {
+            const isSelected = selectedTrain?.id === train.id;
+            return (
+              <button
+                key={train.id}
+                type="button"
+                disabled={isMatching}
+                onClick={() => handleTrainTap(train)}
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 12,
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "16px",
+                  borderRadius: 14,
+                  border: `2px solid ${isSelected ? lineColor : C.border}`,
+                  background: isSelected ? lineColorLight : C.card,
+                  cursor: isMatching ? "default" : "pointer",
+                  opacity: isMatching ? 0.55 : 1,
+                  boxShadow: isSelected
+                    ? `0 2px 10px ${lineColorLight}`
+                    : "0 2px 8px rgba(26, 26, 26, 0.04)",
                 }}
               >
-                <div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>
-                    {train.id}
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 13, color: C.muted }}>
-                    {train.eta}
-                  </div>
-                </div>
-                <span
+                <div
                   style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: C.primary,
-                    whiteSpace: "nowrap",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 12,
                   }}
                 >
-                  탭하여 좌석 선택
-                </span>
-              </div>
-            </button>
-          ))}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 28,
+                        fontWeight: 800,
+                        color: lineColor,
+                        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                        letterSpacing: "-0.5px",
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      {train.id}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 14,
+                        color: lineColor,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {formatTrainArrivalLabel(train)}
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: C.text, fontWeight: 600 }}>
+                      {train.eta}
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>
+                      {train.direction}
+                      {train.current && train.current !== "정보 없음"
+                        ? ` · ${formatStationDisplayName(train.current)}`
+                        : ""}
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: index === 0 ? lineColor : C.muted,
+                      background: index === 0 ? lineColorLight : "#F0F4F8",
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {index === 0 ? "곧 도착" : "다음 열차"}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         {!isLoading && displayTrains.length === 0 ? (
-          <div style={{ marginTop: 14, color: C.muted, fontSize: 14, lineHeight: 1.5 }}>
-            {currentStation
-              ? `${formatStationDisplayName(currentStation)} 역 근처 열차가 없어요. 잠시 후 자동으로 다시 불러옵니다.`
-              : "표시할 열차가 없어요."}
+          <div style={{ marginTop: 14, color: C.muted, fontSize: 14, lineHeight: 1.5, textAlign: "center" }}>
+            현재 열차 정보가 없습니다
           </div>
         ) : null}
+      </div>
+
+      <div
+        style={{
+          padding: `12px ${MOBILE.pageX}px max(24px, env(safe-area-inset-bottom))`,
+          background: C.card,
+          borderTop: `1px solid ${C.border}`,
+        }}
+      >
+        <button
+          type="button"
+          className="zeb-touch-target"
+          onClick={handleProceed}
+          disabled={!selectedTrain || isMatching}
+          style={{
+            width: "100%",
+            minHeight: MOBILE.touchMin,
+            padding: "12px 0",
+            background: selectedTrain && !isMatching ? lineColor : "#D1D5DB",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            fontSize: 16,
+            fontWeight: 700,
+            cursor: selectedTrain && !isMatching ? "pointer" : "default",
+            transition: "background 0.2s",
+          }}
+        >
+          다음 — {mode === "leave" ? "좌석 선택" : "출입문 선택"}
+        </button>
       </div>
     </div>
   );
 }
 
 // ─── Step 3 (seek): 출입문 선택 ────────────────────────────────────
-function StepSeekDoor({ line, onNext, onBack, isSubmitting = false }) {
+function StepSeekDoor({
+  line,
+  onNext,
+  onBack,
+  isSubmitting = false,
+  trainId = null,
+  drtnInfo = null,
+}) {
   const [selectedDoor, setSelectedDoor] = useState(null);
   const doorGroups = buildSeekDoorGroups(line);
   const layout = resolveCarLayout(line);
+  const apiLine = resolveApiLineFromLineProp(line);
+  const lineColor = apiLine === "seoul2" ? "#00A84D" : "#0052A4";
+  const lineColorLight =
+    apiLine === "seoul2" ? "rgba(0, 168, 77, 0.14)" : "rgba(0, 82, 164, 0.14)";
+  const lineDisplayName = (() => {
+    const primary = (line || "").split("·")[0].trim();
+    const compact = primary.replace(/\s+/g, "");
+    if (/^서울1호선$/.test(compact)) return "서울 1호선";
+    if (/^서울2호선$/.test(compact)) return "서울 2호선";
+    return primary || "서울 1호선";
+  })();
+  const directionLabel = drtnInfo || (line || "").split("·")[1]?.trim() || "";
+  const selectedCar = selectedDoor
+    ? Number.parseInt(String(selectedDoor).split("-")[0], 10)
+    : null;
+  const carNumbers = Array.from({ length: layout.carCount }, (_, index) => index + 1);
+  const trainSummaryParts = [];
+  if (trainId) trainSummaryParts.push(`열차 ${trainId}`);
+  if (directionLabel) trainSummaryParts.push(directionLabel);
+  trainSummaryParts.push(`${layout.carCount}개 호차`);
+  const trainSummary = trainSummaryParts.join(" · ");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
-      <Header step={3} onBack={onBack} title="출입문 선택" line={line} />
-      <div style={{ flex: 1, overflow: "auto", padding: "16px 16px 0", position: "relative" }}>
-        {isSubmitting ? <SubmitSkeletonOverlay /> : null}
-        <StepDots step={3} />
-
-        <div style={{ marginTop: 20 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 6, lineHeight: 1.5 }}>
-            현재 몇 번 출입문 앞에 계세요?
-          </div>
-          <div style={{ fontSize: 13, color: C.muted, marginBottom: 16, lineHeight: 1.5 }}>
-            {layout.carCount}개 호차 · 호차당 {layout.doorCount}개 출입문
-          </div>
-
-          <div
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 16px 10px",
+          borderBottom: `1px solid ${C.border}`,
+          background: C.card,
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+        }}
+      >
+        <button
+          type="button"
+          className="zeb-touch-target"
+          onClick={onBack}
+          disabled={isSubmitting}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: isSubmitting ? "default" : "pointer",
+            padding: 0,
+            color: C.text,
+            fontSize: 20,
+            lineHeight: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: MOBILE.touchMin,
+            height: MOBILE.touchMin,
+            opacity: isSubmitting ? 0.5 : 1,
+          }}
+        >
+          ←
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span
             style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 14,
-              paddingBottom: 8,
+              display: "inline-block",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#fff",
+              background: lineColor,
+              borderRadius: 999,
+              padding: "3px 10px",
+              marginBottom: 4,
             }}
           >
-            {doorGroups.map(({ car, doors }, groupIndex) => (
-              <div key={car}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginBottom: 8,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: C.muted,
-                      letterSpacing: "-0.2px",
-                    }}
-                  >
-                    {car}호차
-                  </span>
-                  <span
-                    style={{
-                      flex: 1,
-                      height: 1,
-                      background: groupIndex === 0 ? "transparent" : C.border,
-                    }}
-                  />
-                </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: `repeat(${layout.doorCount}, minmax(0, 1fr))`,
-                    gap: 8,
-                  }}
-                >
-                  {doors.map(({ label }) => {
-                    const isSelected = selectedDoor === label;
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        className="zeb-touch-target"
-                        disabled={isSubmitting}
-                        onClick={() => setSelectedDoor(label)}
-                        style={{
-                          minHeight: 48,
-                          padding: "10px 4px",
-                          borderRadius: 10,
-                          border: `1.5px solid ${isSelected ? C.primary : C.border}`,
-                          background: isSelected ? C.primaryLight : C.card,
-                          color: isSelected ? C.primary : C.text,
-                          fontSize: 15,
-                          fontWeight: 700,
-                          fontFamily: "'JetBrains Mono', monospace",
-                          cursor: isSubmitting ? "default" : "pointer",
-                          transition: "all 0.15s",
-                          opacity: isSubmitting ? 0.55 : 1,
-                          textAlign: "center",
-                        }}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+            {lineDisplayName}
+          </span>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>출입문 선택</div>
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: lineColor,
+            fontWeight: 700,
+            background: lineColorLight,
+            borderRadius: 20,
+            padding: "4px 10px",
+            flexShrink: 0,
+          }}
+        >
+          3 / 3
         </div>
       </div>
-      <BottomButton
-        label={
-          selectedDoor
-            ? `${selectedDoor} 출입문 · 요청 등록하기`
-            : "출입문을 선택해주세요"
-        }
-        onClick={() => {
-          const mapped = mapSeekDoorToSubmission(selectedDoor, line);
-          if (!mapped) return;
-          onNext({
-            doorLabel: selectedDoor,
-            car: mapped.car,
-            door: mapped.door,
-            seat: {
+
+      <div style={{ flex: 1, overflow: "auto", padding: `12px ${MOBILE.pageX}px 0`, position: "relative" }}>
+        {isSubmitting ? <SubmitSkeletonOverlay /> : null}
+
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", paddingBottom: 14 }}>
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              style={{
+                width: i === 3 ? 20 : 6,
+                height: 6,
+                borderRadius: 3,
+                background: lineColor,
+                transition: "width 0.2s",
+              }}
+            />
+          ))}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.text, lineHeight: 1.5 }}>
+            현재 몇 번 출입문 앞에 계세요?
+          </div>
+          <div style={{ marginTop: 6, fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
+            {trainSummary}
+          </div>
+        </div>
+
+        {selectedDoor && selectedCar ? (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: "10px 14px",
+              borderRadius: 10,
+              background: lineColorLight,
+              border: `1px solid ${lineColor}`,
+              fontSize: 13,
+              fontWeight: 700,
+              color: lineColor,
+              textAlign: "center",
+            }}
+          >
+            {selectedCar}호차 {selectedDoor}번 출입문 선택됨
+          </div>
+        ) : null}
+
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            overflowX: "auto",
+            paddingBottom: 4,
+            marginBottom: 16,
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          {carNumbers.map((carNum) => {
+            const isActiveCar = selectedCar === carNum;
+            return (
+              <div
+                key={carNum}
+                style={{
+                  flex: "1 0 32px",
+                  minWidth: 32,
+                  height: 40,
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: isActiveCar ? lineColor : "#F0F4F8",
+                  color: isActiveCar ? "#fff" : C.muted,
+                  border: `1px solid ${isActiveCar ? lineColor : C.border}`,
+                  transition: "background 0.15s, color 0.15s",
+                }}
+              >
+                {carNum}
+              </div>
+            );
+          })}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            paddingBottom: 8,
+          }}
+        >
+          {doorGroups.map(({ car, doors }, groupIndex) => (
+            <div key={car}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 8,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: selectedCar === car ? lineColor : C.muted,
+                    letterSpacing: "-0.2px",
+                  }}
+                >
+                  {car}호차
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    height: 1,
+                    background: groupIndex === 0 ? "transparent" : C.border,
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${layout.doorCount}, minmax(0, 1fr))`,
+                  gap: 8,
+                }}
+              >
+                {doors.map(({ label }) => {
+                  const isSelected = selectedDoor === label;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      className="zeb-touch-target"
+                      disabled={isSubmitting}
+                      onClick={() => setSelectedDoor(label)}
+                      style={{
+                        minHeight: 48,
+                        padding: "10px 4px",
+                        borderRadius: 10,
+                        border: `1.5px solid ${isSelected ? lineColor : C.border}`,
+                        background: isSelected ? lineColor : C.card,
+                        color: isSelected ? "#fff" : C.text,
+                        fontSize: 15,
+                        fontWeight: 700,
+                        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                        cursor: isSubmitting ? "default" : "pointer",
+                        transition: "all 0.15s",
+                        opacity: isSubmitting ? 0.55 : 1,
+                        textAlign: "center",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div
+        style={{
+          padding: `12px ${MOBILE.pageX}px max(24px, env(safe-area-inset-bottom))`,
+          background: C.card,
+          borderTop: `1px solid ${C.border}`,
+        }}
+      >
+        <button
+          type="button"
+          className="zeb-touch-target"
+          onClick={() => {
+            const mapped = mapSeekDoorToSubmission(selectedDoor, line);
+            if (!mapped) return;
+            onNext({
               doorLabel: selectedDoor,
               car: mapped.car,
               door: mapped.door,
-              seatSide: mapped.seatSide,
-              seatNumber: mapped.seatNumber,
-            },
-          });
-        }}
-        disabled={!selectedDoor}
-        loading={isSubmitting}
-      />
+              seat: {
+                doorLabel: selectedDoor,
+                car: mapped.car,
+                door: mapped.door,
+                seatSide: mapped.seatSide,
+                seatNumber: mapped.seatNumber,
+              },
+            });
+          }}
+          disabled={!selectedDoor || isSubmitting}
+          aria-busy={isSubmitting || undefined}
+          style={{
+            width: "100%",
+            minHeight: MOBILE.touchMin,
+            padding: "12px 0",
+            background: selectedDoor && !isSubmitting ? lineColor : "#D1D5DB",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            fontSize: 16,
+            fontWeight: 700,
+            cursor: selectedDoor && !isSubmitting ? "pointer" : "default",
+            transition: "background 0.2s",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            opacity: isSubmitting ? 0.92 : 1,
+          }}
+        >
+          {isSubmitting ? <LoadingSpinner /> : null}
+          {selectedDoor
+            ? `${selectedDoor}번 출입문 — 탑승 요청`
+            : "출입문을 선택해 주세요"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1833,7 +2517,7 @@ function StepSeat({
         {selectedCar && isSeoulLine ? (
           <div style={{ marginTop: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>
-              {selectedCar}번 호차 좌석 · 앉은 자리를 탭하세요
+              {selectedCar}호차 좌석 · 지금 앉으신 자리를 골라주세요
             </div>
             <SubwaySeatMap
               key={`${trainId}-${selectedCar}-leave`}
@@ -1883,6 +2567,16 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
     seat?.car && seat?.door
       ? ` · ${seat.car}-${seat.door}번 문 옆`
       : "";
+  const apiLine = resolveApiLineFromLineProp(line);
+  const lineColor = apiLine === "seoul2" ? "#00A84D" : "#0052A4";
+  const lineDisplayName = (() => {
+    const primary = (line || "").split("·")[0].trim();
+    const compact = primary.replace(/\s+/g, "");
+    if (/^서울1호선$/.test(compact)) return "서울 1호선";
+    if (/^서울2호선$/.test(compact)) return "서울 2호선";
+    return primary || "서울 1호선";
+  })();
+
   return (
     <div style={{
       display: "flex", flexDirection: "column", alignItems: "center",
@@ -1891,10 +2585,24 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
     }}>
       <div style={{
         width: 72, height: 72, borderRadius: 36,
-        background: C.primaryLight, display: "flex",
+        background: lineColor, display: "flex",
         alignItems: "center", justifyContent: "center",
-        fontSize: 36, marginBottom: 20,
+        fontSize: 36, marginBottom: 20, color: "#fff",
       }}>✓</div>
+      <span
+        style={{
+          display: "inline-block",
+          fontSize: 11,
+          fontWeight: 700,
+          color: "#fff",
+          background: lineColor,
+          borderRadius: 999,
+          padding: "3px 10px",
+          marginBottom: 10,
+        }}
+      >
+        {lineDisplayName}
+      </span>
       <div style={{ fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>
         {isLeaveMode ? "하차 등록 완료!" : "등록 완료!"}
       </div>
@@ -1939,7 +2647,7 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
             style={{
               padding: "13px 32px",
               minHeight: MOBILE.touchMin,
-              background: C.primary,
+              background: lineColor,
               color: "#fff",
               border: "none",
               borderRadius: 12,
@@ -1958,9 +2666,9 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
           style={{
             padding: "13px 32px",
             minHeight: MOBILE.touchMin,
-            background: isLeaveMode ? C.primary : C.card,
-            color: isLeaveMode ? "#fff" : C.text,
-            border: isLeaveMode ? "none" : `1px solid ${C.border}`,
+            background: "#fff",
+            color: lineColor,
+            border: `1.5px solid ${lineColor}`,
             borderRadius: 12,
             fontSize: MOBILE.inputFontSize,
             fontWeight: 700,

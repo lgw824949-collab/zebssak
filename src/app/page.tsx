@@ -10,7 +10,11 @@ import {
   resolveLineNumberFromLabel,
   type CongestionStatus,
 } from '@/lib/congestion'
-import { fetchPublicAppStats, type PublicAppStats } from '@/lib/app-stats'
+import {
+  fetchPublicAppStats,
+  resolveDisplayedMemberCount,
+  type PublicAppStats,
+} from '@/lib/app-stats'
 
 interface StoredUser {
   username: string
@@ -22,8 +26,20 @@ interface StoredUser {
 const GPS_MAX_RADIUS_KM = 1
 /** 홈 2단계 — 현재 서울 1·2호선만 노출 (다른 노선은 준비 중) */
 const HOME_LINE_OPTIONS = [
-  { label: '서울 1호선', shortLabel: '1호선', badge: '1', color: '#0052A4' },
-  { label: '서울 2호선', shortLabel: '2호선', badge: '2', color: '#00A84D' },
+  {
+    label: '서울 1호선',
+    shortLabel: '1호선',
+    badge: '1',
+    color: '#0052A4',
+    stationExamples: '서울역 · 종로 · 청량리',
+  },
+  {
+    label: '서울 2호선',
+    shortLabel: '2호선',
+    badge: '2',
+    color: '#00A84D',
+    stationExamples: '강남 · 잠실 · 홍대',
+  },
 ] as const
 
 type HomeFlowMode = 'seek' | 'leave'
@@ -314,15 +330,15 @@ export default function Home() {
         ) : null}
 
         {homeStep === 'mode' ? (
-          <div className="flex flex-1 flex-col justify-center pb-10">
-            <section className="mb-10 text-center">
-              <p className="mb-4 text-[32px] leading-none" aria-hidden>
+          <div className="flex flex-1 flex-col justify-center pb-8">
+            <section className="mb-8 text-center">
+              <p className="mb-5 text-[32px] leading-none" aria-hidden>
                 🚇
               </p>
               <h1 className="text-[32px] font-extrabold leading-[1.12] tracking-tight text-[#1A1A1A]">
                 빈자리, 잽싸게
               </h1>
-              <p className="mt-4 text-[15px] font-semibold leading-snug text-[#1A1A1A]">
+              <p className="mt-4 text-[15px] font-medium leading-snug text-[#1A1A1A]">
                 서울 1·2호선
                 <br />
                 실시간 자리 공유 서비스
@@ -330,16 +346,12 @@ export default function Home() {
               <p className="mt-4 text-[14px] font-medium text-[#888888]">
                 누적{' '}
                 <span className="zeb-mono font-extrabold text-[#F97316]">
-                  {isLoadingData ? '—' : `${(appStats?.display_count ?? 0).toLocaleString()}명`}
+                  {isLoadingData
+                    ? '—'
+                    : `${resolveDisplayedMemberCount(appStats?.member_count ?? 0).toLocaleString()}명`}
                 </span>
-                이 이용 중
+                {' '}가입
               </p>
-              {!isLoadingData && appStats ? (
-                <p className="mt-1.5 text-[12px] font-medium text-[#B0B5BD]">
-                  {appStats.member_count.toLocaleString()}명 가입 ·{' '}
-                  {appStats.pwa_install_count.toLocaleString()}명 설치
-                </p>
-              ) : null}
             </section>
 
             <section>
@@ -347,7 +359,7 @@ export default function Home() {
                 type="button"
                 disabled={isMatchingPaused}
                 onClick={() => handleModeSelect('seek')}
-                className="zeb-touch-target flex h-[56px] w-full items-center justify-center rounded-xl bg-[#0B1F4B] text-[18px] font-extrabold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                className="zeb-touch-target flex h-14 w-full items-center justify-center rounded-xl bg-[#0B1F4B] text-[18px] font-extrabold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 앉고 싶어요
               </button>
@@ -388,10 +400,10 @@ export default function Home() {
 
             <div className="mb-5">
               <h2 className="text-[22px] font-extrabold tracking-tight text-[#1A1A1A]">
-                호선을 선택해 주세요
+                어느 노선 타세요?
               </h2>
-              <p className="mt-2 text-[13px] font-medium text-[#888888]">
-                현재 서울 1·2호선만 운영 중입니다
+              <p className="mt-2 text-[14px] font-medium text-[#888888]">
+                현재는 1·2호선만 지원해요
               </p>
             </div>
 
@@ -401,7 +413,7 @@ export default function Home() {
                   key={line.label}
                   type="button"
                   disabled={isMatchingPaused}
-                  className="zeb-touch-target flex w-full items-center gap-4 rounded-xl bg-white px-4 py-[18px] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="zeb-touch-target flex w-full items-center gap-4 rounded-xl bg-white px-4 py-4 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
                   onClick={() => handleLinePick(line.label)}
                   aria-label={`${line.label} 선택`}
                 >
@@ -411,8 +423,13 @@ export default function Home() {
                   >
                     {line.badge}
                   </span>
-                  <span className="flex-1 text-left text-[16px] font-bold text-[#1A1A1A]">
-                    {line.label}
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block text-[16px] font-extrabold text-[#1A1A1A]">
+                      {line.label}
+                    </span>
+                    <span className="mt-0.5 block text-[13px] font-medium text-[#888888]">
+                      {line.stationExamples}
+                    </span>
                   </span>
                   <ChevronRightIcon />
                 </button>

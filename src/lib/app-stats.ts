@@ -1,5 +1,23 @@
 export const APP_STATS_CLIENT_ID_KEY = 'zeb_client_id'
 
+export function isLocalDevHost(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const host = window.location.hostname
+  return host === 'localhost' || host === '127.0.0.1'
+}
+
+/** 로컬 개발(localhost) — 본인 테스트 가입 1명은 표시 집계에서 제외 */
+export function resolveDisplayedMemberCount(memberCount: number): number {
+  if (!isLocalDevHost()) {
+    return memberCount
+  }
+
+  return Math.max(0, memberCount - 1)
+}
+
 export interface PublicAppStats {
   visitor_count: number
   member_count: number
