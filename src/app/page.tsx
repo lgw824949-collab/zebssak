@@ -10,6 +10,7 @@ import {
   resolveLineNumberFromLabel,
   type CongestionStatus,
 } from '@/lib/congestion'
+import { fetchPublicAppStats, type PublicAppStats } from '@/lib/app-stats'
 
 interface StoredUser {
   username: string
@@ -19,8 +20,6 @@ interface StoredUser {
 
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
 const GPS_MAX_RADIUS_KM = 1
-/** 홈 화면 표시용 실시간 이용자 수 (대기 인원과 별개) */
-const ACTIVE_USER_DISPLAY_BASE = 6000
 /** 홈 2단계 — 현재 서울 1·2호선만 노출 (다른 노선은 준비 중) */
 const HOME_LINE_OPTIONS = [
   { label: '서울 1호선', shortLabel: '1호선', badge: '1', color: '#0052A4' },
@@ -36,13 +35,6 @@ function ChevronRightIcon() {
       <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
-}
-
-function getDisplayActiveUserCount(): number {
-  const now = new Date()
-  const jitter =
-    ((now.getHours() * 17 + now.getMinutes() * 3 + now.getDate() * 11) % 201) - 100
-  return ACTIVE_USER_DISPLAY_BASE + jitter
 }
 
 function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -75,16 +67,20 @@ export default function Home() {
   const [isMatchingPaused, setIsMatchingPaused] = useState(false)
   const [congestionStatus, setCongestionStatus] = useState<CongestionStatus | null>(null)
   const [showCongestionModal, setShowCongestionModal] = useState(false)
-  const [activeUserCount, setActiveUserCount] = useState(ACTIVE_USER_DISPLAY_BASE)
+  const [appStats, setAppStats] = useState<PublicAppStats | null>(null)
   const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 1호선')
   const [homeStep, setHomeStep] = useState<HomeStep>('mode')
   const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
   const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
-    setActiveUserCount(getDisplayActiveUserCount())
 
-    const status = await fetchCongestionStatus(token)
+    const [status, stats] = await Promise.all([
+      fetchCongestionStatus(token),
+      fetchPublicAppStats(),
+    ])
+
     setCongestionStatus(status)
+    setAppStats(stats)
     setIsLoadingData(false)
   }, [])
 
@@ -320,16 +316,30 @@ export default function Home() {
         {homeStep === 'mode' ? (
           <div className="flex flex-1 flex-col justify-center pb-10">
             <section className="mb-10 text-center">
+              <p className="mb-4 text-[32px] leading-none" aria-hidden>
+                🚇
+              </p>
               <h1 className="text-[32px] font-extrabold leading-[1.12] tracking-tight text-[#1A1A1A]">
                 빈자리, 잽싸게
               </h1>
-              <p className="mt-3 text-[14px] font-medium leading-relaxed text-[#888888]">
-                서울 1·2호선 · 지금{' '}
-                <span className="zeb-mono font-extrabold text-[#F97316]">
-                  {isLoadingData ? '—' : `${activeUserCount.toLocaleString()}명`}
-                </span>
-                {' '}이용 중
+              <p className="mt-4 text-[15px] font-semibold leading-snug text-[#1A1A1A]">
+                서울 1·2호선
+                <br />
+                실시간 자리 공유 서비스
               </p>
+              <p className="mt-4 text-[14px] font-medium text-[#888888]">
+                누적{' '}
+                <span className="zeb-mono font-extrabold text-[#F97316]">
+                  {isLoadingData ? '—' : `${(appStats?.display_count ?? 0).toLocaleString()}명`}
+                </span>
+                이 이용 중
+              </p>
+              {!isLoadingData && appStats ? (
+                <p className="mt-1.5 text-[12px] font-medium text-[#B0B5BD]">
+                  {appStats.member_count.toLocaleString()}명 가입 ·{' '}
+                  {appStats.pwa_install_count.toLocaleString()}명 설치
+                </p>
+              ) : null}
             </section>
 
             <section>
@@ -363,7 +373,7 @@ export default function Home() {
           </div>
         ) : (
           <section className="flex flex-1 flex-col">
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-8 flex items-center justify-between">
               <button
                 type="button"
                 onClick={handleBackToModeStep}
@@ -371,22 +381,27 @@ export default function Home() {
               >
                 ← 이전
               </button>
-              <p className="text-[13px] font-semibold text-[#1A1A1A]">
-                {homeMode === 'leave' ? '내릴게요' : '앉고 싶어요'}
+              <p className="text-[13px] font-medium text-[#888888]">
+                {homeMode === 'leave' ? '하차 알리기' : '빈자리 찾기'}
               </p>
             </div>
 
-            <h2 className="mb-4 text-[22px] font-extrabold tracking-tight text-[#1A1A1A]">
-              어느 호선?
-            </h2>
+            <div className="mb-5">
+              <h2 className="text-[22px] font-extrabold tracking-tight text-[#1A1A1A]">
+                호선을 선택해 주세요
+              </h2>
+              <p className="mt-2 text-[13px] font-medium text-[#888888]">
+                현재 서울 1·2호선만 운영 중입니다
+              </p>
+            </div>
 
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2.5">
               {HOME_LINE_OPTIONS.map((line) => (
                 <button
                   key={line.label}
                   type="button"
                   disabled={isMatchingPaused}
-                  className="zeb-touch-target flex w-full items-center gap-4 rounded-xl border border-[#EBEBEB] bg-white px-4 py-5 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="zeb-touch-target flex w-full items-center gap-4 rounded-xl bg-white px-4 py-[18px] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
                   onClick={() => handleLinePick(line.label)}
                   aria-label={`${line.label} 선택`}
                 >
@@ -396,7 +411,7 @@ export default function Home() {
                   >
                     {line.badge}
                   </span>
-                  <span className="flex-1 text-left text-[16px] font-extrabold text-[#1A1A1A]">
+                  <span className="flex-1 text-left text-[16px] font-bold text-[#1A1A1A]">
                     {line.label}
                   </span>
                   <ChevronRightIcon />

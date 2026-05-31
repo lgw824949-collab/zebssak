@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
+import AppInstallTracker from '@/components/AppInstallTracker'
+import DevServiceWorkerCleanup from '@/components/DevServiceWorkerCleanup'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -38,6 +40,8 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
+        <DevServiceWorkerCleanup />
+        <AppInstallTracker />
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-6SD2XF6RH5"
           strategy="afterInteractive"
