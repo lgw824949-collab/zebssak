@@ -43,12 +43,6 @@ interface BoardingDraft {
   seat_number?: number
 }
 
-interface StoredUser {
-  username?: string
-  nickname?: string | null
-  is_vulnerable?: boolean
-}
-
 const WAITING_DRAFT_KEY = 'waitingDraft'
 const ACTIVE_REQUEST_KEY = 'activeMatchRequestId'
 const REGISTERED_FLAG_KEY = 'seekerMatchRequestRegistered'
@@ -87,50 +81,6 @@ function resolveSeatFromDraft(
   }
 
   return null
-}
-
-/** draft 호선에 맞는 노선 트랙 클래스 */
-function getTrackClass(draft: BoardingDraft): string {
-  if (
-    draft.lineKey === 's2' ||
-    draft.lineKey === 'seoul2' ||
-    draft.lineKey === 'incheon2'
-  ) {
-    return 'zeb-track zeb-track--lines2'
-  }
-  if (
-    draft.lineKey === 'line1' ||
-    draft.lineKey === 'seoul1' ||
-    draft.lineKey === 'seoul1_incheon' ||
-    draft.lineKey === 'seoul1_cheonan' ||
-    draft.lineKey === 'incheon1' ||
-    draft.lineNumber === 1
-  ) {
-    return 'zeb-track zeb-track--line1'
-  }
-  return 'zeb-track zeb-track--line2'
-}
-
-/** draft 호선에 맞는 배지 클래스 */
-function getLineBadgeClass(draft: BoardingDraft): string {
-  if (
-    draft.lineKey === 's2' ||
-    draft.lineKey === 'seoul2' ||
-    draft.lineKey === 'incheon2'
-  ) {
-    return 'zeb-line-badge zeb-line-badge--s2'
-  }
-  if (
-    draft.lineKey === 'line1' ||
-    draft.lineKey === 'seoul1' ||
-    draft.lineKey === 'seoul1_incheon' ||
-    draft.lineKey === 'seoul1_cheonan' ||
-    draft.lineKey === 'incheon1' ||
-    draft.lineNumber === 1
-  ) {
-    return 'zeb-line-badge zeb-line-badge--1'
-  }
-  return 'zeb-line-badge zeb-line-badge--2'
 }
 
 function normalizeDirection(raw: string | number | undefined): string {
@@ -192,20 +142,41 @@ function getDirectionDisplay(draft: BoardingDraft): string {
   return ''
 }
 
-function formatLineSummary(draft: BoardingDraft): string {
-  const lineText = draft.lineLabel?.trim() || `인천 ${draft.lineNumber}호선`
-  const directionDisplay = getDirectionDisplay(draft)
-  return directionDisplay
-    ? `${lineText} · ${draft.trainNo} · ${draft.carNumber}호차 · ${directionDisplay}`
-    : `${lineText} · ${draft.trainNo} · ${draft.carNumber}호차`
+function isLineTwo(draft: BoardingDraft): boolean {
+  return (
+    draft.lineKey === 's2' ||
+    draft.lineKey === 'seoul2' ||
+    draft.lineKey === 'incheon2' ||
+    draft.lineNumber === 2
+  )
 }
 
-function getLineBadgeText(draft: BoardingDraft): string {
-  if (draft.lineKey === 's2') {
-    return '2'
-  }
-  return String(draft.lineNumber)
+function resolveLineColor(draft: BoardingDraft): string {
+  return isLineTwo(draft) ? '#00A84D' : '#0052A4'
 }
+
+function resolveLineShortLabel(draft: BoardingDraft): string {
+  const fromLabel = (draft.lineLabel || '').replace(/\s+/g, '')
+  if (/^서울2호선$/.test(fromLabel) || fromLabel === '2호선') return '2호선'
+  if (/^서울1호선$/.test(fromLabel) || fromLabel === '1호선') return '1호선'
+  return isLineTwo(draft) ? '2호선' : '1호선'
+}
+
+function formatTrainSubline(draft: BoardingDraft): string {
+  const directionDisplay = getDirectionDisplay(draft)
+  const parts = [`열차번호 ${draft.trainNo}`, `${draft.carNumber}호차`]
+  if (directionDisplay) {
+    parts.push(directionDisplay)
+  }
+  return parts.join(' · ')
+}
+
+const PRIORITY_CRITERIA = [
+  '교통약자 여부',
+  '매너포인트 높은 순',
+  '남은 역 수',
+  '요청 시각',
+] as const
 
 function parseStationOrderFromId(stationId: string | undefined): number | null {
   if (!stationId) return null
@@ -251,7 +222,6 @@ function WaitingLoading() {
 export default function WaitingPage() {
   const router = useRouter()
   const [draft, setDraft] = useState<BoardingDraft | null>(null)
-  const [user, setUser] = useState<StoredUser | null>(null)
   const [waitingRank, setWaitingRank] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [isReady, setIsReady] = useState(false)
@@ -272,11 +242,6 @@ export default function WaitingPage() {
         const existingRequestId = sessionStorage.getItem(ACTIVE_REQUEST_KEY)
         const isRegistered =
           sessionStorage.getItem(REGISTERED_FLAG_KEY) === 'true'
-
-        const rawUser = localStorage.getItem('user')
-        if (rawUser && !cancelled) {
-          setUser(JSON.parse(rawUser) as StoredUser)
-        }
 
         if (!parsedDraft && !existingRequestId) {
           router.replace('/home')
@@ -480,208 +445,330 @@ export default function WaitingPage() {
     )
   }
 
-  const isVulnerable = user?.is_vulnerable === true
+  const lineColor = draft ? resolveLineColor(draft) : '#0052A4'
+  const lineColorLight =
+    lineColor === '#00A84D' ? 'rgba(0, 168, 77, 0.14)' : 'rgba(0, 82, 164, 0.14)'
   const remainingStations = draft ? resolveRemainingStations(draft) : null
   const remainingStationsText =
     remainingStations === null ? '미확인' : `${remainingStations}`
-  const priorityLabel = isVulnerable
-    ? '교통약자 우선 (1순위)'
-    : '교통약자 → 매너포인트 높은 순 → 남은 역 수 → 요청 시각'
 
   return (
-    <div className="zeb-page wait-theme flex flex-col">
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100dvh',
+        background: '#F7F8FA',
+        color: '#1A1A1A',
+      }}
+    >
       <header
-        className="zeb-page-header -mx-[max(var(--space-page-x),env(safe-area-inset-left))] px-[max(var(--space-page-x),env(safe-area-inset-left))] pb-4"
-        style={{ borderBottom: '2px solid var(--border)' }}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 1fr',
+          alignItems: 'center',
+          padding: '14px 16px',
+          background: '#FFFFFF',
+          borderBottom: '1px solid #EBEBEB',
+          flexShrink: 0,
+        }}
       >
-        <div className="flex items-center justify-between gap-2">
+        <div style={{ justifySelf: 'start' }}>
           <Link
             href="/"
-            className="zeb-btn zeb-btn--ghost"
             style={{
-              minHeight: 'var(--touch-min)',
-              padding: '0.5rem 0.75rem',
-              fontSize: 'var(--font-size-sm)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              minHeight: 44,
+              padding: '0 4px',
+              fontSize: 15,
+              fontWeight: 600,
+              color: '#374151',
+              textDecoration: 'none',
             }}
           >
-            ← 홈
+            홈
           </Link>
-          <h1
-            className="font-bold"
-            style={{ fontSize: 'var(--font-size-xl)', color: 'var(--foreground)' }}
-          >
-            착석 희망 대기
-          </h1>
-          <span className="zeb-line-badge zeb-line-badge--1" style={{ visibility: 'hidden' }}>
-            ·
-          </span>
         </div>
-        {draft && (
-          <div className="mt-3" aria-hidden>
-            <div className={getTrackClass(draft)} />
-          </div>
-        )}
+        <h1
+          style={{
+            justifySelf: 'center',
+            margin: 0,
+            fontSize: 16,
+            fontWeight: 700,
+            color: '#1A1A1A',
+            textAlign: 'center',
+          }}
+        >
+          착석 희망 대기
+        </h1>
+        <div style={{ justifySelf: 'end' }} aria-hidden />
       </header>
 
-      <main className="flex-1 space-y-6 py-2">
+      <main
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          padding: '16px 16px 0',
+          overflow: 'auto',
+        }}
+      >
         {draft && (
-          <div className="zeb-card text-center">
-            <p className="zeb-caption">목적지</p>
+          <section
+            style={{
+              background: lineColor,
+              borderRadius: 16,
+              padding: '20px 18px',
+              color: '#FFFFFF',
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 600, opacity: 0.88 }}>목적지</p>
             <p
-              className="mt-2 font-bold"
-              style={{ fontSize: 'var(--font-size-2xl)', color: 'var(--foreground)' }}
+              style={{
+                margin: '10px 0 0',
+                fontSize: 28,
+                fontWeight: 800,
+                lineHeight: 1.2,
+              }}
             >
               {draft.destinationName}
             </p>
-            <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
-              <span className={getLineBadgeClass(draft)}>
-                {getLineBadgeText(draft)}
+            <div
+              style={{
+                marginTop: 14,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  background: 'rgba(255, 255, 255, 0.22)',
+                }}
+              >
+                {resolveLineShortLabel(draft)}
               </span>
-              <p className="zeb-caption">{formatLineSummary(draft)}</p>
+              <span style={{ fontSize: 13, fontWeight: 500, opacity: 0.92 }}>
+                {formatTrainSubline(draft)}
+              </span>
             </div>
+          </section>
+        )}
+
+        {error && (
+          <div
+            style={{
+              background: '#FEF2F2',
+              border: '1px solid #FECACA',
+              borderRadius: 12,
+              padding: '12px 14px',
+              fontSize: 14,
+              color: '#B91C1C',
+            }}
+          >
+            {error}
           </div>
         )}
 
-        {error && <div className="zeb-alert zeb-alert--danger">{error}</div>}
-
         {waitingRank !== null && (
           <>
-            <section className="zeb-card text-center zeb-bg-line1-light">
-              <p className="zeb-label" style={{ marginBottom: '0.25rem' }}>
+            <section
+              style={{
+                background: '#FFFFFF',
+                borderRadius: 16,
+                padding: '20px 18px',
+                border: '1px solid #EBEBEB',
+                textAlign: 'center',
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#6B7280' }}>
                 현재 대기 순위
               </p>
               <p
-                className="zeb-text-line1 mt-2"
-                style={{ fontSize: '3.5rem', fontWeight: 800, lineHeight: 1 }}
+                style={{
+                  margin: '12px 0 0',
+                  fontSize: 52,
+                  fontWeight: 800,
+                  lineHeight: 1,
+                  color: lineColor,
+                  fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                }}
               >
                 {waitingRank}
-                <span
-                  style={{
-                    fontSize: 'var(--font-size-2xl)',
-                    fontWeight: 700,
-                    marginLeft: '0.25rem',
-                  }}
-                >
-                  위
-                </span>
+                <span style={{ fontSize: 24, fontWeight: 700, marginLeft: 4 }}>위</span>
               </p>
-              <p className="zeb-caption mt-4">
-                매칭 대기 중입니다 (Realtime 감지 중)
-              </p>
-              <div className="mt-4 flex justify-center gap-1" aria-hidden>
-                <span className="zeb-station-dot zeb-station-dot--line1 animate-pulse" />
-                <span
-                  className="zeb-station-dot zeb-station-dot--line1"
-                  style={{ opacity: 0.5 }}
-                />
-                <span
-                  className="zeb-station-dot zeb-station-dot--line1"
-                  style={{ opacity: 0.25 }}
-                />
-              </div>
-            </section>
-
-            <section className="zeb-card">
-              <h2 className="zeb-label">내 우선순위</h2>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <span
-                  className={
-                    isVulnerable
-                      ? 'zeb-line-badge zeb-line-badge--1'
-                      : 'zeb-line-badge zeb-line-badge--2'
-                  }
-                  style={{
-                    alignSelf: 'flex-start',
-                    fontSize: 'var(--font-size-sm)',
-                    padding: '0.375rem 0.875rem',
-                  }}
-                >
-                  {isVulnerable ? '교통약자' : '일반'}
+              <div
+                style={{
+                  marginTop: 16,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
+              >
+                <span className="wait-live-dot" aria-hidden />
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#6B7280' }}>
+                  실시간 매칭 대기 중
                 </span>
-                <p
-                  style={{
-                    fontSize: 'var(--font-size-base)',
-                    color: 'var(--text-muted)',
-                    lineHeight: 1.45,
-                  }}
-                >
-                  {priorityLabel}
-                </p>
               </div>
             </section>
 
             {draft && (
-              <section className="zeb-card zeb-card--elevated">
-                <h2 className="zeb-label">목적지까지 남은 역 수</h2>
-                <p
-                  className="mt-2"
+              <section
+                style={{
+                  background: '#FFFFFF',
+                  borderRadius: 16,
+                  padding: '4px 18px',
+                  border: '1px solid #EBEBEB',
+                }}
+              >
+                <div
                   style={{
-                    fontSize: 'var(--font-size-3xl)',
-                    fontWeight: 800,
-                    color: 'var(--foreground)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    padding: '14px 0',
+                    borderBottom: '1px solid #F3F4F6',
                   }}
                 >
-                  {remainingStationsText}
+                  <span style={{ fontSize: 14, fontWeight: 500, color: '#6B7280' }}>
+                    목적지까지 남은 역
+                  </span>
                   <span
                     style={{
-                      fontSize: 'var(--font-size-xl)',
-                      fontWeight: 600,
-                      color: 'var(--text-muted)',
-                      marginLeft: '0.25rem',
+                      fontSize: 26,
+                      fontWeight: 800,
+                      color: lineColor,
+                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
                     }}
                   >
-                    역
+                    {remainingStationsText}
+                    <span style={{ fontSize: 16, fontWeight: 700, marginLeft: 2 }}>역</span>
                   </span>
-                </p>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    padding: '14px 0',
+                  }}
+                >
+                  <span style={{ fontSize: 14, fontWeight: 500, color: '#6B7280' }}>
+                    매칭 유형
+                  </span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>
+                    교통약자 우선
+                  </span>
+                </div>
               </section>
             )}
+
+            <section
+              style={{
+                background: '#FFFFFF',
+                borderRadius: 16,
+                padding: '18px',
+                border: '1px solid #EBEBEB',
+              }}
+            >
+              <p style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 700, color: '#374151' }}>
+                우선순위 기준
+              </p>
+              <ol style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                {PRIORITY_CRITERIA.map((label, index) => (
+                  <li
+                    key={label}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '8px 0',
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 24,
+                        height: 24,
+                        borderRadius: '50%',
+                        background: lineColorLight,
+                        color: lineColor,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {index + 1}
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: '#374151' }}>
+                      {label}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </section>
           </>
         )}
       </main>
 
       <footer
-        className="mt-auto pt-6"
-        style={{ borderTop: '2px solid var(--border)' }}
+        style={{
+          padding: '16px 16px max(24px, env(safe-area-inset-bottom))',
+          flexShrink: 0,
+        }}
       >
         <button
           type="button"
           onClick={handleCancel}
-          className="zeb-btn zeb-btn--block zeb-btn--secondary"
+          style={{
+            width: '100%',
+            minHeight: 48,
+            padding: '12px 0',
+            background: '#FFFFFF',
+            border: '1.5px solid #EBEBEB',
+            borderRadius: 12,
+            fontSize: 15,
+            fontWeight: 700,
+            color: '#374151',
+            cursor: 'pointer',
+          }}
         >
-          대기 취소
+          요청 취소
         </button>
       </footer>
+
       <style jsx global>{`
-        .wait-theme {
-          background: #f7f8fa !important;
-          color: #1a1a1a !important;
+        @keyframes wait-live-pulse {
+          0%,
+          100% {
+            opacity: 1;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.35;
+            transform: scale(0.85);
+          }
         }
-        .wait-theme .zeb-card,
-        .wait-theme .zeb-card--elevated {
-          background: #ffffff !important;
-          border: 0.5px solid #ebebeb !important;
-          border-radius: 16px !important;
-          box-shadow: 0 2px 10px rgba(26, 26, 26, 0.05) !important;
-        }
-        .wait-theme .zeb-page-header,
-        .wait-theme .zeb-footer {
-          background: #f7f8fa !important;
-        }
-        .wait-theme .zeb-label,
-        .wait-theme .zeb-page-title,
-        .wait-theme .zeb-text-line1 {
-          color: #0052a4 !important;
-        }
-        .wait-theme .zeb-alert--danger {
-          border-radius: 16px !important;
-        }
-        .wait-theme .zeb-btn {
-          border-radius: 16px !important;
-        }
-        .wait-theme .zeb-btn--secondary {
-          background: #ffffff !important;
-          color: #0052a4 !important;
-          border: 0.5px solid #ebebeb !important;
+        .wait-live-dot {
+          display: inline-block;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #00a84d;
+          animation: wait-live-pulse 1.4s ease-in-out infinite;
         }
       `}</style>
     </div>
