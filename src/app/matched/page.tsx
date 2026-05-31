@@ -44,6 +44,7 @@ interface MatchDetail {
   viewer_role: 'seeker' | 'provider'
   partner: RequestSummary
   self: RequestSummary
+  seat_confirmation?: { seated: boolean; created_at: string } | null
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -197,6 +198,9 @@ export default function MatchedPage() {
   const router = useRouter()
   const [detail, setDetail] = useState<MatchDetail | null>(null)
   const [error, setError] = useState('')
+  const [seatAnswer, setSeatAnswer] = useState<boolean | null>(null)
+  const [isSubmittingSeat, setIsSubmittingSeat] = useState(false)
+  const [seatSubmitError, setSeatSubmitError] = useState('')
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -233,6 +237,9 @@ export default function MatchedPage() {
         }
 
         setDetail(result.data)
+        if (result.data.seat_confirmation) {
+          setSeatAnswer(result.data.seat_confirmation.seated)
+        }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return
         setError('네트워크 오류가 발생했습니다.')
@@ -244,14 +251,60 @@ export default function MatchedPage() {
     return () => abortController.abort()
   }, [router])
 
-  function handleConfirm() {
+  function clearMatchSession() {
     sessionStorage.removeItem('boardingDraft')
     sessionStorage.removeItem('waitingDraft')
     sessionStorage.removeItem('providerRegistered')
     sessionStorage.removeItem('activeMatchId')
     sessionStorage.removeItem('activeMatchRequestId')
     sessionStorage.removeItem('seekerMatchRequestRegistered')
-    router.push('/home')
+  }
+
+  function handleConfirm() {
+    clearMatchSession()
+    router.push('/')
+  }
+
+  async function submitSeatConfirmation(seated: boolean) {
+    const token = localStorage.getItem('token')
+    const matchId = resolveMatchId()
+    if (!token || !matchId) {
+      setSeatSubmitError('매칭 정보를 찾을 수 없습니다.')
+      return
+    }
+
+    setIsSubmittingSeat(true)
+    setSeatSubmitError('')
+
+    try {
+      const response = await fetch(
+        `/api/matches/${encodeURIComponent(matchId)}/confirm-seat`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ seated }),
+        }
+      )
+
+      const result = (await response.json()) as {
+        success?: boolean
+        error?: string
+      }
+
+      if (!response.ok || !result.success) {
+        setSeatSubmitError(result.error ?? '확인 저장에 실패했습니다.')
+        return
+      }
+
+      setSeatAnswer(seated)
+    } catch {
+      setSeatSubmitError('네트워크 오류가 발생했습니다.')
+    } finally {
+      setIsSubmittingSeat(false)
+    }
   }
 
   if (error) {
@@ -409,13 +462,69 @@ export default function MatchedPage() {
         className="mt-auto pt-6"
         style={{ borderTop: '2px solid var(--border)' }}
       >
-        <button
-          type="button"
-          onClick={handleConfirm}
-          className="zeb-btn zeb-btn--block zeb-btn--line1"
-        >
-          확인
-        </button>
+        {isSeeker ? (
+          <div className="space-y-4">
+            {seatAnswer === null ? (
+              <>
+                <p
+                  className="text-center font-bold"
+                  style={{ fontSize: 'var(--font-size-lg)', color: 'var(--foreground)' }}
+                >
+                  자리에 앉으셨나요?
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    disabled={isSubmittingSeat}
+                    onClick={() => void submitSeatConfirmation(true)}
+                    className="zeb-btn zeb-btn--line1"
+                  >
+                    네, 앉았습니다
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmittingSeat}
+                    onClick={() => void submitSeatConfirmation(false)}
+                    className="zeb-btn zeb-btn--secondary"
+                  >
+                    아니요
+                  </button>
+                </div>
+                {seatSubmitError ? (
+                  <p
+                    className="text-center text-sm font-semibold"
+                    style={{ color: 'var(--color-danger)' }}
+                  >
+                    {seatSubmitError}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <p className="zeb-caption text-center">
+                  {seatAnswer
+                    ? '확인해 주셔서 감사합니다. 편안한 이용 되세요.'
+                    : '불편을 드려 죄송합니다. 다음 이용 때 더 나은 매칭을 위해 반영하겠습니다.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  className="zeb-btn zeb-btn--block zeb-btn--line1"
+                >
+                  홈으로
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleConfirm}
+            className="zeb-btn zeb-btn--block zeb-btn--line1"
+          >
+            확인
+          </button>
+        )}
       </footer>
       <style jsx global>{`
         .matched-theme {

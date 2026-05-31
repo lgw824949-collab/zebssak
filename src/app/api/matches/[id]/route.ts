@@ -227,6 +227,23 @@ export async function GET(
     const partnerRow = isSeeker ? leavingRow : seatSeekRow
     const selfRow = isSeeker ? seatSeekRow : leavingRow
 
+    let seat_confirmation: { seated: boolean; created_at: string } | null = null
+    if (isSeeker) {
+      const { data: confirmationRow, error: confirmationError } = await supabase
+        .from('match_seat_confirmations')
+        .select('seated, created_at')
+        .eq('match_id', matchId)
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (!confirmationError && confirmationRow) {
+        seat_confirmation = {
+          seated: Boolean(confirmationRow.seated),
+          created_at: String(confirmationRow.created_at),
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -235,6 +252,7 @@ export async function GET(
         viewer_role: isSeeker ? 'seeker' : 'provider',
         partner: buildRequestSummary(partnerRow),
         self: buildRequestSummary(selfRow),
+        seat_confirmation,
       },
     })
   } catch {
