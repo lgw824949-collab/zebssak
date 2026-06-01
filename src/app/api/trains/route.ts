@@ -1,5 +1,13 @@
 import { NextResponse } from 'next/server'
 import {
+  adjustBarvlDtSeconds,
+  fetchRealtimeArrivalRows,
+  filterArrivalsBySubwayId,
+  normalizeSeoulTrainNo,
+  resolveSeoulSubwayId,
+  type SeoulArrivalRow,
+} from '@/lib/seoul-metro'
+import {
   filterTrainsTowardDestination,
   normalizeDirectionKey,
 } from '@/lib/train-direction'
@@ -38,6 +46,8 @@ export interface TrainListItem {
   direction: string
   direction_display: string
   is_express: boolean
+  barvl_dt?: number | null
+  arvl_msg2?: string | null
 }
 
 interface SeoulStationsApiTrain {
@@ -466,6 +476,97 @@ function enrichTrain(
   }
 }
 
+function buildArrivalLookup(rows: SeoulArrivalRow[]): Map<string, SeoulArrivalRow> {
+  const map = new Map<string, SeoulArrivalRow>()
+  for (const row of rows) {
+    const trainNo = row.btrainNo?.trim()
+    if (!trainNo) continue
+    const key = normalizeSeoulTrainNo(trainNo)
+    if (!map.has(key)) {
+      map.set(key, row)
+    }
+  }
+  return map
+}
+
+function mergeArrivalIntoTrains(
+  trains: TrainListItem[],
+  arrivals: SeoulArrivalRow[]
+): TrainListItem[] {
+  const lookup = buildArrivalLookup(arrivals)
+  if (lookup.size === 0) return trains
+
+  return trains.map((train) => {
+    const arrival = lookup.get(normalizeSeoulTrainNo(train.train_no))
+    if (!arrival) return train
+
+    return {
+      ...train,
+      barvl_dt: adjustBarvlDtSeconds(arrival.barvlDt, arrival.recptnDt),
+      arvl_msg2: arrival.arvlMsg2?.trim() || null,
+    }
+  })
+}
+
+function mapArrivalToTrain(
+  row: SeoulArrivalRow,
+  line: SeoulLineParam,
+  currentStation: string
+): TrainListItem | null {
+  const trainNo = row.btrainNo?.trim()
+  const direction = row.updnLine?.trim()
+  if (!trainNo || !direction) return null
+
+  return enrichTrain(
+    {
+      train_no: trainNo,
+      station_name: currentStation,
+      direction,
+      is_express: row.btrainSttus?.includes('급행') ?? false,
+      barvl_dt: adjustBarvlDtSeconds(row.barvlDt, row.recptnDt),
+      arvl_msg2: row.arvlMsg2?.trim() || null,
+    },
+    line,
+    currentStation
+  )
+}
+
+function isFallbackMockTrain(train: TrainListItem): boolean {
+  return /^10[1-4]$/.test(train.train_no)
+}
+
+async function enrichSeoulTrainsWithArrival(
+  request: Request,
+  seoulLine: SeoulLineParam,
+  trains: TrainListItem[],
+  currentStation: string | null
+): Promise<TrainListItem[]> {
+  if (!currentStation?.trim()) return trains
+
+  const stationName = currentStation.trim().replace(/역$/u, '')
+  const subwayId = resolveSeoulSubwayId(seoulLine)
+  const arrivals = filterArrivalsBySubwayId(
+    await fetchRealtimeArrivalRows(request, stationName),
+    subwayId
+  )
+
+  if (arrivals.length === 0) return trains
+
+  const merged = mergeArrivalIntoTrains(trains, arrivals)
+  const usingFallbackOnly =
+    trains.length > 0 && trains.every(isFallbackMockTrain) && merged.every(isFallbackMockTrain)
+
+  if (!usingFallbackOnly) {
+    return merged
+  }
+
+  const fromArrival = arrivals
+    .map((row) => mapArrivalToTrain(row, seoulLine, stationName))
+    .filter((train): train is TrainListItem => train !== null)
+
+  return fromArrival.length > 0 ? fromArrival : merged
+}
+
 function mapSeoulTrain(
   train: SeoulStationsApiTrain,
   line: SeoulLineParam,
@@ -548,11 +649,14 @@ async function fetchSeoulTrains(
     return buildSeoulFallbackTrains(seoulLine, currentStation)
   }
 
-  return filterSeoul1BranchTrains(
+  const mapped = filterSeoul1BranchTrains(
     rawTrains
-    .map((train) => mapSeoulTrain(train, seoulLine, currentStation))
-    .filter((train): train is TrainListItem => train !== null)
-  , seoulLine)
+      .map((train) => mapSeoulTrain(train, seoulLine, currentStation))
+      .filter((train): train is TrainListItem => train !== null),
+    seoulLine
+  )
+
+  return enrichSeoulTrainsWithArrival(request, seoulLine, mapped, currentStation)
 }
 
 /**

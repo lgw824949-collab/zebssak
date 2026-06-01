@@ -1711,19 +1711,21 @@ function StepTrain({
   const directionHeading = displayTrains[0]?.eta || "";
 
   function formatTrainArrivalLabel(train) {
+    const arvlMsg2 = typeof train.arvlMsg2 === "string" ? train.arvlMsg2.trim() : "";
     const barvlRaw = train.barvlDt;
     if (barvlRaw != null && barvlRaw !== "") {
       const totalSeconds = Number(barvlRaw);
-      if (Number.isFinite(totalSeconds) && totalSeconds >= 0) {
-        if (totalSeconds < 60) return "곧 도착";
+      if (Number.isFinite(totalSeconds) && totalSeconds > 0) {
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
+        if (totalSeconds < 60) return "곧 도착";
         if (seconds > 0) return `${minutes}분 ${seconds}초 후 도착`;
         return `${minutes}분 후 도착`;
       }
+      if (totalSeconds === 0 && arvlMsg2) return arvlMsg2;
+      if (totalSeconds === 0) return "곧 도착";
     }
 
-    const arvlMsg2 = typeof train.arvlMsg2 === "string" ? train.arvlMsg2.trim() : "";
     if (arvlMsg2) return arvlMsg2;
 
     return "도착 정보 확인 중";
@@ -1836,18 +1838,6 @@ function StepTrain({
           const payload = await response.json();
           const apiTrains = Array.isArray(payload?.trains) ? payload.trains : [];
 
-          console.log("[StepTrain] API 첫 번째 열차 원본", apiTrains[0]);
-
-          console.log(
-            "[StepTrain] API 열차 전체 필드",
-            apiTrains.map((row) => ({
-              ...row,
-              rawKeys: row ? Object.keys(row) : [],
-              barvlDt: row?.barvlDt ?? row?.barvl_dt ?? null,
-              arvlMsg2: row?.arvlMsg2 ?? row?.arvl_msg2 ?? null,
-            }))
-          );
-
           mapped = apiTrains
             .map((row) => ({
               id: row?.train_no ?? "",
@@ -1860,10 +1850,10 @@ function StepTrain({
                 row?.directionCode ??
                 null,
               updnLine: row?.updnLine ?? row?.direction_code ?? null,
-              barvlDt: row?.barvlDt ?? row?.barvl_dt ?? null,
+              barvlDt: row?.barvl_dt ?? row?.barvlDt ?? null,
               arvlMsg2:
-                (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
                 (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
+                (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
                 null,
             }))
             .filter((row) => row.id);
