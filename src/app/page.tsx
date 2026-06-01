@@ -10,12 +10,6 @@ import {
   resolveLineNumberFromLabel,
   type CongestionStatus,
 } from '@/lib/congestion'
-import {
-  fetchPublicAppStats,
-  resolveDisplayedMemberCount,
-  type PublicAppStats,
-} from '@/lib/app-stats'
-import HomeHeroVisual from '@/components/HomeHeroVisual'
 
 interface StoredUser {
   username: string
@@ -25,7 +19,8 @@ interface StoredUser {
 
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
 const GPS_MAX_RADIUS_KM = 1
-/** 홈 2단계 — 현재 서울 1·2호선만 노출 (다른 노선은 준비 중) */
+const LINE7_OLIVE = '#747F00'
+/** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {
   //   label: '서울 1호선',
@@ -69,7 +64,7 @@ type HomeStep = 'mode' | 'line'
 
 function ChevronRightIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden className="shrink-0 text-[#B0B5BD]">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden className="shrink-0" style={{ color: LINE7_OLIVE }}>
       <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
@@ -105,25 +100,19 @@ export default function Home() {
   const [isMatchingPaused, setIsMatchingPaused] = useState(false)
   const [congestionStatus, setCongestionStatus] = useState<CongestionStatus | null>(null)
   const [showCongestionModal, setShowCongestionModal] = useState(false)
-  const [appStats, setAppStats] = useState<PublicAppStats | null>(null)
-  const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 1호선')
+  const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 7호선')
   const [homeStep, setHomeStep] = useState<HomeStep>('mode')
   const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
   const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
 
-    const [status, stats] = await Promise.all([
-      fetchCongestionStatus(token),
-      fetchPublicAppStats(),
-    ])
-
+    const status = await fetchCongestionStatus(token)
     setCongestionStatus(status)
-    setAppStats(stats)
     setIsLoadingData(false)
   }, [])
 
   useEffect(() => {
-    const lineLabel = homeStep === 'line' ? selectedLineLabel : '서울 1호선'
+    const lineLabel = homeStep === 'line' ? selectedLineLabel : '서울 7호선'
     const paused = isLineHalted(congestionStatus, lineLabel)
     setIsMatchingPaused(paused)
     if (paused && !isLoadingData && homeStep === 'line') {
@@ -352,35 +341,119 @@ export default function Home() {
         ) : null}
 
         {homeStep === 'mode' ? (
-          <div className="flex flex-1 flex-col justify-center pb-8">
-            <HomeHeroVisual />
+          <div className="flex flex-1 flex-col gap-4 pb-8 pt-1">
+            <section>
+              <span
+                className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-bold"
+                style={{
+                  borderColor: `${LINE7_OLIVE}33`,
+                  backgroundColor: `${LINE7_OLIVE}14`,
+                  color: LINE7_OLIVE,
+                }}
+              >
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: LINE7_OLIVE }}
+                  aria-hidden
+                />
+                서울 7호선 단독 운영 중
+              </span>
 
-            <section className="mb-7 text-center">
-              <h1 className="text-[30px] font-extrabold leading-[1.12] tracking-tight text-[#1A1A1A]">
-                빈자리, 잽싸게
+              <h1 className="mt-5 whitespace-pre-line text-[34px] font-extrabold leading-[1.1] tracking-tight text-[#1A1A1A]">
+                {'빈자리,\n잽싸게'}
               </h1>
-              <p className="mt-3 text-[15px] font-medium leading-snug text-[#1A1A1A]">
-                서울 1·2호선 · 인천 1·2호선
-                <br />
-                <span className="text-[#5C6570]">실시간 자리 공유</span>
+              <p className="mt-3 whitespace-pre-line text-[15px] font-medium leading-relaxed text-[#5C6570]">
+                {'지하철 착석 P2P 매칭 서비스\n실데이터 분석 기반 최적 노선 선정'}
               </p>
-              <p className="mt-3 text-[14px] font-medium text-[#888888]">
-                누적{' '}
-                <span className="zeb-mono font-extrabold text-[#F97316]">
-                  {isLoadingData
-                    ? '—'
-                    : `${resolveDisplayedMemberCount(appStats?.member_count ?? 0).toLocaleString()}명`}
-                </span>
-                {' '}가입
-              </p>
+
+              <ol className="mt-5 flex gap-2">
+                {[
+                  { step: 1, label: '7호선', active: true },
+                  { step: 2, label: '서울 전노선', active: false },
+                  { step: 3, label: '인천·광역', active: false },
+                ].map((item) => (
+                  <li
+                    key={item.step}
+                    className="flex min-w-0 flex-1 flex-col rounded-xl border px-2.5 py-2.5"
+                    style={
+                      item.active
+                        ? {
+                            borderColor: LINE7_OLIVE,
+                            backgroundColor: `${LINE7_OLIVE}12`,
+                          }
+                        : { borderColor: '#EBEBEB', backgroundColor: '#FFFFFF' }
+                    }
+                  >
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-wide"
+                      style={{ color: item.active ? LINE7_OLIVE : '#B0B5BD' }}
+                    >
+                      {item.step}단계
+                    </span>
+                    <span
+                      className="mt-1 truncate text-[12px] font-extrabold"
+                      style={{ color: item.active ? '#1A1A1A' : '#888888' }}
+                    >
+                      {item.label}
+                    </span>
+                    <span
+                      className="mt-0.5 text-[10px] font-semibold"
+                      style={{ color: item.active ? LINE7_OLIVE : '#B0B5BD' }}
+                    >
+                      {item.active ? '운영 중' : '예정'}
+                    </span>
+                  </li>
+                ))}
+              </ol>
             </section>
 
-            <section className="rounded-2xl border border-[#EBEBEB] bg-white p-4 shadow-[0_4px_20px_rgba(26,26,26,0.04)]">
+            <section className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-xl border border-[#EBEBEB] bg-white p-3.5 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
+                <p className="text-[12px] font-semibold text-[#888888]">최적혼잡역</p>
+                <p className="zeb-mono mt-1 text-[22px] font-extrabold" style={{ color: LINE7_OLIVE }}>
+                  66개
+                </p>
+                <p className="mt-0.5 text-[11px] font-medium text-[#5C6570]">전 노선 1위</p>
+              </div>
+              <div className="rounded-xl border border-[#EBEBEB] bg-white p-3.5 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
+                <p className="text-[12px] font-semibold text-[#888888]">평균 탑승시간</p>
+                <p className="zeb-mono mt-1 text-[22px] font-extrabold" style={{ color: LINE7_OLIVE }}>
+                  30분
+                </p>
+                <p className="mt-0.5 text-[11px] font-medium text-[#5C6570]">착석 수요 최고</p>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
+              <h2 className="text-[15px] font-extrabold text-[#1A1A1A]">왜 7호선인가요?</h2>
+              <ul className="mt-3 space-y-2.5">
+                {[
+                  '서울교통공사 실데이터 분석 결과',
+                  '최적 혼잡도 역 수 전 노선 1위',
+                  '장암~부평구청 최장 직선 노선',
+                ].map((text) => (
+                  <li key={text} className="flex items-start gap-2 text-[13px] font-medium leading-snug text-[#5C6570]">
+                    <span
+                      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: LINE7_OLIVE }}
+                      aria-hidden
+                    />
+                    {text}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="mt-auto flex flex-col gap-2.5">
               <button
                 type="button"
                 disabled={isMatchingPaused}
                 onClick={() => handleModeSelect('seek')}
-                className="zeb-touch-target flex h-14 w-full items-center justify-center rounded-xl bg-[#0B1F4B] text-[18px] font-extrabold text-white shadow-[0_6px_18px_rgba(11,31,75,0.22)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                className="zeb-touch-target flex h-14 w-full items-center justify-center rounded-xl text-[18px] font-extrabold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                style={{
+                  backgroundColor: LINE7_OLIVE,
+                  boxShadow: `0 6px 18px ${LINE7_OLIVE}40`,
+                }}
               >
                 앉고 싶어요
               </button>
@@ -389,14 +462,14 @@ export default function Home() {
                 type="button"
                 disabled={isMatchingPaused}
                 onClick={() => handleModeSelect('leave')}
-                className="zeb-touch-target mt-2.5 flex h-11 w-full items-center justify-center rounded-xl border border-[#EBEBEB] bg-[#F7F8FA] text-[15px] font-semibold text-[#5C6570] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                className="zeb-touch-target flex h-12 w-full items-center justify-center rounded-xl border border-[#EBEBEB] bg-white text-[15px] font-semibold text-[#1A1A1A] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 내릴게요
               </button>
 
               {isMatchingPaused ? (
                 <p
-                  className="mt-4 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
+                  className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
                   role="alert"
                 >
                   현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
@@ -423,8 +496,8 @@ export default function Home() {
               <h2 className="text-[22px] font-extrabold tracking-tight text-[#1A1A1A]">
                 어느 노선 타세요?
               </h2>
-              <p className="mt-2 text-[14px] font-medium text-[#888888]">
-                현재는 1·2호선만 지원해요
+              <p className="mt-2 text-[14px] font-medium" style={{ color: LINE7_OLIVE }}>
+                서울 7호선 단독 운영 중
               </p>
             </div>
 
