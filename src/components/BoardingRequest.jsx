@@ -57,7 +57,7 @@ const LINE_CAR_LAYOUT = {
   seoul4: { doorCount: 4, seatsPerSection: 7, prioritySeats: 3, carCount: 6 },
   seoul5: { doorCount: 4, seatsPerSection: 7, prioritySeats: 3, carCount: 6 },
   seoul6: { doorCount: 4, seatsPerSection: 7, prioritySeats: 3, carCount: 6 },
-  seoul7: { doorCount: 4, seatsPerSection: 7, prioritySeats: 3, carCount: 6 },
+  seoul7: { doorCount: 4, seatsPerSection: 7, prioritySeats: 3, carCount: 8 },
   seoul8: { doorCount: 4, seatsPerSection: 7, prioritySeats: 3, carCount: 6 },
   seoul9: { doorCount: 4, seatsPerSection: 7, prioritySeats: 3, carCount: 6 },
   incheon1: { doorCount: 4, seatsPerSection: 7, prioritySeats: 3, carCount: 6 },
