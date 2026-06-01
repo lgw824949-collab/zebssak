@@ -13,8 +13,10 @@ export async function GET() {
     success: true,
     environment: process.env.VERCEL_ENV ?? 'local',
     diagnostics,
-    hint: diagnostics.pickedServerKey
-      ? '서버 키 인식됨. 로그인을 다시 시도하세요.'
-      : 'Vercel → Settings → Environment Variables 에 SUPABASE_SECRET_KEY(sb_secret_…) 추가 후 Redeploy 필요.',
+    hint: !diagnostics.urlLooksValid
+      ? 'NEXT_PUBLIC_SUPABASE_URL 형식 오류. https://<project>.supabase.co 로 설정 후 Redeploy.'
+      : diagnostics.pickedServerKey
+        ? '서버 키 인식됨. 로그인을 다시 시도하세요.'
+        : 'Vercel → Settings → Environment Variables 에 SUPABASE_SECRET_KEY(sb_secret_…) 추가 후 Redeploy 필요.',
   })
 }

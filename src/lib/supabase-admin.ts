@@ -18,6 +18,43 @@ function normalizeEnvValue(raw: string | undefined): string {
 }
 
 /**
+ * Supabase URL 후보를 HTTP(S) URL로 정규화합니다.
+ * Vercel 등에서 `xxx.supabase.co`처럼 scheme 없이 들어온 값을 보정합니다.
+ */
+function resolveSupabaseUrl(): string {
+  const raw =
+    normalizeEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL) ||
+    normalizeEnvValue(process.env.SUPABASE_URL)
+
+  if (!raw) {
+    return ''
+  }
+
+  if (/^https?:\/\//i.test(raw)) {
+    return raw.replace(/\/+$/, '')
+  }
+
+  if (/^[a-z0-9-]+$/i.test(raw)) {
+    return `https://${raw}.supabase.co`
+  }
+
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(:\d+)?(\/.*)?$/i.test(raw)) {
+    return `https://${raw.replace(/^\/+|\/+$/g, '')}`
+  }
+
+  return raw
+}
+
+function isValidSupabaseUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+/**
  * JWT payload에서 role 클레임을 읽습니다.
  */
 function decodeJwtRole(jwt: string): string | null {
@@ -134,6 +171,7 @@ function resolveServiceRoleKey(): string {
  */
 export function getSupabaseEnvDiagnostics(): {
   hasUrl: boolean
+  urlLooksValid: boolean
   hasPublishable: boolean
   hasSecretKey: boolean
   hasServiceRoleKey: boolean
@@ -145,8 +183,11 @@ export function getSupabaseEnvDiagnostics(): {
   const serviceRaw = normalizeEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY)
   const candidates = collectSupabaseServerKeyCandidates()
 
+  const resolvedUrl = resolveSupabaseUrl()
+
   return {
-    hasUrl: Boolean(normalizeEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)),
+    hasUrl: Boolean(resolvedUrl),
+    urlLooksValid: isValidSupabaseUrl(resolvedUrl),
     hasPublishable: Boolean(
       normalizeEnvValue(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ||
         normalizeEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
@@ -163,12 +204,18 @@ export function getSupabaseEnvDiagnostics(): {
  * 서버 전용 Supabase 클라이언트 (service role / secret, RLS 우회)
  */
 export function createSupabaseAdminClient(): SupabaseClient {
-  const url = normalizeEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  const url = resolveSupabaseUrl()
   const serviceRoleKey = resolveServiceRoleKey()
 
   if (!url) {
     throw new Error(
       'Supabase 서버 환경변수(NEXT_PUBLIC_SUPABASE_URL)가 없습니다. .env.local을 확인하세요.'
+    )
+  }
+
+  if (!isValidSupabaseUrl(url)) {
+    throw new Error(
+      'Supabase URL 형식이 올바르지 않습니다. NEXT_PUBLIC_SUPABASE_URL을 https://<project>.supabase.co 형식으로 설정해주세요.'
     )
   }
 

@@ -5,8 +5,25 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
  * - 신규: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
  * - 기존: NEXT_PUBLIC_SUPABASE_ANON_KEY
  */
+function resolveSupabaseUrl(raw: string | undefined): string {
+  const value = raw?.trim().replace(/^['"]|['"]$/g, '') ?? ''
+  if (!value) {
+    return ''
+  }
+  if (/^https?:\/\//i.test(value)) {
+    return value.replace(/\/+$/, '')
+  }
+  if (/^[a-z0-9-]+$/i.test(value)) {
+    return `https://${value}.supabase.co`
+  }
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(:\d+)?(\/.*)?$/i.test(value)) {
+    return `https://${value.replace(/^\/+|\/+$/g, '')}`
+  }
+  return value
+}
+
 function getSupabaseConfig(): { url: string; anonKey: string } {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const url = resolveSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)
   const anonKey =
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
