@@ -21,7 +21,7 @@ interface StoredUser {
 const GPS_MAX_RADIUS_KM = 1
 const LINE7_OLIVE = '#747F00'
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
-const HOME_UI_VERSION = '2026-06-01-seek-door-map'
+const HOME_UI_VERSION = '2026-06-01-home-copy-v2'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {
@@ -394,10 +394,10 @@ export default function Home() {
               </span>
 
               <h1 className="mt-5 whitespace-pre-line text-[42px] font-extrabold leading-[1.08] tracking-tight text-[#1A1A1A]">
-                {'빈자리,\n잽싸게'}
+                {'다음 자리,\n잽싸게'}
               </h1>
               <p className="mt-3 text-[17px] font-medium leading-relaxed text-[#5C6570]">
-                지하철 착석 공유 플랫폼
+                교통약자를 위한 지하철 착석 알림 서비스
               </p>
 
               <ol className="mt-5 flex gap-2">
