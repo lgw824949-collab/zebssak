@@ -15,6 +15,7 @@ import {
   resolveDisplayedMemberCount,
   type PublicAppStats,
 } from '@/lib/app-stats'
+import HomeHeroVisual from '@/components/HomeHeroVisual'
 
 interface StoredUser {
   username: string
@@ -26,33 +27,40 @@ interface StoredUser {
 const GPS_MAX_RADIUS_KM = 1
 /** 홈 2단계 — 현재 서울 1·2호선만 노출 (다른 노선은 준비 중) */
 const HOME_LINE_OPTIONS = [
+  // {
+  //   label: '서울 1호선',
+  //   shortLabel: '1호선',
+  //   badge: '1',
+  //   color: '#0052A4',
+  //   stationExamples: '서울역 · 종로 · 청량리',
+  // },
+  // {
+  //   label: '서울 2호선',
+  //   shortLabel: '2호선',
+  //   badge: '2',
+  //   color: '#00A84D',
+  //   stationExamples: '강남 · 잠실 · 홍대',
+  // },
+  // {
+  //   label: '인천 1호선',
+  //   shortLabel: '인천1',
+  //   badge: '인1',
+  //   color: '#7CA8D5',
+  //   stationExamples: '부평 · 예술회관 · 원인재',
+  // },
+  // {
+  //   label: '인천 2호선',
+  //   shortLabel: '인천2',
+  //   badge: '인2',
+  //   color: '#ED8B00',
+  //   stationExamples: '검단오류 · 주안 · 운연',
+  // },
   {
-    label: '서울 1호선',
-    shortLabel: '1호선',
-    badge: '1',
-    color: '#0052A4',
-    stationExamples: '서울역 · 종로 · 청량리',
-  },
-  {
-    label: '서울 2호선',
-    shortLabel: '2호선',
-    badge: '2',
-    color: '#00A84D',
-    stationExamples: '강남 · 잠실 · 홍대',
-  },
-  {
-    label: '인천 1호선',
-    shortLabel: '인천1',
-    badge: '인1',
-    color: '#7CA8D5',
-    stationExamples: '부평 · 예술회관 · 원인재',
-  },
-  {
-    label: '인천 2호선',
-    shortLabel: '인천2',
-    badge: '인2',
-    color: '#ED8B00',
-    stationExamples: '검단오류 · 주안 · 운연',
+    label: '서울 7호선',
+    shortLabel: '7호선',
+    badge: '7',
+    color: '#747F00',
+    stationExamples: '장암 · 논현 · 석남',
   },
 ] as const
 
@@ -345,19 +353,18 @@ export default function Home() {
 
         {homeStep === 'mode' ? (
           <div className="flex flex-1 flex-col justify-center pb-8">
-            <section className="mb-8 text-center">
-              <p className="mb-5 text-[32px] leading-none" aria-hidden>
-                🚇
-              </p>
-              <h1 className="text-[32px] font-extrabold leading-[1.12] tracking-tight text-[#1A1A1A]">
+            <HomeHeroVisual />
+
+            <section className="mb-7 text-center">
+              <h1 className="text-[30px] font-extrabold leading-[1.12] tracking-tight text-[#1A1A1A]">
                 빈자리, 잽싸게
               </h1>
-              <p className="mt-4 text-[15px] font-medium leading-snug text-[#1A1A1A]">
-                서울 1·2호선
+              <p className="mt-3 text-[15px] font-medium leading-snug text-[#1A1A1A]">
+                서울 1·2호선 · 인천 1·2호선
                 <br />
-                실시간 자리 공유 서비스
+                <span className="text-[#5C6570]">실시간 자리 공유</span>
               </p>
-              <p className="mt-4 text-[14px] font-medium text-[#888888]">
+              <p className="mt-3 text-[14px] font-medium text-[#888888]">
                 누적{' '}
                 <span className="zeb-mono font-extrabold text-[#F97316]">
                   {isLoadingData
@@ -368,12 +375,12 @@ export default function Home() {
               </p>
             </section>
 
-            <section>
+            <section className="rounded-2xl border border-[#EBEBEB] bg-white p-4 shadow-[0_4px_20px_rgba(26,26,26,0.04)]">
               <button
                 type="button"
                 disabled={isMatchingPaused}
                 onClick={() => handleModeSelect('seek')}
-                className="zeb-touch-target flex h-14 w-full items-center justify-center rounded-xl bg-[#0B1F4B] text-[18px] font-extrabold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                className="zeb-touch-target flex h-14 w-full items-center justify-center rounded-xl bg-[#0B1F4B] text-[18px] font-extrabold text-white shadow-[0_6px_18px_rgba(11,31,75,0.22)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 앉고 싶어요
               </button>
@@ -382,7 +389,7 @@ export default function Home() {
                 type="button"
                 disabled={isMatchingPaused}
                 onClick={() => handleModeSelect('leave')}
-                className="zeb-touch-target mt-3 flex h-11 w-full items-center justify-center text-[15px] font-semibold text-[#888888] transition active:opacity-60 disabled:cursor-not-allowed disabled:opacity-45"
+                className="zeb-touch-target mt-2.5 flex h-11 w-full items-center justify-center rounded-xl border border-[#EBEBEB] bg-[#F7F8FA] text-[15px] font-semibold text-[#5C6570] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 내릴게요
               </button>
