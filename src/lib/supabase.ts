@@ -26,7 +26,14 @@ function getSupabaseConfig(): { url: string; anonKey: string } {
  */
 export function createSupabaseClient(): SupabaseClient {
   const { url, anonKey } = getSupabaseConfig()
-  return createClient(url, anonKey)
+  return createClient(url, anonKey, {
+    global: {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+    },
+  })
 }
 
 let supabaseInstance: SupabaseClient | null = null

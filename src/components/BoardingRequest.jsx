@@ -1782,6 +1782,15 @@ function StepTrain({
           const stationName = currentStation.trim().replace(/역$/u, "");
           const dayType = resolveTimetableDayType();
           const currentTime = formatLocalTimeForQuery();
+          console.log("[StepTrain] timetable 조회 파라미터", {
+            line_code: lineCode,
+            station_name: stationName,
+            station_name_raw: currentStation.trim(),
+            station_name_has_yeok_suffix: /역$/u.test(currentStation.trim()),
+            direction: travelDirectionKey,
+            day_type: dayType,
+            arrival_time_filter_now: currentTime,
+          });
 
           const { data, error } = await supabase
             .from("timetable")
