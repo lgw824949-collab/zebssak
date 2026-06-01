@@ -251,7 +251,7 @@ function toBaseSeoulLine(seoulLine: SeoulLineParam): 'seoul1' | 'seoul2' | 'seou
 }
 
 function normalizeStationName(name: string): string {
-  return name.trim().replace(/\s+/g, '')
+  return name.trim().replace(/\s+/g, '').replace(/역$/u, '')
 }
 
 function getPublicDataApiKey(): string | null {
@@ -459,7 +459,8 @@ function buildSeoulFallbackTrains(
     },
   ]
 
-  return templates.map((train) => enrichTrain(train, seoulLine, currentStation))
+  const enriched = templates.map((train) => enrichTrain(train, seoulLine, currentStation))
+  return applyEstimatedArrivalToTrains(enriched, seoulLine, currentStation)
 }
 
 function enrichTrain(
