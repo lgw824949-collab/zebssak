@@ -196,6 +196,95 @@ function mapSeekDoorToSubmission(doorLabel, lineLabel) {
   };
 }
 
+const SEEK_SEAT_LETTERS = ["A", "B", "C", "D", "E", "F", "G"];
+const SEEK_DOOR_NUMBERS = [2, 3];
+
+function buildSeekPlacementSummary({ station, side, doorLabel, seatLetter }) {
+  const parts = [
+    station ? `${formatStationDisplayName(station)} 방향 기준` : null,
+    side || null,
+    doorLabel ? `${doorLabel}번` : null,
+    seatLetter ? `${seatLetter}열` : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function mapSeekSeatLetterToIndex(letter) {
+  const index = SEEK_SEAT_LETTERS.indexOf(String(letter || "").trim().toUpperCase());
+  return index >= 0 ? index : null;
+}
+
+/** seek 3단계(좌우·출입문·좌석열) → API seat_side / seat_number */
+function mapSeekSelectionToSubmission({ car, door, doorLabel, side, seatLetter, lineLabel }) {
+  const layout = resolveCarLayout(lineLabel);
+  if (
+    !Number.isInteger(car) ||
+    car < 1 ||
+    car > layout.carCount ||
+    !SEEK_DOOR_NUMBERS.includes(door)
+  ) {
+    return null;
+  }
+
+  const seatIndex = mapSeekSeatLetterToIndex(seatLetter);
+  if (seatIndex == null) return null;
+
+  const sectionDoor = door === 2 ? 2 : 3;
+  const gridSide = side === "우측" ? "right" : "left";
+  const seatApi = mapSeatIdToApi(
+    `${gridSide}-d${sectionDoor}-s${seatIndex}`,
+    layout.seatsPerSection
+  );
+  if (!seatApi?.seatSide || !seatApi?.seatNumber) return null;
+
+  const label = doorLabel || `${car}-${door}`;
+  return {
+    car,
+    door,
+    doorLabel: label,
+    seatSide: seatApi.seatSide,
+    seatNumber: seatApi.seatNumber,
+  };
+}
+
+function resolveTravelDirectionKeyFromIndices(lineLabel, fromIdx, toIdx, stationCount) {
+  if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return null;
+
+  const layoutKey = resolveLineLayoutKey(lineLabel);
+  if (layoutKey === "seoul2") {
+    const count = stationCount;
+    const distDown = (toIdx - fromIdx + count) % count;
+    const distUp = (fromIdx - toIdx + count) % count;
+    if (distDown < distUp) return "down";
+    if (distUp < distDown) return "up";
+    return null;
+  }
+  if (toIdx > fromIdx) return "down";
+  if (toIdx < fromIdx) return "up";
+  return null;
+}
+
+async function resolveTravelDirectionKey(lineLabel, boardingStation, destinationStation) {
+  const boarding = (boardingStation || "").trim();
+  const destination = (destinationStation || "").trim();
+  if (!boarding || !destination) return null;
+
+  const stations = await fetchStationsForLine(lineLabel);
+  if (!Array.isArray(stations) || stations.length === 0) return null;
+
+  const findIndex = (name) => {
+    const target = normalizeStationLabel(name);
+    return stations.findIndex((row) => normalizeStationLabel(row?.name) === target);
+  };
+
+  return resolveTravelDirectionKeyFromIndices(
+    lineLabel,
+    findIndex(boarding),
+    findIndex(destination),
+    stations.length
+  );
+}
+
 function distanceKm(lat1, lng1, lat2, lng2) {
   const toRad = (value) => (value * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
@@ -2396,16 +2485,23 @@ function StepTrain({
   );
 }
 
-// ─── Step 3 (seek): 출입문 선택 ────────────────────────────────────
+// ─── Step 3 (seek): 좌우 → 출입문 → 좌석 ───────────────────────────
 function StepSeekDoor({
   line,
+  station,
+  currentStation,
   onNext,
   onBack,
   isSubmitting = false,
   trainId = null,
-  drtnInfo = null,
 }) {
+  const [subStep, setSubStep] = useState(1);
+  const [side, setSide] = useState(null);
+  const [selectedCar, setSelectedCar] = useState(1);
   const [selectedDoor, setSelectedDoor] = useState(null);
+  const [seatLetter, setSeatLetter] = useState(null);
+  const [travelDirectionKey, setTravelDirectionKey] = useState(null);
+
   const layout = resolveCarLayout(line);
   const lineColor = LINE_OLIVE;
   const lineColorLight = LINE_OLIVE_LIGHT;
@@ -2418,18 +2514,65 @@ function StepSeekDoor({
     if (/^인천2호선$/.test(compact)) return "인천 2호선";
     return primary || "서울 7호선";
   })();
-  const directionLabel = drtnInfo || (line || "").split("·")[1]?.trim() || "";
-  const selectedCar = selectedDoor
-    ? Number.parseInt(String(selectedDoor).split("-")[0], 10)
-    : null;
-  const selectedDoorNo = selectedDoor
-    ? Number.parseInt(String(selectedDoor).split("-")[1], 10)
-    : null;
-  const trainSummaryParts = [];
-  if (trainId) trainSummaryParts.push(`열차 ${trainId}`);
-  if (directionLabel) trainSummaryParts.push(directionLabel);
-  trainSummaryParts.push(`${layout.carCount}개 호차`);
-  const trainSummary = trainSummaryParts.join(" · ");
+  const directionHeading = station
+    ? `${formatStationDisplayName(station)} 방향 기준`
+    : "진행 방향 기준";
+  const carNumbers = Array.from({ length: layout.carCount }, (_, index) => index + 1);
+  const doorLabel =
+    selectedCar && selectedDoor ? `${selectedCar}-${selectedDoor}` : null;
+  const placementSummary = buildSeekPlacementSummary({
+    station,
+    side,
+    doorLabel,
+    seatLetter,
+  });
+  const subStepTitle =
+    subStep === 1 ? "좌·우 선택" : subStep === 2 ? "출입문 선택" : "좌석 선택";
+  const diagramCar = 1;
+
+  useEffect(() => {
+    let active = true;
+    void resolveTravelDirectionKey(line, currentStation, station).then((key) => {
+      if (active) setTravelDirectionKey(key);
+    });
+    return () => {
+      active = false;
+    };
+  }, [line, currentStation, station]);
+
+  useEffect(() => {
+    setSelectedDoor(null);
+    setSeatLetter(null);
+  }, [selectedCar]);
+
+  function handleBack() {
+    if (isSubmitting) return;
+    if (subStep > 1) {
+      setSubStep((prev) => prev - 1);
+      return;
+    }
+    onBack();
+  }
+
+  function choiceButtonStyle(isSelected) {
+    return {
+      minHeight: MOBILE.touchMin,
+      padding: "14px 16px",
+      borderRadius: 12,
+      border: `2px solid ${isSelected ? lineColor : C.border}`,
+      background: isSelected ? lineColorLight : C.card,
+      color: isSelected ? lineColor : C.text,
+      fontSize: 17,
+      fontWeight: 700,
+      cursor: isSubmitting ? "default" : "pointer",
+      opacity: isSubmitting ? 0.55 : 1,
+      transition: "all 0.15s",
+    };
+  }
+
+  const canProceedSubStep1 = Boolean(side);
+  const canProceedSubStep2 = Boolean(selectedCar && selectedDoor);
+  const canSubmit = Boolean(side && selectedCar && selectedDoor && seatLetter);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
@@ -2449,7 +2592,7 @@ function StepSeekDoor({
         <button
           type="button"
           className="zeb-touch-target"
-          onClick={onBack}
+          onClick={handleBack}
           disabled={isSubmitting}
           style={{
             background: "none",
@@ -2484,7 +2627,7 @@ function StepSeekDoor({
           >
             {lineDisplayName}
           </span>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>출입문 선택</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{subStepTitle}</div>
         </div>
         <div
           style={{
@@ -2501,7 +2644,14 @@ function StepSeekDoor({
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: `12px ${MOBILE.pageX}px 0`, position: "relative" }}>
+      <div
+        style={{
+          flex: 1,
+          overflow: "auto",
+          padding: `12px ${MOBILE.pageX}px 0`,
+          position: "relative",
+        }}
+      >
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
 
         <div style={{ display: "flex", gap: 6, justifyContent: "center", paddingBottom: 14 }}>
@@ -2519,42 +2669,220 @@ function StepSeekDoor({
           ))}
         </div>
 
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.text, lineHeight: 1.5 }}>
-            현재 몇 번 출입문 앞에 계세요?
-          </div>
-          <div style={{ marginTop: 6, fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
-            {trainSummary}
-          </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            justifyContent: "center",
+            marginBottom: 16,
+          }}
+        >
+          {[1, 2, 3].map((i) => (
+            <div
+              key={`seek-sub-${i}`}
+              style={{
+                width: subStep === i ? 24 : 8,
+                height: 8,
+                borderRadius: 4,
+                background: subStep >= i ? lineColor : C.border,
+                transition: "width 0.2s",
+              }}
+            />
+          ))}
         </div>
 
-        {selectedDoor && selectedCar ? (
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "10px 14px",
-              borderRadius: 10,
-              background: lineColorLight,
-              border: `1px solid ${lineColor}`,
-              fontSize: 13,
-              fontWeight: 700,
-              color: lineColor,
-              textAlign: "center",
-            }}
-          >
-            {selectedCar}호차 {selectedDoorNo}번 출입문 선택됨
-          </div>
+        <p
+          style={{
+            margin: "0 0 16px",
+            fontSize: 18,
+            fontWeight: 800,
+            color: lineColor,
+            textAlign: "center",
+            lineHeight: 1.4,
+          }}
+        >
+          {directionHeading}
+        </p>
+
+        {trainId ? (
+          <p style={{ margin: "0 0 14px", fontSize: 13, color: C.muted, textAlign: "center" }}>
+            열차 {trainId}
+            {travelDirectionKey
+              ? ` · ${travelDirectionKey === "up" ? "상행" : "하행"}`
+              : null}
+          </p>
         ) : null}
 
-        <div style={{ paddingBottom: 8, width: "100%" }}>
-          <SubwaySeatMap
-            key={`seek-door-${line}`}
-            line={line}
-            doorPickerMode
-            selectedDoorLabel={selectedDoor}
-            onDoorSelect={setSelectedDoor}
-          />
-        </div>
+        {subStep === 1 ? (
+          <>
+            <div
+              style={{
+                marginBottom: 20,
+                padding: "16px 14px",
+                borderRadius: 14,
+                border: `1px solid ${C.border}`,
+                background: C.card,
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                fontSize: 13,
+                lineHeight: 1.65,
+                color: C.text,
+              }}
+            >
+              <div style={{ textAlign: "right", fontWeight: 700, marginBottom: 10 }}>
+                진행방향 →
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ fontWeight: 700, color: lineColor }}>좌측</span>
+                <span>
+                  {diagramCar}-1&nbsp;&nbsp;{diagramCar}-2&nbsp;&nbsp;{diagramCar}-3
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  marginTop: 8,
+                  paddingTop: 8,
+                  borderTop: `1px dashed ${C.border}`,
+                }}
+              >
+                <span style={{ fontWeight: 700, color: lineColor }}>우측</span>
+                <span>
+                  {diagramCar}-1&nbsp;&nbsp;{diagramCar}-2&nbsp;&nbsp;{diagramCar}-3
+                </span>
+              </div>
+            </div>
+            <p style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600, color: C.text }}>
+              지금 서 있는 쪽을 선택해 주세요
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {["좌측", "우측"].map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="zeb-touch-target"
+                  disabled={isSubmitting}
+                  onClick={() => setSide(label)}
+                  style={choiceButtonStyle(side === label)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        {subStep === 2 ? (
+          <>
+            <p style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 600, color: C.text }}>
+              호차
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginBottom: 18,
+              }}
+            >
+              {carNumbers.map((carNo) => (
+                <button
+                  key={carNo}
+                  type="button"
+                  className="zeb-touch-target"
+                  disabled={isSubmitting}
+                  onClick={() => setSelectedCar(carNo)}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 10,
+                    border: `1.5px solid ${selectedCar === carNo ? lineColor : C.border}`,
+                    background: selectedCar === carNo ? lineColor : C.card,
+                    color: selectedCar === carNo ? "#fff" : C.text,
+                    fontSize: MOBILE.inputFontSize,
+                    fontWeight: 700,
+                    cursor: isSubmitting ? "default" : "pointer",
+                    opacity: isSubmitting ? 0.55 : 1,
+                  }}
+                >
+                  {carNo}
+                </button>
+              ))}
+            </div>
+            <p style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600, color: C.text }}>
+              출입문 (가운데 구역)
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {SEEK_DOOR_NUMBERS.map((doorNo) => {
+                const label = `${selectedCar}-${doorNo}`;
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    className="zeb-touch-target"
+                    disabled={isSubmitting}
+                    onClick={() => setSelectedDoor(doorNo)}
+                    style={choiceButtonStyle(selectedDoor === doorNo)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+
+        {subStep === 3 ? (
+          <>
+            <p style={{ margin: "0 0 6px", fontSize: 13, color: C.muted, textAlign: "center" }}>
+              {side} · {doorLabel}번 출입문 · 가까운 순
+            </p>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              {SEEK_SEAT_LETTERS.map((letter) => (
+                <button
+                  key={letter}
+                  type="button"
+                  className="zeb-touch-target"
+                  disabled={isSubmitting}
+                  onClick={() => setSeatLetter(letter)}
+                  style={{
+                    ...choiceButtonStyle(seatLetter === letter),
+                    minHeight: 52,
+                    fontSize: 18,
+                  }}
+                >
+                  {letter}
+                </button>
+              ))}
+            </div>
+            {placementSummary ? (
+              <p
+                style={{
+                  marginTop: 20,
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  background: lineColorLight,
+                  border: `1px solid ${lineColor}`,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: lineColor,
+                  textAlign: "center",
+                  lineHeight: 1.5,
+                }}
+              >
+                {placementSummary}
+              </p>
+            ) : null}
+          </>
+        ) : null}
       </div>
 
       <div
@@ -2564,51 +2892,100 @@ function StepSeekDoor({
           borderTop: `1px solid ${C.border}`,
         }}
       >
-        <button
-          type="button"
-          className="zeb-touch-target"
-          onClick={() => {
-            const mapped = mapSeekDoorToSubmission(selectedDoor, line);
-            if (!mapped) return;
-            onNext({
-              doorLabel: selectedDoor,
-              car: mapped.car,
-              door: mapped.door,
-              seat: {
-                doorLabel: selectedDoor,
+        {subStep < 3 ? (
+          <button
+            type="button"
+            className="zeb-touch-target"
+            onClick={() => {
+              if (subStep === 1 && canProceedSubStep1) setSubStep(2);
+              if (subStep === 2 && canProceedSubStep2) setSubStep(3);
+            }}
+            disabled={
+              isSubmitting ||
+              (subStep === 1 && !canProceedSubStep1) ||
+              (subStep === 2 && !canProceedSubStep2)
+            }
+            style={{
+              width: "100%",
+              minHeight: MOBILE.touchMin,
+              padding: "12px 0",
+              background:
+                (subStep === 1 && canProceedSubStep1) ||
+                (subStep === 2 && canProceedSubStep2)
+                  ? lineColor
+                  : "#D1D5DB",
+              color: "#fff",
+              border: "none",
+              borderRadius: 12,
+              fontSize: 16,
+              fontWeight: 700,
+              cursor:
+                (subStep === 1 && canProceedSubStep1) ||
+                (subStep === 2 && canProceedSubStep2)
+                  ? "pointer"
+                  : "default",
+            }}
+          >
+            다음
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="zeb-touch-target"
+            onClick={() => {
+              const mapped = mapSeekSelectionToSubmission({
+                car: selectedCar,
+                door: selectedDoor,
+                doorLabel,
+                side,
+                seatLetter,
+                lineLabel: line,
+              });
+              if (!mapped) return;
+              onNext({
                 car: mapped.car,
                 door: mapped.door,
-                seatSide: mapped.seatSide,
-                seatNumber: mapped.seatNumber,
-              },
-            });
-          }}
-          disabled={!selectedDoor || isSubmitting}
-          aria-busy={isSubmitting || undefined}
-          style={{
-            width: "100%",
-            minHeight: MOBILE.touchMin,
-            padding: "12px 0",
-            background: selectedDoor && !isSubmitting ? lineColor : "#D1D5DB",
-            color: "#fff",
-            border: "none",
-            borderRadius: 12,
-            fontSize: 16,
-            fontWeight: 700,
-            cursor: selectedDoor && !isSubmitting ? "pointer" : "default",
-            transition: "background 0.2s",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            opacity: isSubmitting ? 0.92 : 1,
-          }}
-        >
-          {isSubmitting ? <LoadingSpinner /> : null}
-          {selectedDoor && selectedCar && selectedDoorNo
-            ? `${selectedCar}호차 ${selectedDoorNo}번 출입문 — 탑승 요청`
-            : "출입문을 선택해 주세요"}
-        </button>
+                doorLabel: mapped.doorLabel,
+                side,
+                seatLetter,
+                placementSummary,
+                seat: {
+                  doorLabel: mapped.doorLabel,
+                  car: mapped.car,
+                  door: mapped.door,
+                  side,
+                  seatLetter,
+                  placementSummary,
+                  seatSide: mapped.seatSide,
+                  seatNumber: mapped.seatNumber,
+                },
+              });
+            }}
+            disabled={!canSubmit || isSubmitting}
+            aria-busy={isSubmitting || undefined}
+            style={{
+              width: "100%",
+              minHeight: MOBILE.touchMin,
+              padding: "12px 0",
+              background: canSubmit && !isSubmitting ? lineColor : "#D1D5DB",
+              color: "#fff",
+              border: "none",
+              borderRadius: 12,
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: canSubmit && !isSubmitting ? "pointer" : "default",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              lineHeight: 1.4,
+              opacity: isSubmitting ? 0.92 : 1,
+            }}
+          >
+            {isSubmitting ? <LoadingSpinner /> : null}
+            {canSubmit ? placementSummary : "좌석 열을 선택해 주세요"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2728,6 +3105,14 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
   const matchedOnRegister = seat?.matched === true;
   const seekDoorLabel =
     seat?.doorLabel || (seat?.car && seat?.door ? `${seat.car}-${seat.door}` : "");
+  const seekPlacementSummary =
+    seat?.placementSummary ||
+    buildSeekPlacementSummary({
+      station,
+      side: seat?.side,
+      doorLabel: seekDoorLabel,
+      seatLetter: seat?.seatLetter,
+    });
   const seatLabel = (() => {
     if (!car) return "";
     const match = String(seat?.id || "").match(/left-d(\d+)-s\d+/);
@@ -2821,10 +3206,24 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
               {car ? `${car}호차` : "—"}
             </span>
             <span style={{ fontWeight: 700, color: C.text, textAlign: "right" }}>위{"\u00a0\u00a0"}치</span>
-            <span style={{ color: C.text, fontWeight: 600, textAlign: "left" }}>
-              {seekDoorLabel ? `${seekDoorLabel}번 출입문 앞` : "출입문 앞"}
+            <span style={{ color: C.text, fontWeight: 600, textAlign: "left", lineHeight: 1.45 }}>
+              {seekPlacementSummary || (seekDoorLabel ? `${seekDoorLabel}번 출입문 앞` : "—")}
             </span>
           </div>
+          {seekPlacementSummary ? (
+            <p
+              style={{
+                fontSize: 15,
+                fontWeight: 700,
+                color: C.text,
+                margin: "0 0 12px",
+                lineHeight: 1.5,
+                maxWidth: 300,
+              }}
+            >
+              {seekPlacementSummary}
+            </p>
+          ) : null}
           <p style={{ fontSize: 12, color: C.muted, margin: "0 0 32px", lineHeight: 1.5 }}>
             {formatStationDisplayName(station)} 도착 전 알림
           </p>
@@ -3012,14 +3411,22 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       stopSubmitting("로그인이 필요합니다.");
       return;
     }
-    if (!trainId || !info?.doorLabel || !station) {
-      stopSubmitting("열차, 출입문, 하차역을 확인해 주세요.");
+    if (!trainId || !info?.doorLabel || !station || !info?.side || !info?.seatLetter) {
+      stopSubmitting("열차, 위치, 하차역을 확인해 주세요.");
       return;
     }
 
-    const mapped = mapSeekDoorToSubmission(info.doorLabel, normalizedLine);
+    const mapped =
+      mapSeekSelectionToSubmission({
+        car: info.car,
+        door: info.door,
+        doorLabel: info.doorLabel,
+        side: info.side,
+        seatLetter: info.seatLetter,
+        lineLabel: normalizedLine,
+      }) || mapSeekDoorToSubmission(info.doorLabel, normalizedLine);
     if (!mapped?.seatSide || !mapped?.seatNumber) {
-      stopSubmitting("출입문 정보를 변환할 수 없습니다.");
+      stopSubmitting("위치 정보를 변환할 수 없습니다.");
       return;
     }
 
@@ -3120,6 +3527,9 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         seatSide: seatApi.seatSide,
         seatNumber: seatApi.seatNumber,
         doorLabel: info.doorLabel,
+        side: info.side,
+        seatLetter: info.seatLetter,
+        placementSummary: info.placementSummary,
       };
 
       try {
@@ -3454,6 +3864,9 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         ) : (
           <StepSeekDoor
             line={normalizedLine}
+            station={station}
+            currentStation={currentStationName}
+            trainId={trainId}
             isSubmitting={isSubmitting}
             onNext={(info) => {
               setSubmitError("");
