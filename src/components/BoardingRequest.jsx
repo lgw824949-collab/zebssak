@@ -2409,6 +2409,168 @@ function StepTrain({
   );
 }
 
+/** seek 출입문 UI — 통로 중앙 번호 없이, 좌석 행 사이 좌측「문」으로 표시 */
+const SEEK_DOOR_SECTIONS = 3;
+const SEEK_DOOR_SEAT_ROWS = 6;
+
+function SeekDoorCarLayout({
+  car,
+  layout,
+  lineColor,
+  lineColorLight,
+  selectedDoor,
+  isSubmitting,
+  onSelectDoor,
+}) {
+  const aisleStyle = {
+    width: 48,
+    flexShrink: 0,
+    background: `${lineColor}1A`,
+    borderRadius: 6,
+  };
+
+  const renderSeatStrip = (side) => (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 3,
+        alignItems: side === "left" ? "flex-start" : "flex-end",
+      }}
+    >
+      {Array.from({ length: SEEK_DOOR_SEAT_ROWS }, (_, rowIndex) => (
+        <div
+          key={`${side}-seat-${rowIndex}`}
+          style={{
+            width: 28,
+            height: 14,
+            borderRadius: 3,
+            background: "#EBEBEB",
+            border: "1px solid #D0D0D0",
+          }}
+        />
+      ))}
+    </div>
+  );
+
+  const renderSeatSectionRow = (sectionIndex) => (
+    <div
+      key={`section-${sectionIndex}`}
+      style={{
+        display: "flex",
+        alignItems: "stretch",
+        gap: 4,
+        width: "100%",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>{renderSeatStrip("left")}</div>
+      <div style={aisleStyle} aria-hidden />
+      <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
+        {renderSeatStrip("right")}
+      </div>
+    </div>
+  );
+
+  const renderDoorMarker = (doorNum) => {
+    const label = `${car}-${doorNum}`;
+    const isSelected = selectedDoor === label;
+    return (
+      <div
+        key={label}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          width: "100%",
+        }}
+      >
+        <button
+          type="button"
+          className="zeb-touch-target"
+          disabled={isSubmitting}
+          onClick={() => onSelectDoor(label)}
+          aria-label={`${car}호차 ${doorNum}번 출입문`}
+          aria-pressed={isSelected}
+          style={{
+            flexShrink: 0,
+            minWidth: 40,
+            minHeight: 40,
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: `1.5px solid ${isSelected ? lineColor : C.border}`,
+            background: isSelected ? lineColor : C.card,
+            color: isSelected ? "#fff" : lineColor,
+            fontSize: 14,
+            fontWeight: 800,
+            cursor: isSubmitting ? "default" : "pointer",
+            transition: "all 0.15s",
+            opacity: isSubmitting ? 0.55 : 1,
+          }}
+        >
+          문
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
+      </div>
+    );
+  };
+
+  const priorityBar = (key) => (
+    <div
+      key={key}
+      style={{
+        display: "flex",
+        gap: 4,
+        width: "100%",
+        margin: "2px 0",
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          height: 10,
+          borderRadius: 4,
+          background: C.priority.bg,
+          border: `1px solid ${C.priority.border}`,
+        }}
+      />
+      <div style={aisleStyle} aria-hidden />
+      <div
+        style={{
+          flex: 1,
+          height: 10,
+          borderRadius: 4,
+          background: C.priority.bg,
+          border: `1px solid ${C.priority.border}`,
+        }}
+      />
+    </div>
+  );
+
+  const bodyRows = [priorityBar("prio-top"), renderDoorMarker(1)];
+  for (let sectionIndex = 0; sectionIndex < SEEK_DOOR_SECTIONS; sectionIndex += 1) {
+    bodyRows.push(renderSeatSectionRow(sectionIndex));
+    if (sectionIndex < SEEK_DOOR_SECTIONS - 1) {
+      bodyRows.push(renderDoorMarker(sectionIndex + 2));
+    }
+  }
+  bodyRows.push(renderDoorMarker(layout.doorCount));
+  bodyRows.push(priorityBar("prio-bottom"));
+
+  return (
+    <div
+      style={{
+        padding: "10px 8px",
+        borderRadius: 12,
+        border: `1.5px solid ${selectedDoor?.startsWith(`${car}-`) ? lineColor : C.border}`,
+        background: selectedDoor?.startsWith(`${car}-`) ? lineColorLight : C.card,
+        transition: "border-color 0.15s, background 0.15s",
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{bodyRows}</div>
+    </div>
+  );
+}
+
 // ─── Step 3 (seek): 출입문 선택 ────────────────────────────────────
 function StepSeekDoor({
   line,
@@ -2603,7 +2765,7 @@ function StepSeekDoor({
             paddingBottom: 8,
           }}
         >
-          {doorGroups.map(({ car, doors }, groupIndex) => (
+          {doorGroups.map(({ car }, groupIndex) => (
             <div key={car}>
               <div
                 style={{
@@ -2631,43 +2793,15 @@ function StepSeekDoor({
                   }}
                 />
               </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `repeat(${layout.doorCount}, minmax(0, 1fr))`,
-                  gap: 8,
-                }}
-              >
-                {doors.map(({ label }) => {
-                  const isSelected = selectedDoor === label;
-                  return (
-                    <button
-                      key={label}
-                      type="button"
-                      className="zeb-touch-target"
-                      disabled={isSubmitting}
-                      onClick={() => setSelectedDoor(label)}
-                      style={{
-                        minHeight: 48,
-                        padding: "10px 4px",
-                        borderRadius: 10,
-                        border: `1.5px solid ${isSelected ? lineColor : C.border}`,
-                        background: isSelected ? lineColor : C.card,
-                        color: isSelected ? "#fff" : C.text,
-                        fontSize: 15,
-                        fontWeight: 700,
-                        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                        cursor: isSubmitting ? "default" : "pointer",
-                        transition: "all 0.15s",
-                        opacity: isSubmitting ? 0.55 : 1,
-                        textAlign: "center",
-                      }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+              <SeekDoorCarLayout
+                car={car}
+                layout={layout}
+                lineColor={lineColor}
+                lineColorLight={lineColorLight}
+                selectedDoor={selectedDoor}
+                isSubmitting={isSubmitting}
+                onSelectDoor={setSelectedDoor}
+              />
             </div>
           ))}
         </div>
