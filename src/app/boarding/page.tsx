@@ -11,7 +11,7 @@ import {
   type CongestionStatus,
 } from '@/lib/congestion'
 
-const BOARDING_UI_VERSION = '2026-06-01-door-picker-fix2'
+const BOARDING_UI_VERSION = '2026-06-01-seek-seat-map-v1'
 
 function BoardingPageContent() {
   const router = useRouter()
