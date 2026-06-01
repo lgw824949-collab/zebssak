@@ -1798,6 +1798,8 @@ function StepTrain({
             arrival_time_filter_now: currentTime,
           });
 
+          console.log("[timetable 쿼리 시작]");
+
           const { data, error } = await supabase
             .from("timetable")
             .select("train_number, arrival_time")
