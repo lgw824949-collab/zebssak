@@ -21,29 +21,31 @@ function buildBoardingReturnUrl(searchParams: URLSearchParams): string | null {
   return `/boarding?${params.toString()}`
 }
 
-function AuthJoinNotice({
-  lineLabel,
-  mode,
-}: {
-  lineLabel: string | null
-  mode: 'seek' | 'leave' | null
-}) {
-  if (!lineLabel || !mode) return null
-
-  const modeLabel = mode === 'leave' ? '하차' : '착석'
-
+function BoltIcon() {
   return (
-    <div className="mb-6 rounded-2xl border border-[#D8E4FF] bg-[#F0F5FF] px-4 py-4">
-      <p className="text-sm font-bold text-[#0B1F4B]">왜 가입이 필요한가요?</p>
-      <p className="mt-2 text-sm leading-relaxed text-[#475569]">
-        <strong>{lineLabel}</strong> {modeLabel} 매칭을 이어가려면 최소한의 계정이 필요해요.
-      </p>
-      <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-[#475569]">
-        <li>· 이름, 전화번호, 이메일은 받지 않아요</li>
-        <li>· 아이디와 비밀번호만 사용해요</li>
-        <li>· 상대방과 매칭할 때만 쓰여요</li>
-      </ul>
-    </div>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M13 2L4.5 13.5H11L10 22L19.5 10.5H13L13 2Z"
+        fill="#FFFFFF"
+        stroke="#FFFFFF"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function LockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="5" y="11" width="14" height="10" rx="2" stroke="#0052A4" strokeWidth="2" />
+      <path
+        d="M8 11V8a4 4 0 0 1 8 0v3"
+        stroke="#0052A4"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
   )
 }
 
@@ -101,30 +103,35 @@ function RegisterPageContent() {
   return (
     <div className="min-h-[100vh] bg-[#F7F8FA]">
       <div className="mx-auto flex min-h-[100vh] w-full max-w-[480px] flex-col bg-[#F7F8FA]">
-        <header className="rounded-b-[36px] bg-[#0B1F4B] px-8 pb-10 pt-[72px]">
+        <header className="rounded-b-[28px] bg-[#0052A4] px-6 pb-8 pt-6">
           <Link
             href="/"
-            className="mb-4 inline-block text-sm font-semibold text-white/70"
+            className="mb-6 inline-block text-sm font-semibold text-white/80"
           >
             ← 홈으로
           </Link>
-          <h1 className="text-[36px] font-black tracking-tight text-[#C6FF00]">
-            ⚡ 잽싸게
-          </h1>
-          <p className="mt-4 text-[15px] font-semibold text-white/85">간단 가입</p>
-          <p className="mt-1 text-[14px] font-medium text-white/65">
-            개인정보 없이 아이디만 만들면 바로 이어져요
+          <div className="flex items-center gap-2">
+            <BoltIcon />
+            <h1 className="text-[28px] font-black tracking-tight text-white">잽싸게</h1>
+          </div>
+          <p className="mt-3 text-[14px] font-medium text-white/85">
+            개인정보 없이 30초면 끝나요
           </p>
         </header>
 
-        <main className="px-6 pb-10 pt-8">
-          <AuthJoinNotice lineLabel={lineLabel} mode={mode} />
+        <main className="px-6 pb-10 pt-6">
+          <div className="mb-6 flex items-center gap-2 rounded-full bg-[#E8F0FE] px-4 py-3">
+            <LockIcon />
+            <p className="text-[13px] font-semibold text-[#0052A4]">
+              이름 · 전화번호 · 이메일은 받지 않습니다
+            </p>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label
                 htmlFor="username"
-                className="mb-2 block text-sm font-semibold text-[#0B1F4B]"
+                className="mb-2 block text-sm font-semibold text-[#1A1A1A]"
               >
                 아이디
               </label>
@@ -142,7 +149,7 @@ function RegisterPageContent() {
                 pattern="[a-zA-Z0-9_]+"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="h-14 w-full rounded-[14px] border-[1.5px] border-[#E8E8E8] bg-white px-4 text-[15px] font-medium text-[#0B1F4B] placeholder:text-[#A0A0A0] focus:border-[#0B1F4B] focus:outline-none focus:ring-2 focus:ring-[#0B1F4B]/10"
+                className="h-14 w-full rounded-[14px] border-[1.5px] border-[#E8E8E8] bg-white px-4 text-[15px] font-medium text-[#1A1A1A] placeholder:text-[#A0A0A0] focus:border-[#0052A4] focus:outline-none focus:ring-2 focus:ring-[#0052A4]/15"
                 placeholder="4~20자 (영문, 숫자, _)"
               />
             </div>
@@ -150,7 +157,7 @@ function RegisterPageContent() {
             <div>
               <label
                 htmlFor="password"
-                className="mb-2 block text-sm font-semibold text-[#0B1F4B]"
+                className="mb-2 block text-sm font-semibold text-[#1A1A1A]"
               >
                 비밀번호
               </label>
@@ -164,7 +171,7 @@ function RegisterPageContent() {
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="h-14 w-full rounded-[14px] border-[1.5px] border-[#E8E8E8] bg-white px-4 text-[15px] font-medium text-[#0B1F4B] placeholder:text-[#A0A0A0] focus:border-[#0B1F4B] focus:outline-none focus:ring-2 focus:ring-[#0B1F4B]/10"
+                className="h-14 w-full rounded-[14px] border-[1.5px] border-[#E8E8E8] bg-white px-4 text-[15px] font-medium text-[#1A1A1A] placeholder:text-[#A0A0A0] focus:border-[#0052A4] focus:outline-none focus:ring-2 focus:ring-[#0052A4]/15"
                 placeholder="6자 이상"
               />
             </div>
@@ -178,15 +185,15 @@ function RegisterPageContent() {
             <button
               type="submit"
               disabled={isLoading}
-              className="mt-2 h-14 w-full rounded-2xl bg-[#0B1F4B] text-[18px] font-bold text-white transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 h-14 w-full rounded-2xl bg-[#0052A4] text-[17px] font-bold text-white transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isLoading ? '가입 중...' : lineLabel ? '가입하고 이어가기' : '회원가입'}
+              {isLoading ? '가입 중...' : '가입하고 시작하기'}
             </button>
           </form>
 
-          <p className="mt-7 text-center text-sm font-medium text-[#7A7A7A]">
+          <p className="mt-6 text-center text-sm font-medium text-[#7A7A7A]">
             이미 계정이 있으신가요?{' '}
-            <Link href={loginHref} className="font-bold text-[#0B1F4B] underline">
+            <Link href={loginHref} className="font-bold text-[#0052A4] underline">
               로그인
             </Link>
           </p>

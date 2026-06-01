@@ -1737,61 +1737,153 @@ function StepTrain({
 
     let active = true;
 
+    const resolveTimetableDayType = () => {
+      const day = new Date().getDay();
+      return day === 0 || day === 6 ? "holiday" : "weekday";
+    };
+
+    const formatLocalTimeForQuery = (date = new Date()) => {
+      const hours = String(date.getHours()).padStart(2, "0");
+      const minutes = String(date.getMinutes()).padStart(2, "0");
+      const seconds = String(date.getSeconds()).padStart(2, "0");
+      return `${hours}:${minutes}:${seconds}`;
+    };
+
+    const computeBarvlDtFromArrivalTime = (arrivalTimeRaw) => {
+      const arrivalTime = String(arrivalTimeRaw ?? "").trim().slice(0, 8);
+      const match = arrivalTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/u);
+      if (!match) return null;
+
+      const now = new Date();
+      const arrival = new Date(now);
+      arrival.setHours(Number(match[1]), Number(match[2]), Number(match[3] ?? 0), 0);
+      const diffSeconds = Math.floor((arrival.getTime() - now.getTime()) / 1000);
+      return diffSeconds >= 0 ? diffSeconds : null;
+    };
+
     const loadTrains = async ({ silent = false } = {}) => {
       if (!silent) {
         setIsLoading(true);
       }
       try {
-        const params = new URLSearchParams({
-          line: apiLine,
-          station: station ?? "",
-        });
-        if (currentStation?.trim()) {
-          params.set("current_station", currentStation.trim());
-        }
-        const response = await fetch(`/api/trains?${params.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        if (!response.ok) {
-          throw new Error("열차 API 호출 실패");
-        }
-        const payload = await response.json();
-        const apiTrains = Array.isArray(payload?.trains) ? payload.trains : [];
+        let mapped = [];
 
-        console.log("[StepTrain] API 첫 번째 열차 원본", apiTrains[0]);
+        if (apiLine.startsWith("incheon")) {
+          if (!currentStation?.trim() || !travelDirectionKey) {
+            if (!active) return;
+            setTrains([]);
+            setLastUpdatedAt(Date.now());
+            return;
+          }
 
-        console.log(
-          "[StepTrain] API 열차 전체 필드",
-          apiTrains.map((row) => ({
-            ...row,
-            rawKeys: row ? Object.keys(row) : [],
-            barvlDt: row?.barvlDt ?? row?.barvl_dt ?? null,
-            arvlMsg2: row?.arvlMsg2 ?? row?.arvl_msg2 ?? null,
-          }))
-        );
+          const { getSupabase } = await import("@/lib/supabase");
+          const supabase = getSupabase();
+          const lineCode = resolveStationCodePrefixFromLineProp(line);
+          const stationName = currentStation.trim().replace(/역$/u, "");
+          const dayType = resolveTimetableDayType();
+          const currentTime = formatLocalTimeForQuery();
+
+          const { data, error } = await supabase
+            .from("timetable")
+            .select("train_number, arrival_time")
+            .eq("line_code", lineCode)
+            .eq("station_name", stationName)
+            .eq("direction", travelDirectionKey)
+            .eq("day_type", dayType)
+            .gte("arrival_time", currentTime)
+            .order("arrival_time", { ascending: true })
+            .limit(3);
+
+          if (error) {
+            throw error;
+          }
+
+          const directionLabel = travelDirectionKey === "up" ? "상행" : "하행";
+          const directionCode = travelDirectionKey === "up" ? "0" : "1";
+          const seenTrainNumbers = new Set();
+
+          mapped = (Array.isArray(data) ? data : [])
+            .map((row) => {
+              const trainNumber = String(row?.train_number ?? "").trim();
+              if (!trainNumber || seenTrainNumbers.has(trainNumber)) {
+                return null;
+              }
+              seenTrainNumbers.add(trainNumber);
+
+              return {
+                id: trainNumber,
+                current: stationName,
+                eta: directionLabel,
+                direction: directionLabel,
+                directionCode,
+                updnLine: directionCode,
+                barvlDt: computeBarvlDtFromArrivalTime(row?.arrival_time),
+                arvlMsg2: null,
+              };
+            })
+            .filter(Boolean)
+            .slice(0, 3);
+
+          console.log("[StepTrain] timetable 조회 결과", {
+            lineCode,
+            stationName,
+            direction: travelDirectionKey,
+            dayType,
+            currentTime,
+            count: mapped.length,
+          });
+        } else {
+          const params = new URLSearchParams({
+            line: apiLine,
+            station: station ?? "",
+          });
+          if (currentStation?.trim()) {
+            params.set("current_station", currentStation.trim());
+          }
+          const response = await fetch(`/api/trains?${params.toString()}`, {
+            method: "GET",
+            cache: "no-store",
+          });
+          if (!response.ok) {
+            throw new Error("열차 API 호출 실패");
+          }
+          const payload = await response.json();
+          const apiTrains = Array.isArray(payload?.trains) ? payload.trains : [];
+
+          console.log("[StepTrain] API 첫 번째 열차 원본", apiTrains[0]);
+
+          console.log(
+            "[StepTrain] API 열차 전체 필드",
+            apiTrains.map((row) => ({
+              ...row,
+              rawKeys: row ? Object.keys(row) : [],
+              barvlDt: row?.barvlDt ?? row?.barvl_dt ?? null,
+              arvlMsg2: row?.arvlMsg2 ?? row?.arvl_msg2 ?? null,
+            }))
+          );
+
+          mapped = apiTrains
+            .map((row) => ({
+              id: row?.train_no ?? "",
+              current: row?.station_name?.trim() || "정보 없음",
+              eta: row?.direction_display?.trim() || "운행 정보",
+              direction: row?.direction?.trim() || "하행",
+              directionCode:
+                row?.direction_code ??
+                row?.updnLine ??
+                row?.directionCode ??
+                null,
+              updnLine: row?.updnLine ?? row?.direction_code ?? null,
+              barvlDt: row?.barvlDt ?? row?.barvl_dt ?? null,
+              arvlMsg2:
+                (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
+                (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
+                null,
+            }))
+            .filter((row) => row.id);
+        }
 
         if (!active) return;
-
-        const mapped = apiTrains
-          .map((row) => ({
-            id: row?.train_no ?? "",
-            current: row?.station_name?.trim() || "정보 없음",
-            eta: row?.direction_display?.trim() || "운행 정보",
-            direction: row?.direction?.trim() || "하행",
-            directionCode:
-              row?.direction_code ??
-              row?.updnLine ??
-              row?.directionCode ??
-              null,
-            updnLine: row?.updnLine ?? row?.direction_code ?? null,
-            barvlDt: row?.barvlDt ?? row?.barvl_dt ?? null,
-            arvlMsg2:
-              (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
-              (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
-              null,
-          }))
-          .filter((row) => row.id);
 
         setTrains(mapped);
         setLastUpdatedAt(Date.now());
@@ -1816,7 +1908,7 @@ function StepTrain({
       active = false;
       clearInterval(timer);
     };
-  }, [apiLine, station, currentStation]);
+  }, [apiLine, station, currentStation, travelDirectionKey, line]);
 
   useEffect(() => {
     if (!lastUpdatedAt) return undefined;

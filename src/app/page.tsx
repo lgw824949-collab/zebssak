@@ -40,6 +40,20 @@ const HOME_LINE_OPTIONS = [
     color: '#00A84D',
     stationExamples: '강남 · 잠실 · 홍대',
   },
+  {
+    label: '인천 1호선',
+    shortLabel: '인천1',
+    badge: '인1',
+    color: '#7CA8D5',
+    stationExamples: '부평 · 예술회관 · 원인재',
+  },
+  {
+    label: '인천 2호선',
+    shortLabel: '인천2',
+    badge: '인2',
+    color: '#ED8B00',
+    stationExamples: '검단오류 · 주안 · 운연',
+  },
 ] as const
 
 type HomeFlowMode = 'seek' | 'leave'
