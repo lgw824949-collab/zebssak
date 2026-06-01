@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 /** LineSelect.jsx 노선색과 동일 */
 const LINE_COLORS = {
@@ -23,10 +23,8 @@ const AISLE_BG_ALPHA = "1A";
 const ALIGHTING_BG_ALPHA = "26";
 
 const PRIORITY = 3;
-/** 좌석(플랫폼) 구역 수 · 일반석 3구역 */
+/** 좌석 구역 수 · 출입문 1-1 ~ 1-3 · 일반석 3구역 */
 const SECTIONS = 3;
-/** 구역 경계 출입문 수 — 플랫폼 구역마다 사이 출입문 포함 전체 (1-1 ~ 1-4) */
-const DOORS_PER_CAR = SECTIONS + 1;
 
 /** 호선별 객실 레이아웃 (P3: 3~9호선·인천 6호차·7석) */
 const LINE_CAR_LAYOUT = {
@@ -306,7 +304,7 @@ function PriorityBlock({ side, placement }) {
   );
 }
 
-/** 통로 가운데 출입문 배지 (1-1 ~ 1-4) */
+/** 통로 가운데 구역 배지 (1-1, 1-2, 1-3) */
 function AisleSectionBadge({ label, lineColor, highlighted }) {
   return (
     <span
@@ -333,20 +331,15 @@ function AisleSectionBadge({ label, lineColor, highlighted }) {
   );
 }
 
-/** 출입문 구분 — 통로 중앙에 출입문 번호 표시 (플랫폼 구역 경계) */
-function AisleDoorDivider({ label, lineColor, highlighted = false, onPress = null }) {
-  const badge = (
-    <AisleSectionBadge label={label} lineColor={lineColor} highlighted={highlighted} />
-  );
-
+/** 출입문 구분 (통로만) */
+function AisleDoorDivider({ label, lineColor }) {
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
         width: "100%",
-        minHeight: 36,
-        padding: "4px 0",
+        padding: "3px 0",
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
@@ -357,27 +350,26 @@ function AisleDoorDivider({ label, lineColor, highlighted = false, onPress = nul
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          background: `${lineColor}${AISLE_BG_ALPHA}`,
+          borderRadius: 6,
+          padding: "2px 0",
         }}
       >
-        {onPress ? (
-          <button
-            type="button"
-            className="zeb-touch-target"
-            onClick={onPress}
-            aria-label={`${label} 출입문`}
-            aria-pressed={highlighted}
-            style={{
-              border: "none",
-              background: "transparent",
-              padding: 0,
-              cursor: "pointer",
-            }}
-          >
-            {badge}
-          </button>
-        ) : (
-          badge
-        )}
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 600,
+            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+            fontVariantNumeric: "tabular-nums",
+            color: lineColor,
+            opacity: 0.75,
+            lineHeight: 1.2,
+            userSelect: "none",
+            pointerEvents: "none",
+          }}
+        >
+          {label}
+        </span>
       </div>
       <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
     </div>
@@ -392,60 +384,6 @@ function canSelectSeatStatus(status, interactionMode) {
   if (status === "elderly") return false;
   if (interactionMode === "leave") return status === "empty";
   return status === "alighting" || status === "empty";
-}
-
-/** doorPickerMode 전용 — 호차 기준 출입문 번호 버튼만 표시 */
-function DoorPickerButtons({ carNum, lineColor, selectedDoorLabel, onDoorSelect }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        flexWrap: "nowrap",
-        alignItems: "stretch",
-        gap: 10,
-        width: "100%",
-        boxSizing: "border-box",
-      }}
-    >
-      {Array.from({ length: DOORS_PER_CAR }, (_, index) => {
-        const doorNo = index + 1;
-        const label = `${carNum}-${doorNo}`;
-        const isSelected = selectedDoorLabel === label;
-        return (
-          <button
-            key={label}
-            type="button"
-            className="zeb-touch-target"
-            onClick={() => onDoorSelect?.(label)}
-            aria-label={`${carNum}호차 ${doorNo}번 출입문`}
-            aria-pressed={isSelected}
-            style={{
-              display: "block",
-              width: "100%",
-              boxSizing: "border-box",
-              flexShrink: 0,
-              alignSelf: "stretch",
-              minHeight: 52,
-              padding: "12px 8px",
-              borderRadius: 12,
-              border: `2px solid ${isSelected ? lineColor : "#E2E8F0"}`,
-              background: isSelected ? lineColor : "#FFFFFF",
-              color: isSelected ? "#FFFFFF" : lineColor,
-              fontSize: 17,
-              fontWeight: 800,
-              fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-              fontVariantNumeric: "tabular-nums",
-              cursor: "pointer",
-              transition: "background 0.15s, border-color 0.15s, color 0.15s",
-            }}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 export default function SubwaySeatMap({
@@ -647,6 +585,7 @@ export default function SubwaySeatMap({
 
   const carBodyRef = useRef(null);
   const sectionRefs = useRef([]);
+  const [aisleBadges, setAisleBadges] = useState([]);
 
   const aisleColumnStyle = useMemo(
     () => ({
@@ -663,6 +602,47 @@ export default function SubwaySeatMap({
     }),
     [lineColor]
   );
+
+  const updateAisleBadges = useCallback(() => {
+    const body = carBodyRef.current;
+    if (!body) return;
+
+    const bodyRect = body.getBoundingClientRect();
+    const next = sectionRefs.current
+      .map((el, sectionIndex) => {
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        const doorNo = sectionIndex + 1;
+        return {
+          top: rect.top - bodyRect.top + rect.height / 2,
+          label: `${carNum}-${doorNo}`,
+          highlighted: recommendedDoor === doorNo,
+        };
+      })
+      .filter(Boolean);
+
+    setAisleBadges(next);
+  }, [carNum, recommendedDoor]);
+
+  useLayoutEffect(() => {
+    if (doorPickerMode) return;
+    updateAisleBadges();
+
+    const observer = new ResizeObserver(() => {
+      updateAisleBadges();
+    });
+
+    if (carBodyRef.current) observer.observe(carBodyRef.current);
+    sectionRefs.current.forEach((el) => {
+      if (el) observer.observe(el);
+    });
+
+    window.addEventListener("resize", updateAisleBadges);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateAisleBadges);
+    };
+  }, [updateAisleBadges, leftSeats, rightSeats, activeCar, lineColor, doorPickerMode]);
 
   const renderSeatSectionColumn = (side, sectionIndex, seats, doorNo) => {
     const door = doorNo;
@@ -690,6 +670,7 @@ export default function SubwaySeatMap({
           recommended={isRecommended}
           seatLetter={columnLetter}
           onClick={() => {
+            if (doorPickerMode) return;
             if (!canSelectSeatStatus(status, interactionMode)) return;
             const api = mapSeatIdToApi(seatId, seatsPerSection);
             const info = {
@@ -730,20 +711,51 @@ export default function SubwaySeatMap({
     );
   };
 
+  const renderSideDoorRow = (doorNo) => {
+    const label = `${carNum}-${doorNo}`;
+    const isSelected = selectedDoorLabel === label;
+    return (
+      <div
+        key={`side-door-${doorNo}`}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          width: "100%",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "flex-start" }}>
+          <button
+            type="button"
+            className="zeb-touch-target"
+            onClick={() => onDoorSelect?.(label)}
+            aria-label={`${carNum}호차 ${doorNo}번 출입문`}
+            aria-pressed={isSelected}
+            style={{
+              minWidth: 40,
+              minHeight: 40,
+              padding: "6px 12px",
+              borderRadius: 8,
+              border: `1.5px solid ${isSelected ? lineColor : "#E2E8F0"}`,
+              background: isSelected ? lineColor : "#FFFFFF",
+              color: isSelected ? "#fff" : lineColor,
+              fontSize: 14,
+              fontWeight: 800,
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            문
+          </button>
+        </div>
+        <div style={{ width: 48, flexShrink: 0 }} aria-hidden />
+        <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
+      </div>
+    );
+  };
+
   /** 노약자 → 출입문1-1 → A~F → … → 출입문1-4 → 노약자 */
   const renderCarBody = () => {
-    const renderDoorRow = (doorNo) => {
-      const label = `${carNum}-${doorNo}`;
-      return (
-        <AisleDoorDivider
-          key={`door-${doorNo}`}
-          label={label}
-          lineColor={lineColor}
-          highlighted={recommendedDoor === doorNo}
-        />
-      );
-    };
-
     const rows = [
       <div
         key="row-prio-top"
@@ -759,7 +771,13 @@ export default function SubwaySeatMap({
       </div>,
     ];
 
-    rows.push(renderDoorRow(1));
+    rows.push(
+      doorPickerMode ? (
+        renderSideDoorRow(1)
+      ) : (
+        <AisleDoorDivider key="door-1" label={`${carNum}-1`} lineColor={lineColor} />
+      )
+    );
 
     for (let sectionIndex = 0; sectionIndex < SECTIONS; sectionIndex += 1) {
       const doorNo = sectionIndex + 1;
@@ -797,11 +815,27 @@ export default function SubwaySeatMap({
       );
 
       if (sectionIndex < SECTIONS - 1) {
-        rows.push(renderDoorRow(sectionIndex + 2));
+        rows.push(
+          doorPickerMode ? (
+            renderSideDoorRow(sectionIndex + 2)
+          ) : (
+            <AisleDoorDivider
+              key={`door-${sectionIndex + 2}`}
+              label={`${carNum}-${sectionIndex + 2}`}
+              lineColor={lineColor}
+            />
+          )
+        );
       }
     }
 
-    rows.push(renderDoorRow(DOORS_PER_CAR));
+    rows.push(
+      doorPickerMode ? (
+        renderSideDoorRow(4)
+      ) : (
+        <AisleDoorDivider key="door-4" label={`${carNum}-4`} lineColor={lineColor} />
+      )
+    );
 
     rows.push(
       <div
@@ -844,32 +878,38 @@ export default function SubwaySeatMap({
             zIndex: 0,
           }}
         />
+        {!doorPickerMode ? (
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 4,
+            }}
+          >
+            {aisleBadges.map((badge) => (
+              <div
+                key={badge.label}
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  top: badge.top,
+                  transform: "translate(-50%, -50%)",
+                }}
+              >
+                <AisleSectionBadge
+                  label={badge.label}
+                  lineColor={lineColor}
+                  highlighted={badge.highlighted}
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   };
-
-  if (doorPickerMode) {
-    return (
-      <div
-        style={{
-          fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
-          maxWidth: 380,
-          width: "100%",
-          margin: "0 auto",
-          padding:
-            "0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))",
-          boxSizing: "border-box",
-        }}
-      >
-        <DoorPickerButtons
-          carNum={carNum}
-          lineColor={lineColor}
-          selectedDoorLabel={selectedDoorLabel}
-          onDoorSelect={onDoorSelect}
-        />
-      </div>
-    );
-  }
 
   return (
     <div
@@ -920,7 +960,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {carAlightingCount > 0 ? (
+      {!doorPickerMode && carAlightingCount > 0 ? (
         <div
           style={{
             display: "flex",
@@ -944,7 +984,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {quickExitHint?.type === "exit" ? (
+      {!doorPickerMode && quickExitHint?.type === "exit" ? (
         <div
           style={{
             marginBottom: 8,
@@ -965,7 +1005,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {quickExitHint?.type === "info" ? (
+      {!doorPickerMode && quickExitHint?.type === "info" ? (
         <div
           style={{
             marginBottom: 8,
@@ -980,11 +1020,11 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {alightingLoadError ? (
+      {!doorPickerMode && alightingLoadError ? (
         <p style={{ fontSize: 11, color: "#94A3B8", marginBottom: 8 }}>{alightingLoadError}</p>
       ) : null}
 
-      {directionLabel ? (
+      {!doorPickerMode && directionLabel ? (
         <div
           style={{
             background: lineColor,
@@ -1025,17 +1065,31 @@ export default function SubwaySeatMap({
         <span style={{ fontSize: 11, color: "#78909C", fontWeight: 700 }}>우측 →</span>
       </div>
 
-      <p
-        style={{
-          margin: "0 0 8px",
-          fontSize: 11,
-          color: "#94A3B8",
-          textAlign: "center",
-          lineHeight: 1.4,
-        }}
-      >
-        맨 위부터 노약자 → 출입문 1-1~1-3 구역 · 좌·우 각 6석(A~F)
-      </p>
+      {!doorPickerMode ? (
+        <p
+          style={{
+            margin: "0 0 8px",
+            fontSize: 11,
+            color: "#94A3B8",
+            textAlign: "center",
+            lineHeight: 1.4,
+          }}
+        >
+          맨 위부터 노약자 → 출입문 1-1~1-3 구역 · 좌·우 각 6석(A~F)
+        </p>
+      ) : (
+        <p
+          style={{
+            margin: "0 0 8px",
+            fontSize: 11,
+            color: "#94A3B8",
+            textAlign: "center",
+            lineHeight: 1.4,
+          }}
+        >
+          좌측「문」을 눌러 지금 서 있는 출입문을 선택하세요
+        </p>
+      )}
       <div
         style={{
           background: "#FFFFFF",
@@ -1055,7 +1109,7 @@ export default function SubwaySeatMap({
         {renderCarBody()}
       </div>
 
-      {selectedSeat ? (
+      {selectedSeat && !doorPickerMode ? (
         <div
           style={{
             marginTop: 12,
@@ -1080,6 +1134,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
+      {!doorPickerMode ? (
       <div
         style={{
           display: "flex",
@@ -1112,6 +1167,7 @@ export default function SubwaySeatMap({
           </div>
         ))}
       </div>
+      ) : null}
     </div>
   );
 }
