@@ -38,10 +38,10 @@ function BoltIcon() {
 function LockIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <rect x="5" y="11" width="14" height="10" rx="2" stroke="#0052A4" strokeWidth="2" />
+      <rect x="5" y="11" width="14" height="10" rx="2" stroke="#747F00" strokeWidth="2" />
       <path
         d="M8 11V8a4 4 0 0 1 8 0v3"
-        stroke="#0052A4"
+        stroke="#747F00"
         strokeWidth="2"
         strokeLinecap="round"
       />
@@ -103,7 +103,7 @@ function RegisterPageContent() {
   return (
     <div className="min-h-[100vh] bg-[#F7F8FA]">
       <div className="mx-auto flex min-h-[100vh] w-full max-w-[480px] flex-col bg-[#F7F8FA]">
-        <header className="rounded-b-[28px] bg-[#0052A4] px-6 pb-8 pt-6">
+        <header className="rounded-b-[28px] bg-[#747F00] px-6 pb-8 pt-6">
           <Link
             href="/"
             className="mb-6 inline-block text-sm font-semibold text-white/80"
@@ -122,7 +122,7 @@ function RegisterPageContent() {
         <main className="px-6 pb-10 pt-6">
           <div className="mb-6 flex items-center gap-2 rounded-full bg-[#E8F0FE] px-4 py-3">
             <LockIcon />
-            <p className="text-[13px] font-semibold text-[#0052A4]">
+            <p className="text-[13px] font-semibold text-[#747F00]">
               이름 · 전화번호 · 이메일은 받지 않습니다
             </p>
           </div>
@@ -149,7 +149,7 @@ function RegisterPageContent() {
                 pattern="[a-zA-Z0-9_]+"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="h-14 w-full rounded-[14px] border-[1.5px] border-[#E8E8E8] bg-white px-4 text-[15px] font-medium text-[#1A1A1A] placeholder:text-[#A0A0A0] focus:border-[#0052A4] focus:outline-none focus:ring-2 focus:ring-[#0052A4]/15"
+                className="h-14 w-full rounded-[14px] border-[1.5px] border-[#E8E8E8] bg-white px-4 text-[15px] font-medium text-[#1A1A1A] placeholder:text-[#A0A0A0] focus:border-[#747F00] focus:outline-none focus:ring-2 focus:ring-[#747F00]/15"
                 placeholder="4~20자 (영문, 숫자, _)"
               />
             </div>
@@ -171,7 +171,7 @@ function RegisterPageContent() {
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="h-14 w-full rounded-[14px] border-[1.5px] border-[#E8E8E8] bg-white px-4 text-[15px] font-medium text-[#1A1A1A] placeholder:text-[#A0A0A0] focus:border-[#0052A4] focus:outline-none focus:ring-2 focus:ring-[#0052A4]/15"
+                className="h-14 w-full rounded-[14px] border-[1.5px] border-[#E8E8E8] bg-white px-4 text-[15px] font-medium text-[#1A1A1A] placeholder:text-[#A0A0A0] focus:border-[#747F00] focus:outline-none focus:ring-2 focus:ring-[#747F00]/15"
                 placeholder="6자 이상"
               />
             </div>
@@ -185,7 +185,7 @@ function RegisterPageContent() {
             <button
               type="submit"
               disabled={isLoading}
-              className="mt-2 h-14 w-full rounded-2xl bg-[#0052A4] text-[17px] font-bold text-white transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 h-14 w-full rounded-2xl bg-[#747F00] text-[17px] font-bold text-white transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isLoading ? '가입 중...' : '가입하고 시작하기'}
             </button>
@@ -193,7 +193,7 @@ function RegisterPageContent() {
 
           <p className="mt-6 text-center text-sm font-medium text-[#7A7A7A]">
             이미 계정이 있으신가요?{' '}
-            <Link href={loginHref} className="font-bold text-[#0052A4] underline">
+            <Link href={loginHref} className="font-bold text-[#747F00] underline">
               로그인
             </Link>
           </p>

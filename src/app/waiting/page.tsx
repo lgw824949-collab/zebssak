@@ -152,7 +152,7 @@ function isLineTwo(draft: BoardingDraft): boolean {
 }
 
 function resolveLineColor(draft: BoardingDraft): string {
-  return isLineTwo(draft) ? '#00A84D' : '#0052A4'
+  return isLineTwo(draft) ? '#747F00' : '#747F00'
 }
 
 function resolveLineShortLabel(draft: BoardingDraft): string {
@@ -445,9 +445,9 @@ export default function WaitingPage() {
     )
   }
 
-  const lineColor = draft ? resolveLineColor(draft) : '#0052A4'
+  const lineColor = draft ? resolveLineColor(draft) : '#747F00'
   const lineColorLight =
-    lineColor === '#00A84D' ? 'rgba(0, 168, 77, 0.14)' : 'rgba(0, 82, 164, 0.14)'
+    lineColor === '#747F00' ? 'rgba(0, 168, 77, 0.14)' : 'rgba(0, 82, 164, 0.14)'
   const remainingStations = draft ? resolveRemainingStations(draft) : null
   const remainingStationsText =
     remainingStations === null ? '미확인' : `${remainingStations}`
@@ -767,7 +767,7 @@ export default function WaitingPage() {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: #00a84d;
+          background: #747F00;
           animation: wait-live-pulse 1.4s ease-in-out infinite;
         }
       `}</style>

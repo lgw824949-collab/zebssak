@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 
 const LINE_OPTIONS = [
-  { key: "seoul1", label: "서울 1호선", color: "#0052A4" },
-  { key: "seoul2", label: "서울 2호선", color: "#00A84D" },
+  { key: "seoul1", label: "서울 1호선", color: "#747F00" },
+  { key: "seoul2", label: "서울 2호선", color: "#747F00" },
   { key: "seoul3", label: "서울 3호선", color: "#EF7C1C" },
   { key: "seoul4", label: "서울 4호선", color: "#00A5DE" },
   { key: "seoul5", label: "서울 5호선", color: "#996CAC" },

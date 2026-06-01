@@ -61,8 +61,8 @@
     --muted-foreground: #888888;
     --border: #ebebeb;
     --radius: 1rem;
-    --line-1: #0052a4;
-    --line-2: #00a84d;
+    --line-1: #747F00;
+    --line-2: #747F00;
     --warning: #f97316;
     --danger: #ef4444;
 
@@ -236,9 +236,9 @@
  *   --text: #1A1A1A;
  *   --text-sub: #888888;
  *   --border: #EBEBEB;
- *   --line1: #0052A4;
+ *   --line1: #747F00;
  *   --line2: #F5A200;
- *   --lines2: #00A84D;
+ *   --lines2: #747F00;
  *   ... zeb-page, zeb-btn, zeb-card 등 전체 컴포넌트 레이어 ...
  * }
  */

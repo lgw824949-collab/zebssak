@@ -399,7 +399,7 @@ function MatchingForm() {
         .matching-theme .zeb-page-title,
         .matching-theme .zeb-label,
         .matching-theme .zeb-text-line1 {
-          color: #0052a4 !important;
+          color: #747F00 !important;
         }
         .matching-theme .zeb-alert--danger {
           border-radius: 16px !important;
@@ -408,7 +408,7 @@ function MatchingForm() {
           border-radius: 16px !important;
         }
         .matching-theme .zeb-btn--line1 {
-          background: #0052a4 !important;
+          background: #747F00 !important;
           color: #ffffff !important;
         }
         .matching-theme .zeb-btn--secondary {

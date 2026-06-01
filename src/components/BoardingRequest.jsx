@@ -1137,7 +1137,7 @@ function StepStation({
     }
   }
 
-  const lineColor = apiLine === "seoul2" ? "#00A84D" : "#0052A4";
+  const lineColor = apiLine === "seoul2" ? "#747F00" : "#747F00";
   const lineColorLight = apiLine === "seoul2" ? "rgba(0, 168, 77, 0.14)" : "rgba(0, 82, 164, 0.14)";
   const lineDisplayName = (() => {
     const primary = (line || "").split("·")[0].trim();
@@ -2119,7 +2119,7 @@ function StepTrain({
     onTrainPick?.(selectedTrain);
   }
 
-  const lineColor = apiLine === "seoul2" ? "#00A84D" : "#0052A4";
+  const lineColor = apiLine === "seoul2" ? "#747F00" : "#747F00";
   const lineColorLight =
     apiLine === "seoul2" ? "rgba(0, 168, 77, 0.14)" : "rgba(0, 82, 164, 0.14)";
   const lineDisplayName = (() => {
@@ -2409,7 +2409,7 @@ function StepSeekDoor({
   const doorGroups = buildSeekDoorGroups(line);
   const layout = resolveCarLayout(line);
   const apiLine = resolveApiLineFromLineProp(line);
-  const lineColor = apiLine === "seoul2" ? "#00A84D" : "#0052A4";
+  const lineColor = apiLine === "seoul2" ? "#747F00" : "#747F00";
   const lineColorLight =
     apiLine === "seoul2" ? "rgba(0, 168, 77, 0.14)" : "rgba(0, 82, 164, 0.14)";
   const lineDisplayName = (() => {
@@ -2836,7 +2836,7 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
       ? ` · ${seat.car}-${seat.door}번 문 옆`
       : "";
   const apiLine = resolveApiLineFromLineProp(line);
-  const lineColor = apiLine === "seoul2" ? "#00A84D" : "#0052A4";
+  const lineColor = apiLine === "seoul2" ? "#747F00" : "#747F00";
   const lineDisplayName = (() => {
     const primary = (line || "").split("·")[0].trim();
     const compact = primary.replace(/\s+/g, "");

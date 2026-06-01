@@ -4,8 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 /** LineSelect.jsx 노선색과 동일 */
 const LINE_COLORS = {
-  "서울 1호선": "#0052A4",
-  "서울 2호선": "#00A84D",
+  "서울 1호선": "#747F00",
+  "서울 2호선": "#747F00",
   "서울 3호선": "#EF7C1C",
   "서울 4호선": "#00A5DE",
   "서울 5호선": "#996CAC",

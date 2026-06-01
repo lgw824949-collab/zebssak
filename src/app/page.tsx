@@ -28,14 +28,14 @@ const HOME_LINE_OPTIONS = [
   //   label: '서울 1호선',
   //   shortLabel: '1호선',
   //   badge: '1',
-  //   color: '#0052A4',
+  //   color: '#747F00',
   //   stationExamples: '서울역 · 종로 · 청량리',
   // },
   // {
   //   label: '서울 2호선',
   //   shortLabel: '2호선',
   //   badge: '2',
-  //   color: '#00A84D',
+  //   color: '#747F00',
   //   stationExamples: '강남 · 잠실 · 홍대',
   // },
   // {

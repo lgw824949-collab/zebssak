@@ -541,7 +541,7 @@ export default function MatchedPage() {
           box-shadow: 0 2px 10px rgba(26, 26, 26, 0.05) !important;
         }
         .matched-theme .zeb-text-line1 {
-          color: #0052a4 !important;
+          color: #747F00 !important;
         }
         .matched-theme .zeb-alert--warning {
           border-color: #ff6b00 !important;
@@ -549,7 +549,7 @@ export default function MatchedPage() {
           color: #ff6b00 !important;
         }
         .matched-theme .zeb-btn--line1 {
-          background: #0052a4 !important;
+          background: #747F00 !important;
           color: #ffffff !important;
         }
       `}</style>
