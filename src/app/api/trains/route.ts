@@ -61,14 +61,6 @@ interface SeoulStationsApiTrain {
   is_express?: boolean
 }
 
-interface SeoulStationsApiResponse {
-  success?: boolean
-  error?: string
-  data?: {
-    trains?: SeoulStationsApiTrain[]
-  }
-}
-
 class TrainsApiError extends Error {
   constructor(
     message: string,

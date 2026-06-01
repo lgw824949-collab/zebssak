@@ -1592,6 +1592,7 @@ function StepTrain({
   );
   const [travelDirectionKey, setTravelDirectionKey] = useState(null);
   const [stationIndexDebug, setStationIndexDebug] = useState(null);
+  const [seoulStationOrder, setSeoulStationOrder] = useState([]);
   const apiLine = resolveApiLineFromLineProp(line);
 
   function resolveTrainDirectionKey(train) {
@@ -1740,7 +1741,20 @@ function StepTrain({
 
   function formatTrainArrivalLabel(train) {
     const arvlMsg2 = typeof train.arvlMsg2 === "string" ? train.arvlMsg2.trim() : "";
-    const barvlRaw = train.barvlDt;
+    let barvlRaw = train.barvlDt;
+    if (
+      (barvlRaw == null || barvlRaw === "") &&
+      apiLine?.startsWith("seoul") &&
+      seoulStationOrder.length > 0
+    ) {
+      const estimated = estimateSeoulArrivalSeconds(
+        train.current,
+        currentStation,
+        seoulStationOrder,
+        apiLine
+      );
+      if (estimated != null) barvlRaw = estimated;
+    }
     if (barvlRaw != null && barvlRaw !== "") {
       const totalSeconds = Number(barvlRaw);
       if (Number.isFinite(totalSeconds) && totalSeconds > 0) {
@@ -1868,6 +1882,7 @@ function StepTrain({
           const stationOrder = Array.isArray(payload?.station_order)
             ? payload.station_order
             : [];
+          setSeoulStationOrder(stationOrder);
 
           mapped = apiTrains
             .map((row) => {
@@ -1905,6 +1920,10 @@ function StepTrain({
         }
 
         if (!active || seq !== requestSeq) return;
+
+        if (!apiLine.startsWith("seoul")) {
+          setSeoulStationOrder([]);
+        }
 
         setTrains(mapped);
         setLastUpdatedAt(Date.now());

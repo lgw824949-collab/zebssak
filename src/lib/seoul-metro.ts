@@ -226,7 +226,7 @@ export async function fetchSeoulMetroUpstream(
   }
 }
 
-function extractResultCode(payload: {
+export function extractResultCode(payload: {
   errorMessage?: { code?: string }
   realtimePosition?: { RESULT?: { code?: string } }
   realtimeArrival?: { RESULT?: { code?: string } }
@@ -244,7 +244,10 @@ export function isSeoulApiSuccess(code: string | undefined): boolean {
 
 export function extractPositionRows(payload: {
   realtimePositionList?: SeoulPositionRow[]
-  realtimePosition?: { row?: SeoulPositionRow | SeoulPositionRow[] }
+  realtimePosition?: {
+    row?: SeoulPositionRow | SeoulPositionRow[]
+    RESULT?: { code?: string }
+  }
 }): SeoulPositionRow[] {
   if (Array.isArray(payload.realtimePositionList)) {
     return payload.realtimePositionList
@@ -256,7 +259,10 @@ export function extractPositionRows(payload: {
 
 export function extractArrivalRows(payload: {
   realtimeArrivalList?: SeoulArrivalRow[]
-  realtimeArrival?: { row?: SeoulArrivalRow | SeoulArrivalRow[] }
+  realtimeArrival?: {
+    row?: SeoulArrivalRow | SeoulArrivalRow[]
+    RESULT?: { code?: string }
+  }
 }): SeoulArrivalRow[] {
   if (Array.isArray(payload.realtimeArrivalList)) {
     return payload.realtimeArrivalList
