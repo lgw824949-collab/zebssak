@@ -1805,6 +1805,8 @@ function StepTrain({
             .eq("day_type", dayType)
             .order("arrival_time", { ascending: true });
 
+          console.log("[timetable result]", { data, error });
+
           if (error) {
             throw error;
           }
