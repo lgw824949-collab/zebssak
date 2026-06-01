@@ -2396,11 +2396,6 @@ function StepTrain({
   );
 }
 
-/** seek 출입문 좌석 배치도 기준 크기(600px) → 표시 크기(900px), 비율 1.5배 */
-const SEEK_DOOR_MAP_BASE_PX = 600;
-const SEEK_DOOR_MAP_DISPLAY_PX = 900;
-const SEEK_DOOR_MAP_SCALE = SEEK_DOOR_MAP_DISPLAY_PX / SEEK_DOOR_MAP_BASE_PX;
-
 // ─── Step 3 (seek): 출입문 선택 ────────────────────────────────────
 function StepSeekDoor({
   line,
@@ -2411,7 +2406,6 @@ function StepSeekDoor({
   drtnInfo = null,
 }) {
   const [selectedDoor, setSelectedDoor] = useState(null);
-  const [activeCar, setActiveCar] = useState(1);
   const layout = resolveCarLayout(line);
   const lineColor = LINE_OLIVE;
   const lineColorLight = LINE_OLIVE_LIGHT;
@@ -2431,12 +2425,6 @@ function StepSeekDoor({
   const selectedDoorNo = selectedDoor
     ? Number.parseInt(String(selectedDoor).split("-")[1], 10)
     : null;
-  const carNumbers = Array.from({ length: layout.carCount }, (_, index) => index + 1);
-
-  useEffect(() => {
-    if (!selectedCar || !Number.isInteger(selectedCar)) return;
-    setActiveCar(selectedCar);
-  }, [selectedCar]);
   const trainSummaryParts = [];
   if (trainId) trainSummaryParts.push(`열차 ${trainId}`);
   if (directionLabel) trainSummaryParts.push(directionLabel);
@@ -2558,81 +2546,14 @@ function StepSeekDoor({
           </div>
         ) : null}
 
-        <div
-          style={{
-            display: "flex",
-            gap: 4,
-            overflowX: "auto",
-            paddingBottom: 4,
-            marginBottom: 16,
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
-          {carNumbers.map((carNum) => {
-            const isActiveCar = activeCar === carNum;
-            return (
-              <button
-                key={carNum}
-                type="button"
-                className="zeb-touch-target"
-                disabled={isSubmitting}
-                onClick={() => setActiveCar(carNum)}
-                style={{
-                  flex: "1 0 32px",
-                  minWidth: 32,
-                  height: 40,
-                  borderRadius: 8,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  background: isActiveCar ? lineColor : "#F0F4F8",
-                  color: isActiveCar ? "#fff" : C.muted,
-                  border: `1px solid ${isActiveCar ? lineColor : C.border}`,
-                  transition: "background 0.15s, color 0.15s",
-                  cursor: isSubmitting ? "default" : "pointer",
-                  opacity: isSubmitting ? 0.55 : 1,
-                }}
-              >
-                {carNum}
-              </button>
-            );
-          })}
-        </div>
-
-        <div
-          style={{
-            paddingBottom: 8,
-            width: SEEK_DOOR_MAP_DISPLAY_PX,
-            maxWidth: "100%",
-            height: SEEK_DOOR_MAP_DISPLAY_PX,
-            margin: "0 auto",
-            overflow: "hidden",
-            position: "relative",
-          }}
-        >
-          <div
-            style={{
-              width: SEEK_DOOR_MAP_BASE_PX,
-              height: SEEK_DOOR_MAP_BASE_PX,
-              transform: `scale(${SEEK_DOOR_MAP_SCALE})`,
-              transformOrigin: "top center",
-              position: "absolute",
-              left: "50%",
-              top: 0,
-              marginLeft: -SEEK_DOOR_MAP_BASE_PX / 2,
-            }}
-          >
-            <SubwaySeatMap
-              key={`seek-door-${activeCar}-${line}`}
-              line={line}
-              car={activeCar}
-              doorPickerMode
-              selectedDoorLabel={selectedDoor}
-              onDoorSelect={setSelectedDoor}
-            />
-          </div>
+        <div style={{ paddingBottom: 8, width: "100%" }}>
+          <SubwaySeatMap
+            key={`seek-door-${line}`}
+            line={line}
+            doorPickerMode
+            selectedDoorLabel={selectedDoor}
+            onDoorSelect={setSelectedDoor}
+          />
         </div>
       </div>
 

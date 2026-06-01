@@ -386,6 +386,85 @@ function canSelectSeatStatus(status, interactionMode) {
   return status === "alighting" || status === "empty";
 }
 
+/** doorPickerMode: 호차별 출입문 번호 (N-1 ~ N-4) */
+function DoorPickerButtons({ totalCars, lineColor, selectedDoorLabel, onDoorSelect }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 18,
+        width: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      {Array.from({ length: totalCars }, (_, carIndex) => {
+        const carNum = carIndex + 1;
+        const selectedCar =
+          selectedDoorLabel != null
+            ? Number.parseInt(String(selectedDoorLabel).split("-")[0], 10)
+            : null;
+        const isCarHighlighted = selectedCar === carNum;
+
+        return (
+          <section key={carNum} aria-label={`${carNum}호차 출입문`}>
+            <div
+              style={{
+                marginBottom: 10,
+                fontSize: 15,
+                fontWeight: 800,
+                color: isCarHighlighted ? lineColor : "#1A1A1A",
+              }}
+            >
+              {carNum}호차
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${DOORS_PER_CAR}, minmax(0, 1fr))`,
+                gap: 8,
+                width: "100%",
+              }}
+            >
+              {Array.from({ length: DOORS_PER_CAR }, (_, doorIndex) => {
+                const doorNo = doorIndex + 1;
+                const label = `${carNum}-${doorNo}`;
+                const isSelected = selectedDoorLabel === label;
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    className="zeb-touch-target"
+                    onClick={() => onDoorSelect?.(label)}
+                    aria-label={`${carNum}호차 ${doorNo}번 출입문`}
+                    aria-pressed={isSelected}
+                    style={{
+                      minHeight: 48,
+                      padding: "12px 6px",
+                      borderRadius: 10,
+                      border: `2px solid ${isSelected ? lineColor : "#E2E8F0"}`,
+                      background: isSelected ? lineColor : "#FFFFFF",
+                      color: isSelected ? "#FFFFFF" : lineColor,
+                      fontSize: 15,
+                      fontWeight: 800,
+                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                      fontVariantNumeric: "tabular-nums",
+                      cursor: "pointer",
+                      transition: "background 0.15s, border-color 0.15s, color 0.15s",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function SubwaySeatMap({
   line = "서울 2호선",
   station = "",
@@ -910,6 +989,28 @@ export default function SubwaySeatMap({
       </div>
     );
   };
+
+  if (doorPickerMode) {
+    return (
+      <div
+        style={{
+          fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
+          width: "100%",
+          margin: "0 auto",
+          padding:
+            "0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))",
+          boxSizing: "border-box",
+        }}
+      >
+        <DoorPickerButtons
+          totalCars={totalCars}
+          lineColor={lineColor}
+          selectedDoorLabel={selectedDoorLabel}
+          onDoorSelect={onDoorSelect}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
