@@ -20,6 +20,8 @@ interface StoredUser {
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
 const GPS_MAX_RADIUS_KM = 1
 const LINE7_OLIVE = '#747F00'
+/** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
+const HOME_UI_VERSION = '2026-06-01-home-7'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {
@@ -119,6 +121,38 @@ export default function Home() {
       setShowCongestionModal(true)
     }
   }, [congestionStatus, selectedLineLabel, isLoadingData, homeStep])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const versionKey = 'zeb_home_ui_version'
+    const reloadOnceKey = `zeb_home_reloaded_${HOME_UI_VERSION}`
+    const previous = localStorage.getItem(versionKey)
+    if (previous === HOME_UI_VERSION || sessionStorage.getItem(reloadOnceKey)) return
+
+    localStorage.setItem(versionKey, HOME_UI_VERSION)
+    const hadServiceWorker = Boolean(navigator.serviceWorker?.controller)
+
+    void (async () => {
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys()
+          await Promise.all(keys.map((key) => caches.delete(key)))
+        }
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations()
+          await Promise.all(registrations.map((registration) => registration.unregister()))
+        }
+      } catch {
+        // 캐시 정리 실패 시에도 화면은 계속 표시합니다.
+      }
+
+      if (previous || hadServiceWorker) {
+        sessionStorage.setItem(reloadOnceKey, '1')
+        window.location.reload()
+      }
+    })()
+  }, [])
 
   useEffect(() => {
     try {
