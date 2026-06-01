@@ -11,8 +11,6 @@ import {
   type CongestionStatus,
 } from '@/lib/congestion'
 
-const BOARDING_UI_VERSION = '2026-06-01-seek-door-map'
-
 function BoardingPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -96,38 +94,6 @@ function BoardingPageContent() {
       active = false
     }
   }, [lineLabel])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const versionKey = 'zeb_boarding_ui_version'
-    const reloadOnceKey = `zeb_boarding_reloaded_${BOARDING_UI_VERSION}`
-    const previous = localStorage.getItem(versionKey)
-    if (previous === BOARDING_UI_VERSION || sessionStorage.getItem(reloadOnceKey)) return
-
-    localStorage.setItem(versionKey, BOARDING_UI_VERSION)
-    const hadServiceWorker = Boolean(navigator.serviceWorker?.controller)
-
-    void (async () => {
-      try {
-        if ('caches' in window) {
-          const keys = await caches.keys()
-          await Promise.all(keys.map((key) => caches.delete(key)))
-        }
-        if ('serviceWorker' in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations()
-          await Promise.all(registrations.map((registration) => registration.unregister()))
-        }
-      } catch {
-        // ignore
-      } finally {
-        sessionStorage.setItem(reloadOnceKey, '1')
-        if (hadServiceWorker) {
-          window.location.reload()
-        }
-      }
-    })()
-  }, [])
 
   const mode = type === 'leave' ? 'leave' : 'seek'
 
