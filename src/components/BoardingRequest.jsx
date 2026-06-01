@@ -1772,6 +1772,8 @@ function StepTrain({
       try {
         let mapped = [];
 
+        console.log("[분기 확인]", { apiLine, isIncheon: apiLine?.startsWith("incheon") });
+
         if (apiLine.startsWith("incheon")) {
           if (!currentStation?.trim() || !travelDirectionKey) {
             if (!active) return;
