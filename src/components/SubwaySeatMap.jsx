@@ -23,8 +23,10 @@ const AISLE_BG_ALPHA = "1A";
 const ALIGHTING_BG_ALPHA = "26";
 
 const PRIORITY = 3;
-/** 좌석 구역 수 · 출입문 1-1 ~ 1-3 · 일반석 3구역 */
+/** 좌석(플랫폼) 구역 수 · 일반석 3구역 */
 const SECTIONS = 3;
+/** 구역 경계 출입문 수 (N-1 ~ N-4) */
+const DOORS_PER_CAR = SECTIONS + 1;
 
 /** 호선별 객실 레이아웃 (P3: 3~9호선·인천 6호차·7석) */
 const LINE_CAR_LAYOUT = {
