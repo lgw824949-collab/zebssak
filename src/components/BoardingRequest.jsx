@@ -582,10 +582,15 @@ function normalizeLineLabel(lineLabel) {
 }
 
 // ─── 색상 ────────────────────────────────────────────────────────
+const LINE_OLIVE = "#747F00";
+const LINE_OLIVE_LIGHT = "rgba(116, 127, 0, 0.14)";
+const LINE_OLIVE_LIGHT_BG = "#EEF0E0";
+const LINE_OLIVE_DISABLED = "#C5C9A8";
+
 const C = {
-  primary: "#1A56A0",
-  primaryLight: "#E3F0FF",
-  primaryBorder: "#90BEF0",
+  primary: LINE_OLIVE,
+  primaryLight: LINE_OLIVE_LIGHT_BG,
+  primaryBorder: "#B8BF7A",
   bg: "#F7F8FA",
   card: "#FFFFFF",
   border: "#E2E8F0",
@@ -712,7 +717,7 @@ function BottomButton({ label, onClick, disabled, loading = false }) {
           width: "100%",
           minHeight: MOBILE.touchMin,
           padding: "12px 0",
-          background: isDisabled ? "#C5D8EF" : C.primary,
+          background: isDisabled ? LINE_OLIVE_DISABLED : C.primary,
           color: "#fff",
           border: "none",
           borderRadius: 12,
@@ -1137,18 +1142,25 @@ function StepStation({
     }
   }
 
-  const lineColor = apiLine === "seoul2" ? "#747F00" : "#747F00";
-  const lineColorLight = apiLine === "seoul2" ? "rgba(0, 168, 77, 0.14)" : "rgba(0, 82, 164, 0.14)";
+  const lineColor = LINE_OLIVE;
+  const lineColorLight = LINE_OLIVE_LIGHT;
   const lineDisplayName = (() => {
     const primary = (line || "").split("·")[0].trim();
     const compact = primary.replace(/\s+/g, "");
-    if (/^서울1호선$/.test(compact)) return "서울 1호선";
-    if (/^서울2호선$/.test(compact)) return "서울 2호선";
-    return primary || "서울 1호선";
+    const seoulLineNo = compact.match(/^서울([1-9])호선$/);
+    if (seoulLineNo?.[1]) return `서울 ${seoulLineNo[1]}호선`;
+    if (/^인천1호선$/.test(compact)) return "인천 1호선";
+    if (/^인천2호선$/.test(compact)) return "인천 2호선";
+    return primary || "서울 7호선";
   })();
-  const searchPlaceholder = apiLine === "seoul2" ? "검색 예: 강남" : "검색 예: 신도림";
+  const searchPlaceholder =
+    apiLine === "seoul7" ? "검색 예: 논현" : apiLine === "seoul2" ? "검색 예: 강남" : "검색 예: 신도림";
   const voiceHint =
-    apiLine === "seoul2" ? '예: "강남 가고 싶어"' : '예: "신도림 가고 싶어"';
+    apiLine === "seoul7"
+      ? '예: "논현 가고 싶어"'
+      : apiLine === "seoul2"
+        ? '예: "강남 가고 싶어"'
+        : '예: "신도림 가고 싶어"';
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
@@ -2119,15 +2131,16 @@ function StepTrain({
     onTrainPick?.(selectedTrain);
   }
 
-  const lineColor = apiLine === "seoul2" ? "#747F00" : "#747F00";
-  const lineColorLight =
-    apiLine === "seoul2" ? "rgba(0, 168, 77, 0.14)" : "rgba(0, 82, 164, 0.14)";
+  const lineColor = LINE_OLIVE;
+  const lineColorLight = LINE_OLIVE_LIGHT;
   const lineDisplayName = (() => {
     const primary = (line || "").split("·")[0].trim();
     const compact = primary.replace(/\s+/g, "");
-    if (/^서울1호선$/.test(compact)) return "서울 1호선";
-    if (/^서울2호선$/.test(compact)) return "서울 2호선";
-    return primary || "서울 1호선";
+    const seoulLineNo = compact.match(/^서울([1-9])호선$/);
+    if (seoulLineNo?.[1]) return `서울 ${seoulLineNo[1]}호선`;
+    if (/^인천1호선$/.test(compact)) return "인천 1호선";
+    if (/^인천2호선$/.test(compact)) return "인천 2호선";
+    return primary || "서울 7호선";
   })();
   const directionLabel = (line || "").split("·")[1]?.trim() || "";
 
@@ -2408,16 +2421,16 @@ function StepSeekDoor({
   const [selectedDoor, setSelectedDoor] = useState(null);
   const doorGroups = buildSeekDoorGroups(line);
   const layout = resolveCarLayout(line);
-  const apiLine = resolveApiLineFromLineProp(line);
-  const lineColor = apiLine === "seoul2" ? "#747F00" : "#747F00";
-  const lineColorLight =
-    apiLine === "seoul2" ? "rgba(0, 168, 77, 0.14)" : "rgba(0, 82, 164, 0.14)";
+  const lineColor = LINE_OLIVE;
+  const lineColorLight = LINE_OLIVE_LIGHT;
   const lineDisplayName = (() => {
     const primary = (line || "").split("·")[0].trim();
     const compact = primary.replace(/\s+/g, "");
-    if (/^서울1호선$/.test(compact)) return "서울 1호선";
-    if (/^서울2호선$/.test(compact)) return "서울 2호선";
-    return primary || "서울 1호선";
+    const seoulLineNo = compact.match(/^서울([1-9])호선$/);
+    if (seoulLineNo?.[1]) return `서울 ${seoulLineNo[1]}호선`;
+    if (/^인천1호선$/.test(compact)) return "인천 1호선";
+    if (/^인천2호선$/.test(compact)) return "인천 2호선";
+    return primary || "서울 7호선";
   })();
   const directionLabel = drtnInfo || (line || "").split("·")[1]?.trim() || "";
   const selectedCar = selectedDoor
@@ -2835,14 +2848,15 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
     seat?.car && seat?.door
       ? ` · ${seat.car}-${seat.door}번 문 옆`
       : "";
-  const apiLine = resolveApiLineFromLineProp(line);
-  const lineColor = apiLine === "seoul2" ? "#747F00" : "#747F00";
+  const lineColor = LINE_OLIVE;
   const lineDisplayName = (() => {
     const primary = (line || "").split("·")[0].trim();
     const compact = primary.replace(/\s+/g, "");
-    if (/^서울1호선$/.test(compact)) return "서울 1호선";
-    if (/^서울2호선$/.test(compact)) return "서울 2호선";
-    return primary || "서울 1호선";
+    const seoulLineNo = compact.match(/^서울([1-9])호선$/);
+    if (seoulLineNo?.[1]) return `서울 ${seoulLineNo[1]}호선`;
+    if (/^인천1호선$/.test(compact)) return "인천 1호선";
+    if (/^인천2호선$/.test(compact)) return "인천 2호선";
+    return primary || "서울 7호선";
   })();
 
   return (

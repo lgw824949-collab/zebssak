@@ -17,7 +17,7 @@ const LINE_COLORS = {
   "인천 2호선": "#F5A200",
 };
 
-const LINE_COLOR_FALLBACK = "#1A56A0";
+const LINE_COLOR_FALLBACK = "#747F00";
 const ELDERLY_COLOR = "#FF8F00";
 const AISLE_BG_ALPHA = "1A";
 const ALIGHTING_BG_ALPHA = "26";

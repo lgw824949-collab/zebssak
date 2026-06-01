@@ -446,8 +446,7 @@ export default function WaitingPage() {
   }
 
   const lineColor = draft ? resolveLineColor(draft) : '#747F00'
-  const lineColorLight =
-    lineColor === '#747F00' ? 'rgba(0, 168, 77, 0.14)' : 'rgba(0, 82, 164, 0.14)'
+  const lineColorLight = 'rgba(116, 127, 0, 0.14)'
   const remainingStations = draft ? resolveRemainingStations(draft) : null
   const remainingStationsText =
     remainingStations === null ? '미확인' : `${remainingStations}`
