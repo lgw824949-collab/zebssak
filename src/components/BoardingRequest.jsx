@@ -1774,6 +1774,8 @@ function StepTrain({
 
         console.log("[분기 확인]", { apiLine, isIncheon: apiLine?.startsWith("incheon") });
 
+        console.log("[active]", active);
+
         if (apiLine.startsWith("incheon")) {
           console.log("[incheon timetable]", { currentStation, travelDirectionKey });
 
