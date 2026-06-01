@@ -1,5 +1,7 @@
+import http from 'node:http'
+
 const SEOUL_METRO_DIRECT_HOST = 'http://swopenAPI.seoul.go.kr'
-const SEOUL_METRO_FETCH_TIMEOUT_MS = 12000
+const SEOUL_METRO_FETCH_TIMEOUT_MS = 15000
 
 const SEOUL_SUBWAY_ID_BY_LINE: Record<string, string> = {
   seoul1: '1001',
@@ -131,6 +133,34 @@ export function buildSeoulMetroDirectUrl(pathAfterKey: string): string | null {
   return `${SEOUL_METRO_DIRECT_HOST}/api/subway/${encodeURIComponent(key)}/${normalizedPath}`
 }
 
+function fetchSeoulMetroHttpText(directUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const req = http.get(
+      directUrl,
+      { timeout: SEOUL_METRO_FETCH_TIMEOUT_MS },
+      (res) => {
+        let body = ''
+        res.setEncoding('utf8')
+        res.on('data', (chunk) => {
+          body += chunk
+        })
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(body)
+            return
+          }
+          reject(new Error(`HTTP ${res.statusCode ?? 'unknown'}`))
+        })
+      }
+    )
+    req.on('error', reject)
+    req.on('timeout', () => {
+      req.destroy()
+      reject(new Error('timeout'))
+    })
+  })
+}
+
 export async function fetchSeoulMetroJson<T>(
   primaryUrl: string,
   fallbackUrl?: string | null
@@ -149,7 +179,51 @@ export async function fetchSeoulMetroJson<T>(
       // 다음 URL 시도
     }
   }
+
+  const directUrl = [fallbackUrl, primaryUrl].find((url) =>
+    url?.startsWith(SEOUL_METRO_DIRECT_HOST)
+  )
+  if (directUrl) {
+    try {
+      const text = await fetchSeoulMetroHttpText(directUrl)
+      return JSON.parse(text) as T
+    } catch {
+      return null
+    }
+  }
+
   return null
+}
+
+/** swopenAPI 직접 HTTP → 앱 프록시 순으로 호출 */
+export async function fetchSeoulMetroUpstream(
+  request: Request,
+  pathAfterKey: string
+): Promise<string | null> {
+  const directUrl = buildSeoulMetroDirectUrl(pathAfterKey)
+  if (directUrl) {
+    try {
+      return await fetchSeoulMetroHttpText(directUrl)
+    } catch {
+      // node:http 실패 시 fetch 프록시 시도
+    }
+  }
+
+  const proxyUrl = buildSeoulMetroApiUrl(request, pathAfterKey)
+  if (!proxyUrl) return null
+
+  try {
+    const response = await fetch(proxyUrl, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(SEOUL_METRO_FETCH_TIMEOUT_MS),
+    })
+    if (!response.ok) return null
+    return await response.text()
+  } catch {
+    return null
+  }
 }
 
 function extractResultCode(payload: {
@@ -235,18 +309,25 @@ export async function fetchRealtimeArrivalRows(
   request: Request,
   stationName: string
 ): Promise<SeoulArrivalRow[]> {
-  const path = `json/realtimeStationArrival/0/20/${encodeURIComponent(stationName.trim())}`
-  const proxyUrl = buildSeoulMetroApiUrl(request, path)
-  const directUrl = buildSeoulMetroDirectUrl(path)
-  if (!proxyUrl) return []
+  const station = stationName.trim().replace(/역$/u, '')
+  if (!station) return []
 
-  const payload = await fetchSeoulMetroJson<{
+  const path = `json/realtimeStationArrival/0/10/${encodeURIComponent(station)}`
+  const raw = await fetchSeoulMetroUpstream(request, path)
+  if (!raw) return []
+
+  let payload: {
     errorMessage?: { code?: string }
     realtimeArrival?: { RESULT?: { code?: string } }
     realtimeArrivalList?: SeoulArrivalRow[]
-  }>(proxyUrl, directUrl)
+  }
+  try {
+    payload = JSON.parse(raw) as typeof payload
+  } catch {
+    return []
+  }
 
-  if (!payload || !isSeoulApiSuccess(extractResultCode(payload))) {
+  if (!isSeoulApiSuccess(extractResultCode(payload))) {
     return []
   }
 

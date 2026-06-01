@@ -537,33 +537,91 @@ function isFallbackMockTrain(train: TrainListItem): boolean {
   return /^10[1-4]$/.test(train.train_no)
 }
 
+function applyEstimatedArrivalToTrains(
+  trains: TrainListItem[],
+  seoulLine: SeoulLineParam,
+  currentStation: string | null
+): TrainListItem[] {
+  if (!currentStation?.trim()) return trains
+
+  const stationOrder = STATION_ORDER_BY_LINE[seoulLine]
+  const stationIndexMap = buildStationIndexMap(stationOrder)
+  const currentIdx = resolveStationIndex(currentStation, stationIndexMap)
+  if (currentIdx === null) return trains
+
+  const count = stationOrder.length
+  const secondsPerStation = seoulLine === 'seoul2' ? 90 : 120
+
+  return trains.map((train) => {
+    if (train.barvl_dt != null || train.arvl_msg2) return train
+
+    const trainIdx = resolveStationIndex(train.station_name, stationIndexMap)
+    if (trainIdx === null) return train
+
+    const linear = Math.abs(trainIdx - currentIdx)
+    const wrap = count > 0 ? count - linear : linear
+    const distance = seoulLine === 'seoul2' ? Math.min(linear, wrap) : linear
+    const seconds = distance === 0 ? 45 : distance * secondsPerStation
+
+    return {
+      ...train,
+      barvl_dt: seconds,
+    }
+  })
+}
+
 async function enrichSeoulTrainsWithArrival(
   seoulLine: SeoulLineParam,
   trains: TrainListItem[],
   currentStation: string | null,
   arrivalsPreloaded?: SeoulArrivalRow[]
 ): Promise<TrainListItem[]> {
-  if (!currentStation?.trim()) return trains
+  if (!currentStation?.trim()) {
+    return applyEstimatedArrivalToTrains(trains, seoulLine, currentStation)
+  }
 
   const stationName = currentStation.trim().replace(/역$/u, '')
   const subwayId = resolveSeoulSubwayId(seoulLine)
   const arrivals = filterArrivalsBySubwayId(arrivalsPreloaded ?? [], subwayId)
 
-  if (arrivals.length === 0) return trains
+  if (arrivals.length > 0) {
+    const arrivalTrains = arrivals
+      .map((row) => mapArrivalToTrain(row, seoulLine, stationName))
+      .filter((train): train is TrainListItem => train !== null)
+
+    if (arrivalTrains.length > 0) {
+      const positionByNo = new Map(
+        trains.map((train) => [normalizeSeoulTrainNo(train.train_no), train])
+      )
+
+      const mergedFromArrival = arrivalTrains.map((train) => {
+        const position = positionByNo.get(normalizeSeoulTrainNo(train.train_no))
+        if (!position) return train
+        return {
+          ...train,
+          station_name: position.station_name,
+          is_express: position.is_express,
+        }
+      })
+
+      return mergedFromArrival.sort((a, b) => (a.barvl_dt ?? 99999) - (b.barvl_dt ?? 99999))
+    }
+  }
 
   const merged = mergeArrivalIntoTrains(trains, arrivals)
   const usingFallbackOnly =
     trains.length > 0 && trains.every(isFallbackMockTrain) && merged.every(isFallbackMockTrain)
 
-  if (!usingFallbackOnly) {
-    return merged
+  if (usingFallbackOnly) {
+    const fromArrival = arrivals
+      .map((row) => mapArrivalToTrain(row, seoulLine, stationName))
+      .filter((train): train is TrainListItem => train !== null)
+    if (fromArrival.length > 0) {
+      return fromArrival.sort((a, b) => (a.barvl_dt ?? 99999) - (b.barvl_dt ?? 99999))
+    }
   }
 
-  const fromArrival = arrivals
-    .map((row) => mapArrivalToTrain(row, seoulLine, stationName))
-    .filter((train): train is TrainListItem => train !== null)
-
-  return fromArrival.length > 0 ? fromArrival : merged
+  return applyEstimatedArrivalToTrains(merged, seoulLine, currentStation)
 }
 
 function mapSeoulTrain(
@@ -667,6 +725,10 @@ async function fetchSeoulTrains(
  * GET /api/trains?line=seoul1~seoul9|incheon1|incheon2&current_station=송내&station=강남
  * — 호선별 열차 목록 (목적지 방향 필터 + 현재 역 기준 가까운 순)
  */
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 30
+
 export async function GET(request: Request) {
   try {
     const searchParams = new URL(request.url).searchParams
