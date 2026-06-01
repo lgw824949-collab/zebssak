@@ -390,6 +390,7 @@ function canSelectSeatStatus(status, interactionMode) {
 
 /** doorPickerMode: 호차별 출입문 번호 (N-1 ~ N-4) */
 function DoorPickerButtons({ totalCars, lineColor, selectedDoorLabel, onDoorSelect }) {
+  const doorsPerCar = DOORS_PER_CAR;
   return (
     <div
       style={{
@@ -423,12 +424,12 @@ function DoorPickerButtons({ totalCars, lineColor, selectedDoorLabel, onDoorSele
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: `repeat(${DOORS_PER_CAR}, minmax(0, 1fr))`,
+                gridTemplateColumns: `repeat(${doorsPerCar}, minmax(0, 1fr))`,
                 gap: 8,
                 width: "100%",
               }}
             >
-              {Array.from({ length: DOORS_PER_CAR }, (_, doorIndex) => {
+              {Array.from({ length: doorsPerCar }, (_, doorIndex) => {
                 const doorNo = doorIndex + 1;
                 const label = `${carNum}-${doorNo}`;
                 const isSelected = selectedDoorLabel === label;
