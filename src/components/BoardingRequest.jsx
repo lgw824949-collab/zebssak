@@ -1775,37 +1775,21 @@ function StepTrain({
         console.log("[분기 확인]", { apiLine, isIncheon: apiLine?.startsWith("incheon") });
 
         if (apiLine.startsWith("incheon")) {
-          if (!currentStation?.trim() || !travelDirectionKey) {
-            if (!active) return;
-            setTrains([]);
-            setLastUpdatedAt(Date.now());
-            return;
-          }
+          console.log("[incheon timetable]", { currentStation, travelDirectionKey });
 
           const { getSupabase } = await import("@/lib/supabase");
           const supabase = getSupabase();
           const lineCode = resolveStationCodePrefixFromLineProp(line);
-          const stationName = currentStation.trim().replace(/역$/u, "");
+          const stationName = (currentStation ?? "").trim().replace(/역$/u, "");
+          const direction = travelDirectionKey;
           const dayType = resolveTimetableDayType();
-          const currentTime = formatLocalTimeForQuery();
-          console.log("[StepTrain] timetable 조회 파라미터", {
-            line_code: lineCode,
-            station_name: stationName,
-            station_name_raw: currentStation.trim(),
-            station_name_has_yeok_suffix: /역$/u.test(currentStation.trim()),
-            direction: travelDirectionKey,
-            day_type: dayType,
-            arrival_time_filter_now: currentTime,
-          });
-
-          console.log("[timetable 쿼리 시작]");
 
           const { data, error } = await supabase
             .from("timetable")
             .select("train_number, arrival_time")
             .eq("line_code", lineCode)
             .eq("station_name", stationName)
-            .eq("direction", travelDirectionKey)
+            .eq("direction", direction)
             .eq("day_type", dayType)
             .order("arrival_time", { ascending: true });
 
@@ -1853,15 +1837,6 @@ function StepTrain({
               break;
             }
           }
-
-          console.log("[StepTrain] timetable 조회 결과", {
-            lineCode,
-            stationName,
-            direction: travelDirectionKey,
-            dayType,
-            currentTime,
-            count: mapped.length,
-          });
         } else {
           const params = new URLSearchParams({
             line: apiLine,
