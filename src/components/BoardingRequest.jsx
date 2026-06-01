@@ -1737,11 +1737,45 @@ function StepTrain({
     return [...atCurrentStation, ...rest].slice(0, limit);
   })();
 
-  function formatBarvlDtLabel(barvlRaw) {
+  function isTrainAtBoardingStation(trainStation) {
+    return (
+      normalizeStationLabel(trainStation) === normalizeStationLabel(currentStation)
+    );
+  }
+
+  function resolveSeoulBarvlDtForTrain(trainStation, boardingStation, stationOrder, lineKey, barvlFromApi) {
+    const parsed =
+      barvlFromApi != null && barvlFromApi !== "" ? Number(barvlFromApi) : Number.NaN;
+
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+
+    if (!lineKey?.startsWith("seoul") || !Array.isArray(stationOrder) || stationOrder.length === 0) {
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+    }
+
+    const atBoarding = isTrainAtBoardingStation(trainStation);
+    if (parsed === 0 && atBoarding) return 0;
+
+    const estimated = estimateSeoulArrivalSeconds(
+      trainStation,
+      boardingStation,
+      stationOrder,
+      lineKey
+    );
+    if (estimated != null) return estimated;
+
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  function formatBarvlDtLabel(barvlRaw, { allowZeroSoon = false } = {}) {
     if (barvlRaw == null || barvlRaw === "") return null;
 
     const totalSeconds = Number(barvlRaw);
     if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return null;
+
+    if (totalSeconds === 0) {
+      return allowZeroSoon ? "곧 도착" : null;
+    }
 
     if (totalSeconds < 30) return "곧 도착";
 
@@ -1795,7 +1829,12 @@ function StepTrain({
 
   function resolveTrainDirectionEtaFromMapped(train) {
     const eta = String(train?.eta ?? "").trim();
-    if (eta.endsWith("방면") && !isArrivalStatusMessage(eta)) {
+    if (isArrivalStatusMessage(eta)) {
+      const terminalFromEta = extractTerminalFromArvlMsg2(eta);
+      if (terminalFromEta) {
+        return `${terminalFromEta} 방면`;
+      }
+    } else if (eta.endsWith("방면")) {
       return eta;
     }
 
@@ -1825,28 +1864,42 @@ function StepTrain({
   }
 
   function formatTrainArrivalLabel(train) {
-    let barvlRaw = train.barvlDt;
-    if (
-      (barvlRaw == null || barvlRaw === "") &&
-      apiLine?.startsWith("seoul") &&
-      seoulStationOrder.length > 0
-    ) {
-      const estimated = estimateSeoulArrivalSeconds(
-        train.current,
-        currentStation,
-        seoulStationOrder,
-        apiLine
-      );
-      if (estimated != null) barvlRaw = estimated;
-    }
-
-    const timeLabel = formatBarvlDtLabel(barvlRaw);
+    const atBoarding = isTrainAtBoardingStation(train.current);
+    const barvlRaw = resolveSeoulBarvlDtForTrain(
+      train.current,
+      currentStation,
+      seoulStationOrder,
+      apiLine,
+      train.barvlDt
+    );
+    const timeLabel = formatBarvlDtLabel(barvlRaw, { allowZeroSoon: atBoarding });
     if (timeLabel) return timeLabel;
 
     const arvlMsg2 = typeof train.arvlMsg2 === "string" ? train.arvlMsg2.trim() : "";
-    if (arvlMsg2) return arvlMsg2;
+    if (arvlMsg2 && !isArrivalStatusMessage(arvlMsg2)) return arvlMsg2;
+
+    if (atBoarding) return "곧 도착";
 
     return "도착 정보 확인 중";
+  }
+
+  function formatTrainArrivalBadge(train, index) {
+    const barvlRaw = resolveSeoulBarvlDtForTrain(
+      train.current,
+      currentStation,
+      seoulStationOrder,
+      apiLine,
+      train.barvlDt
+    );
+    const seconds = barvlRaw != null ? Number(barvlRaw) : Number.NaN;
+
+    if (Number.isFinite(seconds) && seconds < 30) return "곧 도착";
+    if (Number.isFinite(seconds) && seconds >= 30) {
+      const label = formatBarvlDtLabel(seconds);
+      if (label) return label.replace(" 후 도착", "");
+    }
+
+    return index === 0 ? "곧 도착" : "다음 열차";
   }
 
   const directionHeading =
@@ -1967,17 +2020,13 @@ function StepTrain({
 
           mapped = apiTrains
             .map((row) => {
-              const barvlFromApi = row?.barvl_dt ?? row?.barvlDt ?? null;
-              const barvlDt =
-                barvlFromApi ??
-                (apiLine?.startsWith("seoul")
-                  ? estimateSeoulArrivalSeconds(
-                      row?.station_name,
-                      currentStation,
-                      stationOrder,
-                      apiLine
-                    )
-                  : null);
+              const barvlDt = resolveSeoulBarvlDtForTrain(
+                row?.station_name,
+                currentStation,
+                stationOrder,
+                apiLine,
+                row?.barvl_dt ?? row?.barvlDt ?? null
+              );
 
               const arvlMsg2 =
                 (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
@@ -2299,7 +2348,7 @@ function StepTrain({
                       flexShrink: 0,
                     }}
                   >
-                    {index === 0 ? "곧 도착" : "다음 열차"}
+                    {formatTrainArrivalBadge(train, index)}
                   </span>
                 </div>
               </button>
