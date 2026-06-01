@@ -1736,45 +1736,20 @@ function StepTrain({
     }
 
     let active = true;
+    let requestSeq = 0;
 
     const resolveTimetableDayType = () => {
       const day = new Date().getDay();
       return day === 0 || day === 6 ? "holiday" : "weekday";
     };
 
-    const formatLocalTimeForQuery = (date = new Date()) => {
-      const hours = String(date.getHours()).padStart(2, "0");
-      const minutes = String(date.getMinutes()).padStart(2, "0");
-      const seconds = String(date.getSeconds()).padStart(2, "0");
-      return `${hours}:${minutes}:${seconds}`;
-    };
-
-    const computeBarvlDtFromArrivalTime = (arrivalTimeRaw) => {
-      const arrivalTime = String(arrivalTimeRaw ?? "").trim().slice(0, 8);
-      const match = arrivalTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/u);
-      if (!match) return null;
-
-      const now = new Date();
-      const arrival = new Date(now);
-      arrival.setHours(Number(match[1]), Number(match[2]), Number(match[3] ?? 0), 0);
-      let diffSeconds = Math.floor((arrival.getTime() - now.getTime()) / 1000);
-      if (diffSeconds < 0) {
-        arrival.setDate(arrival.getDate() + 1);
-        diffSeconds = Math.floor((arrival.getTime() - now.getTime()) / 1000);
-      }
-      return diffSeconds >= 0 ? diffSeconds : null;
-    };
-
     const loadTrains = async ({ silent = false } = {}) => {
+      const seq = ++requestSeq;
       if (!silent) {
         setIsLoading(true);
       }
       try {
         let mapped = [];
-
-        console.log("[분기 확인]", { apiLine, isIncheon: apiLine?.startsWith("incheon") });
-
-        console.log("[active]", active);
 
         if (apiLine.startsWith("incheon")) {
           const stationName = (currentStation ?? "").trim().replace(/역$/u, "");
@@ -1782,30 +1757,31 @@ function StepTrain({
           if (!stationName || !travelDirectionKey) {
             mapped = [];
           } else {
-            const { getSupabase } = await import("@/lib/supabase");
-            const supabase = getSupabase();
-            const lineCode = resolveStationCodePrefixFromLineProp(line);
+            const lineCode = apiLine === "incheon2" ? "l2" : "l1";
             const dayType = resolveTimetableDayType();
-            const { data, error } = await supabase
-              .from("timetable")
-              .select("train_number, arrival_time")
-              .eq("line_code", lineCode)
-              .eq("station_name", stationName)
-              .eq("direction", travelDirectionKey)
-              .eq("day_type", dayType)
-              .order("arrival_time", { ascending: true });
-
-            if (error) {
-              throw error;
+            const params = new URLSearchParams({
+              line_code: lineCode,
+              station_name: stationName,
+              direction: travelDirectionKey,
+              day_type: dayType,
+            });
+            const response = await fetch(`/api/timetable?${params.toString()}`, {
+              method: "GET",
+              cache: "no-store",
+            });
+            const payload = await response.json();
+            if (!response.ok || payload?.success === false) {
+              throw new Error(payload?.error || "timetable 조회 실패");
             }
 
+            const data = Array.isArray(payload?.rows) ? payload.rows : [];
             const directionLabel = travelDirectionKey === "up" ? "상행" : "하행";
             const directionCode = travelDirectionKey === "up" ? "0" : "1";
             const now = new Date();
             const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
             const seenTrainNumbers = new Set();
 
-            mapped = (Array.isArray(data) ? data : [])
+            mapped = data
               .map((row) => {
                 const trainNumber = String(row?.train_number ?? "").trim();
                 if (!trainNumber) return null;
@@ -1893,12 +1869,13 @@ function StepTrain({
             .filter((row) => row.id);
         }
 
-        if (!active) return;
+        if (!active || seq !== requestSeq) return;
 
         setTrains(mapped);
         setLastUpdatedAt(Date.now());
-      } catch {
-        if (!active) return;
+      } catch (err) {
+        if (!active || seq !== requestSeq) return;
+        console.error("[StepTrain] loadTrains failed", err);
         if (!silent) {
           setTrains([]);
         }
@@ -1916,6 +1893,7 @@ function StepTrain({
 
     return () => {
       active = false;
+      requestSeq += 1;
       clearInterval(timer);
     };
   }, [apiLine, station, currentStation, travelDirectionKey, line]);
