@@ -1777,67 +1777,70 @@ function StepTrain({
         console.log("[active]", active);
 
         if (apiLine.startsWith("incheon")) {
-          console.log("[incheon timetable]", { currentStation, travelDirectionKey });
-
-          const { getSupabase } = await import("@/lib/supabase");
-          const supabase = getSupabase();
-          const lineCode = resolveStationCodePrefixFromLineProp(line);
           const stationName = (currentStation ?? "").trim().replace(/역$/u, "");
-          const direction = travelDirectionKey;
-          const dayType = resolveTimetableDayType();
 
-          const { data, error } = await supabase
-            .from("timetable")
-            .select("train_number, arrival_time")
-            .eq("line_code", lineCode)
-            .eq("station_name", stationName)
-            .eq("direction", direction)
-            .eq("day_type", dayType)
-            .order("arrival_time", { ascending: true });
+          if (!stationName || !travelDirectionKey) {
+            mapped = [];
+          } else {
+            const { getSupabase } = await import("@/lib/supabase");
+            const supabase = getSupabase();
+            const lineCode = resolveStationCodePrefixFromLineProp(line);
+            const dayType = resolveTimetableDayType();
+            const { data, error } = await supabase
+              .from("timetable")
+              .select("train_number, arrival_time")
+              .eq("line_code", lineCode)
+              .eq("station_name", stationName)
+              .eq("direction", travelDirectionKey)
+              .eq("day_type", dayType)
+              .order("arrival_time", { ascending: true });
 
-          console.log("[timetable result]", { data, error });
-
-          if (error) {
-            throw error;
-          }
-
-          const directionLabel = travelDirectionKey === "up" ? "상행" : "하행";
-          const directionCode = travelDirectionKey === "up" ? "0" : "1";
-          const seenTrainNumbers = new Set();
-
-          const upcomingRows = (Array.isArray(data) ? data : [])
-            .map((row) => {
-              const trainNumber = String(row?.train_number ?? "").trim();
-              const barvlDt = computeBarvlDtFromArrivalTime(row?.arrival_time);
-              if (!trainNumber || barvlDt == null) {
-                return null;
-              }
-              return { row, trainNumber, barvlDt };
-            })
-            .filter(Boolean)
-            .sort((a, b) => a.barvlDt - b.barvlDt);
-
-          mapped = [];
-          for (const item of upcomingRows) {
-            if (seenTrainNumbers.has(item.trainNumber)) {
-              continue;
+            if (error) {
+              throw error;
             }
-            seenTrainNumbers.add(item.trainNumber);
 
-            mapped.push({
-              id: item.trainNumber,
-              current: stationName,
-              eta: directionLabel,
-              direction: directionLabel,
-              directionCode,
-              updnLine: directionCode,
-              barvlDt: item.barvlDt,
-              arvlMsg2: null,
-            });
+            const directionLabel = travelDirectionKey === "up" ? "상행" : "하행";
+            const directionCode = travelDirectionKey === "up" ? "0" : "1";
+            const now = new Date();
+            const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+            const seenTrainNumbers = new Set();
 
-            if (mapped.length >= 3) {
-              break;
-            }
+            mapped = (Array.isArray(data) ? data : [])
+              .map((row) => {
+                const trainNumber = String(row?.train_number ?? "").trim();
+                if (!trainNumber) return null;
+
+                const arrivalRaw = String(row?.arrival_time ?? "").trim();
+                const timePart = arrivalRaw.includes("T")
+                  ? arrivalRaw.split("T")[1]?.slice(0, 8) ?? ""
+                  : arrivalRaw.slice(0, 8);
+                const [h, m, s = 0] = timePart.split(":").map(Number);
+                if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+
+                const arrSec = h * 3600 + m * 60 + (Number.isFinite(s) ? s : 0);
+                let barvlDt = arrSec - nowSec;
+                if (barvlDt < 0) barvlDt += 86400;
+
+                return { trainNumber, barvlDt };
+              })
+              .filter(Boolean)
+              .sort((a, b) => a.barvlDt - b.barvlDt)
+              .filter((item) => {
+                if (seenTrainNumbers.has(item.trainNumber)) return false;
+                seenTrainNumbers.add(item.trainNumber);
+                return true;
+              })
+              .slice(0, 3)
+              .map((item) => ({
+                id: item.trainNumber,
+                current: stationName,
+                eta: directionLabel,
+                direction: directionLabel,
+                directionCode,
+                updnLine: directionCode,
+                barvlDt: item.barvlDt,
+                arvlMsg2: null,
+              }));
           }
         } else {
           const params = new URLSearchParams({
