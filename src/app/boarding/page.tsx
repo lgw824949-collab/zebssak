@@ -11,7 +11,7 @@ import {
   type CongestionStatus,
 } from '@/lib/congestion'
 
-const BOARDING_UI_VERSION = '2026-06-01-seek-seat-map-v1'
+const BOARDING_UI_VERSION = '2026-06-01-seek-seat-map-v2'
 
 function BoardingPageContent() {
   const router = useRouter()
@@ -103,10 +103,10 @@ function BoardingPageContent() {
     const versionKey = 'zeb_boarding_ui_version'
     const reloadOnceKey = `zeb_boarding_reloaded_${BOARDING_UI_VERSION}`
     const previous = localStorage.getItem(versionKey)
-    if (previous === BOARDING_UI_VERSION || sessionStorage.getItem(reloadOnceKey)) return
+    if (previous === BOARDING_UI_VERSION) return
+    if (sessionStorage.getItem(reloadOnceKey)) return
 
     localStorage.setItem(versionKey, BOARDING_UI_VERSION)
-    const hadServiceWorker = Boolean(navigator.serviceWorker?.controller)
 
     void (async () => {
       try {
@@ -118,13 +118,17 @@ function BoardingPageContent() {
           const registrations = await navigator.serviceWorker.getRegistrations()
           await Promise.all(registrations.map((registration) => registration.unregister()))
         }
+        for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+          const key = sessionStorage.key(i)
+          if (key?.startsWith('zeb_boarding_reloaded_')) {
+            sessionStorage.removeItem(key)
+          }
+        }
       } catch {
         // ignore
       } finally {
         sessionStorage.setItem(reloadOnceKey, '1')
-        if (hadServiceWorker) {
-          window.location.reload()
-        }
+        window.location.reload()
       }
     })()
   }, [])

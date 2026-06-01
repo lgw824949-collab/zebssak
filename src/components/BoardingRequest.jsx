@@ -314,27 +314,6 @@ function resolveTravelDirectionKeyFromIndices(lineLabel, fromIdx, toIdx, station
   return null;
 }
 
-async function resolveTravelDirectionKey(lineLabel, boardingStation, destinationStation) {
-  const boarding = (boardingStation || "").trim();
-  const destination = (destinationStation || "").trim();
-  if (!boarding || !destination) return null;
-
-  const stations = await fetchStationsForLine(lineLabel);
-  if (!Array.isArray(stations) || stations.length === 0) return null;
-
-  const findIndex = (name) => {
-    const target = normalizeStationLabel(name);
-    return stations.findIndex((row) => normalizeStationLabel(row?.name) === target);
-  };
-
-  return resolveTravelDirectionKeyFromIndices(
-    lineLabel,
-    findIndex(boarding),
-    findIndex(destination),
-    stations.length
-  );
-}
-
 function distanceKm(lat1, lng1, lat2, lng2) {
   const toRad = (value) => (value * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
@@ -1716,7 +1695,6 @@ function StepTrain({
   line,
   station,
   currentStation,
-  mode,
   isMatching,
   onTrainPick,
   onBack,
@@ -1796,22 +1774,15 @@ function StepTrain({
         return;
       }
 
-      const layoutKey = resolveLineLayoutKey(line);
-      let dirKey = null;
-      if (layoutKey === "seoul2") {
-        const count = stations.length;
-        const distDown = (toIdx - fromIdx + count) % count;
-        const distUp = (fromIdx - toIdx + count) % count;
-        if (distDown < distUp) dirKey = "down";
-        else if (distUp < distDown) dirKey = "up";
-      } else if (toIdx > fromIdx) {
-        dirKey = "down";
-      } else {
-        dirKey = "up";
-      }
+      const dirKey = resolveTravelDirectionKeyFromIndices(
+        line,
+        fromIdx,
+        toIdx,
+        stations.length
+      );
 
       console.log("[StepTrain] 계산된 travelDirectionKey", {
-        layoutKey,
+        layoutKey: resolveLineLayoutKey(line),
         dirKey,
         label: dirKey === "up" ? "상행/내선" : "하행/외선",
       });
@@ -2623,6 +2594,9 @@ function StepSeekDoor({
           }}
         >
           {directionBanner}
+        </p>
+        <p style={{ margin: "0 0 8px", fontSize: 11, color: C.muted, textAlign: "center" }}>
+          호차 선택 후 좌석 배치도에서 자리를 눌러 주세요
         </p>
         {trainId ? (
           <p style={{ margin: "0 0 12px", fontSize: 13, color: C.muted, textAlign: "center" }}>
@@ -3606,7 +3580,6 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         <StepTrain
           key={`${normalizedLine}-${mode}-${station ?? ""}-${currentStationName}`}
           line={normalizedLine}
-          mode={mode}
           station={station}
           currentStation={currentStationName}
           isMatching={false}

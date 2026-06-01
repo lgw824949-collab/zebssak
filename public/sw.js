@@ -1,4 +1,4 @@
-const SW_VERSION = '2026-06-01-seek-seat-map-v1'
+const SW_VERSION = '2026-06-01-seek-seat-map-v2'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting())
