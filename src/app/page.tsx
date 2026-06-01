@@ -390,14 +390,14 @@ export default function Home() {
                   style={{ backgroundColor: LINE7_OLIVE }}
                   aria-hidden
                 />
-                7호선 데이터 검증 운영중
+                7호선 실증 운영중
               </span>
 
               <h1 className="mt-5 whitespace-pre-line text-[42px] font-extrabold leading-[1.08] tracking-tight text-[#1A1A1A]">
                 {'빈자리,\n잽싸게'}
               </h1>
-              <p className="mt-3 whitespace-pre-line text-[17px] font-medium leading-relaxed text-[#5C6570]">
-                {'지하철 착석 공유 플랫폼\n7호선 실증 데이터를 기반으로 검증중'}
+              <p className="mt-3 text-[17px] font-medium leading-relaxed text-[#5C6570]">
+                지하철 착석 공유 플랫폼
               </p>
 
               <ol className="mt-5 flex gap-2">
@@ -447,14 +447,12 @@ export default function Home() {
                 <p className="zeb-mono mt-1.5 text-[30px] font-extrabold leading-none" style={{ color: LINE7_OLIVE }}>
                   66개
                 </p>
-                <p className="mt-1 text-[14px] font-medium text-[#5C6570]">전 노선 1위</p>
               </div>
               <div className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
                 <p className="text-[14px] font-semibold text-[#888888]">평균 탑승시간</p>
                 <p className="zeb-mono mt-1.5 text-[30px] font-extrabold leading-none" style={{ color: LINE7_OLIVE }}>
                   30분
                 </p>
-                <p className="mt-1 text-[14px] font-medium text-[#5C6570]">착석 수요 최고</p>
               </div>
             </section>
 
@@ -462,10 +460,8 @@ export default function Home() {
               <h2 className="text-[17px] font-extrabold text-[#1A1A1A]">왜 7호선인가?</h2>
               <ul className="mt-3 space-y-3">
                 {[
-                  '서울교통공사 혼잡도 데이터 분석',
-                  '장거리 이용객 비율 높음',
-                  '착석 니즈가 높은 노선',
-                  '실증 검증에 적합',
+                  '서울교통공사 혼잡도 데이터 분석 결과',
+                  '착석 수요·장거리 이용 최적 노선',
                 ].map((text) => (
                   <li key={text} className="flex items-start gap-2.5 text-[16px] font-medium leading-snug text-[#5C6570]">
                     <span
