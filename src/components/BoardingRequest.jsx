@@ -2728,10 +2728,15 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
   const matchedOnRegister = seat?.matched === true;
   const seekDoorLabel =
     seat?.doorLabel || (seat?.car && seat?.door ? `${seat.car}-${seat.door}` : "");
-  const seatLabel =
-    seat?.car && seat?.door
-      ? ` · ${seat.car}-${seat.door}번 문 옆`
-      : "";
+  const seatLabel = (() => {
+    if (!car) return "";
+    const match = String(seat?.id || "").match(/left-d(\d+)-s\d+/);
+    if (!match) return "";
+    const d = Number.parseInt(match[1], 10);
+    const doorPart = d === 1 ? "1" : d === 2 ? "2" : d === 3 ? "3·4" : null;
+    if (!doorPart) return "";
+    return ` · ${car}-${doorPart}번 문 옆`;
+  })();
   const lineColor = LINE_OLIVE;
   const lineDisplayName = (() => {
     const primary = (line || "").split("·")[0].trim();
@@ -2772,38 +2777,59 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
       <div style={{ fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>
         {isLeaveMode ? "하차 등록 완료!" : "등록 완료!"}
       </div>
-      <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.7, marginBottom: 32 }}>
-        {line}<br />
-        {isLeaveMode ? (
-          <>
-            열차 <strong style={{ color: C.text }}>{trainId}</strong> ·{" "}
-            <strong style={{ color: C.text }}>{car}번 호차</strong>
-            {seatLabel ? <>{seatLabel}</> : null}
-          </>
-        ) : (
-          <>
-            열차 <strong style={{ color: C.text }}>{trainId}</strong> ·{" "}
-            <strong style={{ color: C.text }}>{seekDoorLabel || "출입문"}</strong> 출입문 앞
-          </>
-        )}
-        <br />
-        {isLeaveMode ? (
-          <>
-            <strong style={{ color: C.text }}>{formatStationDisplayName(station)}</strong>
-            에서 하차 예정으로 등록했습니다.
-            {matchedOnRegister ? (
-              <>
-                <br />
-                <span style={{ fontSize: 13, color: C.muted }}>
-                  착석 희망자와 매칭되었습니다. 상대방이 수락하면 완료됩니다.
-                </span>
-              </>
-            ) : null}
-          </>
-        ) : (
-          <><strong style={{ color: C.text }}>{station}역</strong> 하차 전 알림을 드릴게요</>
-        )}
-      </div>
+      {isLeaveMode ? (
+        <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.7, marginBottom: 32 }}>
+          {line}<br />
+          열차 <strong style={{ color: C.text }}>{trainId}</strong> ·{" "}
+          <strong style={{ color: C.text }}>{car}번 호차</strong>
+          {seatLabel ? <>{seatLabel}</> : null}
+          <br />
+          <strong style={{ color: C.text }}>{formatStationDisplayName(station)}</strong>
+          에서 하차 예정으로 등록했습니다.
+          {matchedOnRegister ? (
+            <>
+              <br />
+              <span style={{ fontSize: 13, color: C.muted }}>
+                착석 희망자와 매칭되었습니다. 상대방이 수락하면 완료됩니다.
+              </span>
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "5.5em 1fr",
+              columnGap: 14,
+              rowGap: 12,
+              width: "100%",
+              maxWidth: 300,
+              marginBottom: 20,
+              fontSize: 17,
+              lineHeight: 1.4,
+            }}
+          >
+            <span style={{ fontWeight: 700, color: C.text, textAlign: "right" }}>목적지</span>
+            <span style={{ color: C.text, fontWeight: 600, textAlign: "left" }}>
+              {formatStationDisplayName(station)}
+            </span>
+            <span style={{ fontWeight: 700, color: C.text, textAlign: "right" }}>열{"\u00a0\u00a0"}차</span>
+            <span style={{ color: C.text, fontWeight: 600, textAlign: "left" }}>{trainId}</span>
+            <span style={{ fontWeight: 700, color: C.text, textAlign: "right" }}>호{"\u00a0\u00a0"}차</span>
+            <span style={{ color: C.text, fontWeight: 600, textAlign: "left" }}>
+              {car ? `${car}호차` : "—"}
+            </span>
+            <span style={{ fontWeight: 700, color: C.text, textAlign: "right" }}>위{"\u00a0\u00a0"}치</span>
+            <span style={{ color: C.text, fontWeight: 600, textAlign: "left" }}>
+              {seekDoorLabel ? `${seekDoorLabel}번 출입문 앞` : "출입문 앞"}
+            </span>
+          </div>
+          <p style={{ fontSize: 12, color: C.muted, margin: "0 0 32px", lineHeight: 1.5 }}>
+            {formatStationDisplayName(station)} 도착 전 알림
+          </p>
+        </>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 280 }}>
         {!isLeaveMode && onGoWaiting ? (
           <button
