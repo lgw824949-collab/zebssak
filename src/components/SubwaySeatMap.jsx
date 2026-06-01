@@ -401,8 +401,11 @@ function DoorPickerButtons({ carNum, lineColor, selectedDoorLabel, onDoorSelect 
       style={{
         display: "flex",
         flexDirection: "column",
+        flexWrap: "nowrap",
+        alignItems: "stretch",
         gap: 10,
         width: "100%",
+        boxSizing: "border-box",
       }}
     >
       {Array.from({ length: DOORS_PER_CAR }, (_, index) => {
@@ -418,7 +421,11 @@ function DoorPickerButtons({ carNum, lineColor, selectedDoorLabel, onDoorSelect 
             aria-label={`${carNum}호차 ${doorNo}번 출입문`}
             aria-pressed={isSelected}
             style={{
+              display: "block",
               width: "100%",
+              boxSizing: "border-box",
+              flexShrink: 0,
+              alignSelf: "stretch",
               minHeight: 52,
               padding: "12px 8px",
               borderRadius: 12,
