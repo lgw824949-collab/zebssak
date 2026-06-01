@@ -1545,6 +1545,34 @@ function StepStation({
   );
 }
 
+/** 서울 API에 barvl_dt 없을 때 station_order로 도착 예상(초) 추정 */
+function estimateSeoulArrivalSeconds(trainStation, boardingStation, stationOrder, apiLine) {
+  if (!Array.isArray(stationOrder) || stationOrder.length === 0) return null;
+
+  const target = normalizeStationLabel(boardingStation);
+  const trainAt = normalizeStationLabel(trainStation);
+  if (!target || !trainAt) return null;
+
+  const findIdx = (label) =>
+    stationOrder.findIndex((name) => normalizeStationLabel(name) === label);
+
+  const fromIdx = findIdx(target);
+  const trainIdx = findIdx(trainAt);
+  if (fromIdx < 0 || trainIdx < 0) return null;
+
+  const count = stationOrder.length;
+  const linear = Math.abs(trainIdx - fromIdx);
+  const secondsPerStation = apiLine === "seoul2" ? 90 : 120;
+
+  if (apiLine === "seoul2") {
+    const wrap = count - linear;
+    const distance = Math.min(linear, wrap);
+    return distance === 0 ? 45 : distance * secondsPerStation;
+  }
+
+  return linear === 0 ? 45 : linear * secondsPerStation;
+}
+
 // ─── Step 2: 열차 선택 (탭 1회 → 매칭 시도) ───────────────────────
 function StepTrain({
   line,
@@ -1837,25 +1865,42 @@ function StepTrain({
           }
           const payload = await response.json();
           const apiTrains = Array.isArray(payload?.trains) ? payload.trains : [];
+          const stationOrder = Array.isArray(payload?.station_order)
+            ? payload.station_order
+            : [];
 
           mapped = apiTrains
-            .map((row) => ({
-              id: row?.train_no ?? "",
-              current: row?.station_name?.trim() || "정보 없음",
-              eta: row?.direction_display?.trim() || "운행 정보",
-              direction: row?.direction?.trim() || "하행",
-              directionCode:
-                row?.direction_code ??
-                row?.updnLine ??
-                row?.directionCode ??
-                null,
-              updnLine: row?.updnLine ?? row?.direction_code ?? null,
-              barvlDt: row?.barvl_dt ?? row?.barvlDt ?? null,
-              arvlMsg2:
-                (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
-                (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
-                null,
-            }))
+            .map((row) => {
+              const barvlFromApi = row?.barvl_dt ?? row?.barvlDt ?? null;
+              const barvlDt =
+                barvlFromApi ??
+                (apiLine?.startsWith("seoul")
+                  ? estimateSeoulArrivalSeconds(
+                      row?.station_name,
+                      currentStation,
+                      stationOrder,
+                      apiLine
+                    )
+                  : null);
+
+              return {
+                id: row?.train_no ?? "",
+                current: row?.station_name?.trim() || "정보 없음",
+                eta: row?.direction_display?.trim() || "운행 정보",
+                direction: row?.direction?.trim() || "하행",
+                directionCode:
+                  row?.direction_code ??
+                  row?.updnLine ??
+                  row?.directionCode ??
+                  null,
+                updnLine: row?.updnLine ?? row?.direction_code ?? null,
+                barvlDt,
+                arvlMsg2:
+                  (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
+                  (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
+                  null,
+              };
+            })
             .filter((row) => row.id);
         }
 

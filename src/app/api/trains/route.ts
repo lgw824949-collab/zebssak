@@ -777,6 +777,10 @@ export async function GET(request: Request) {
     )
     trains = sortTrainsByProximity(trains, stationOrder, currentStation)
 
+    if (isSeoulLine(line)) {
+      trains = applyEstimatedArrivalToTrains(trains, line, currentStation)
+    }
+
     return NextResponse.json(
       { trains, station_order: stationOrder },
       { headers: JSON_UTF8_HEADERS }
