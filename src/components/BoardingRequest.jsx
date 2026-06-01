@@ -1737,10 +1737,94 @@ function StepTrain({
     return [...atCurrentStation, ...rest].slice(0, limit);
   })();
 
-  const directionHeading = displayTrains[0]?.eta || "";
+  function formatBarvlDtLabel(barvlRaw) {
+    if (barvlRaw == null || barvlRaw === "") return null;
+
+    const totalSeconds = Number(barvlRaw);
+    if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return null;
+
+    if (totalSeconds < 30) return "곧 도착";
+
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes === 0) return `${seconds}초 후 도착`;
+    if (seconds > 0) return `${minutes}분 ${seconds}초 후 도착`;
+    return `${minutes}분 후 도착`;
+  }
+
+  function isArrivalStatusMessage(text) {
+    if (!text) return false;
+    return /\[?\d*\s*번째\s*전역|전역\s*도착|진입|출발|도착/.test(text);
+  }
+
+  function extractTerminalFromArvlMsg2(arvlMsg2) {
+    const text = String(arvlMsg2 ?? "").trim();
+    if (!text) return null;
+
+    const parenMatch = text.match(/\(([^)]+)\)\s*$/);
+    if (parenMatch?.[1]) {
+      return parenMatch[1].trim().replace(/역$/u, "");
+    }
+
+    return null;
+  }
+
+  function resolveTrainDirectionEta(row) {
+    const directionDisplay = String(row?.direction_display ?? "").trim();
+    if (directionDisplay.endsWith("방면") && !isArrivalStatusMessage(directionDisplay)) {
+      return directionDisplay;
+    }
+
+    const terminalName = String(row?.bstatn_nm ?? row?.bstatnNm ?? "").trim().replace(/역$/u, "");
+    if (terminalName) {
+      return `${terminalName} 방면`;
+    }
+
+    const arvlMsg2 = String(row?.arvl_msg2 ?? row?.arvlMsg2 ?? "").trim();
+    const terminalFromArvl = extractTerminalFromArvlMsg2(arvlMsg2);
+    if (terminalFromArvl) {
+      return `${terminalFromArvl} 방면`;
+    }
+
+    if (directionDisplay && !isArrivalStatusMessage(directionDisplay)) {
+      return directionDisplay.endsWith("방면") ? directionDisplay : `${directionDisplay} 방면`;
+    }
+
+    return "운행 정보";
+  }
+
+  function resolveTrainDirectionEtaFromMapped(train) {
+    const eta = String(train?.eta ?? "").trim();
+    if (eta.endsWith("방면") && !isArrivalStatusMessage(eta)) {
+      return eta;
+    }
+
+    const terminalName = String(train?.bstatnNm ?? "").trim().replace(/역$/u, "");
+    if (terminalName) {
+      return `${terminalName} 방면`;
+    }
+
+    const terminalFromArvl = extractTerminalFromArvlMsg2(train?.arvlMsg2);
+    if (terminalFromArvl) {
+      return `${terminalFromArvl} 방면`;
+    }
+
+    if (isArrivalStatusMessage(eta)) {
+      const terminalFromEta = extractTerminalFromArvlMsg2(eta);
+      if (terminalFromEta) {
+        return `${terminalFromEta} 방면`;
+      }
+    }
+
+    const direction = String(train?.direction ?? "").trim();
+    if (direction && !isArrivalStatusMessage(direction)) {
+      return `${direction} 방면`;
+    }
+
+    return eta && !isArrivalStatusMessage(eta) ? eta : "운행 정보";
+  }
 
   function formatTrainArrivalLabel(train) {
-    const arvlMsg2 = typeof train.arvlMsg2 === "string" ? train.arvlMsg2.trim() : "";
     let barvlRaw = train.barvlDt;
     if (
       (barvlRaw == null || barvlRaw === "") &&
@@ -1755,23 +1839,20 @@ function StepTrain({
       );
       if (estimated != null) barvlRaw = estimated;
     }
-    if (barvlRaw != null && barvlRaw !== "") {
-      const totalSeconds = Number(barvlRaw);
-      if (Number.isFinite(totalSeconds) && totalSeconds > 0) {
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        if (totalSeconds < 60) return "곧 도착";
-        if (seconds > 0) return `${minutes}분 ${seconds}초 후 도착`;
-        return `${minutes}분 후 도착`;
-      }
-      if (totalSeconds === 0 && arvlMsg2) return arvlMsg2;
-      if (totalSeconds === 0) return "곧 도착";
-    }
 
+    const timeLabel = formatBarvlDtLabel(barvlRaw);
+    if (timeLabel) return timeLabel;
+
+    const arvlMsg2 = typeof train.arvlMsg2 === "string" ? train.arvlMsg2.trim() : "";
     if (arvlMsg2) return arvlMsg2;
 
     return "도착 정보 확인 중";
   }
+
+  const directionHeading =
+    displayTrains
+      .map((train) => resolveTrainDirectionEtaFromMapped(train))
+      .find((label) => label.endsWith("방면")) || "";
 
   useEffect(() => {
     if (!apiLine) {
@@ -1898,10 +1979,16 @@ function StepTrain({
                     )
                   : null);
 
+              const arvlMsg2 =
+                (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
+                (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
+                null;
+              const bstatnNm = String(row?.bstatn_nm ?? row?.bstatnNm ?? "").trim() || null;
+
               return {
                 id: row?.train_no ?? "",
                 current: row?.station_name?.trim() || "정보 없음",
-                eta: row?.direction_display?.trim() || "운행 정보",
+                eta: resolveTrainDirectionEta(row),
                 direction: row?.direction?.trim() || "하행",
                 directionCode:
                   row?.direction_code ??
@@ -1910,10 +1997,8 @@ function StepTrain({
                   null,
                 updnLine: row?.updnLine ?? row?.direction_code ?? null,
                 barvlDt,
-                arvlMsg2:
-                  (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
-                  (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
-                  null,
+                arvlMsg2,
+                bstatnNm,
               };
             })
             .filter((row) => row.id);
@@ -2193,7 +2278,7 @@ function StepTrain({
                       {formatTrainArrivalLabel(train)}
                     </div>
                     <div style={{ marginTop: 4, fontSize: 13, color: C.text, fontWeight: 600 }}>
-                      {train.eta}
+                      {resolveTrainDirectionEtaFromMapped(train)}
                     </div>
                     <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>
                       {train.direction}
