@@ -197,21 +197,54 @@ function mapSeekDoorToSubmission(doorLabel, lineLabel) {
 }
 
 const SEEK_SEAT_LETTERS = ["A", "B", "C", "D", "E", "F", "G"];
-const SEEK_DOOR_NUMBERS = [1, 2, 3, 4];
-const SEEK_CAR_UI = {
-  priority: "#cc8c33",
-  door: "#747F00",
-  seat: "#8c9eb2",
-  aisle: "#E5E7EB",
-};
+
+/** 예: 논현방향 좌측 3-2번 G열 */
+function buildSeekCompactLine({ station, side, car, door, seatLetter }) {
+  const dest = String(station || "")
+    .trim()
+    .replace(/역$/u, "");
+  const sideLabel =
+    side === "우측" || side === "right" ? "우측" : "좌측";
+  const parts = [];
+  if (dest) parts.push(`${dest}방향`);
+  parts.push(sideLabel);
+  if (car && door) parts.push(`${car}-${door}번`);
+  if (seatLetter) parts.push(`${seatLetter}열`);
+  return parts.join(" ");
+}
 
 function buildSeekPickResultLine({ side, doorLabel, seatLetter }) {
-  const parts = [
-    side || null,
-    doorLabel ? `출입문 ${doorLabel}` : null,
-    seatLetter ? `${seatLetter}열` : null,
-  ].filter(Boolean);
-  return parts.join(" · ");
+  const sideLabel =
+    side === "우측" || side === "right" ? "우측" : side === "좌측" || side === "left" ? "좌측" : side;
+  const doorPart = doorLabel ? String(doorLabel).replace(/번$/u, "") : "";
+  const match = doorPart.match(/^(\d+)-(\d+)$/);
+  if (match) {
+    return buildSeekCompactLine({
+      station: null,
+      side: sideLabel,
+      car: Number.parseInt(match[1], 10),
+      door: Number.parseInt(match[2], 10),
+      seatLetter,
+    }).replace(/^\s+/, "");
+  }
+  const parts = [sideLabel, doorLabel ? `${doorLabel}번` : null, seatLetter ? `${seatLetter}열` : null].filter(
+    Boolean
+  );
+  return parts.join(" ");
+}
+
+function resolveSeekSideLabel(side) {
+  return side === "right" || side === "우측" ? "우측" : "좌측";
+}
+
+function buildSeekPickFromSeatInfo(seat, station, fallbackCar) {
+  const car = seat?.car ?? fallbackCar;
+  const door = seat?.door;
+  const seatLetter = seat?.seatLetter || seat?.seatColumn;
+  const side = resolveSeekSideLabel(seat?.side);
+  const doorLabel = car && door ? `${car}-${door}` : "";
+  const pickResultLine = buildSeekCompactLine({ station, side, car, door, seatLetter });
+  return { car, door, doorLabel, side, seatLetter, pickResultLine };
 }
 
 function buildSeekPlacementSummary({ station, side, doorLabel, seatLetter }) {
@@ -2495,507 +2528,179 @@ function StepTrain({
             transition: "background 0.2s",
           }}
         >
-          다음 — {mode === "leave" ? "좌석 선택" : "출입문 선택"}
+          다음 — 좌석 선택
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Step 3 (seek): 열차 단면에서 위치 선택 ───────────────────────────
-function buildSeekCarRowSegments(side) {
-  if (side === "좌측") {
-    return [
-      { type: "priority" },
-      { type: "door", door: 1 },
-      { type: "seats", door: 1 },
-      { type: "door", door: 2 },
-      { type: "seats", door: 2 },
-      { type: "door", door: 3 },
-      { type: "seats", door: 3 },
-      { type: "door", door: 4 },
-      { type: "priority" },
-    ];
-  }
-  return [
-    { type: "priority" },
-    { type: "door", door: 4 },
-    { type: "seats", door: 4 },
-    { type: "door", door: 3 },
-    { type: "seats", door: 3 },
-    { type: "door", door: 2 },
-    { type: "seats", door: 2 },
-    { type: "door", door: 1 },
-    { type: "priority" },
-  ];
-}
-
-function SeekPrioritySeats() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        gap: 3,
-        padding: "0 3px",
-        flexShrink: 0,
-      }}
-      aria-hidden
-    >
-      {[0, 1, 2].map((idx) => (
-        <div
-          key={idx}
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: 2,
-            background: SEEK_CAR_UI.priority,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function SeekDoorMarker({ carNo, door }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        padding: "0 2px",
-        minWidth: 26,
-      }}
-    >
-      <div
-        style={{
-          width: 5,
-          height: 48,
-          borderRadius: 2,
-          background: SEEK_CAR_UI.door,
-        }}
-      />
-      <span
-        style={{
-          marginTop: 4,
-          fontSize: 9,
-          fontWeight: 700,
-          color: SEEK_CAR_UI.door,
-          whiteSpace: "nowrap",
-        }}
-      >
-        {carNo}-{door}
-      </span>
-    </div>
-  );
-}
-
-function SeekSeatBench({ carNo, side, door, selectedKey, onPick, disabled }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 2,
-        padding: "2px 4px",
-        flexShrink: 0,
-      }}
-    >
-      {SEEK_SEAT_LETTERS.map((letter) => {
-        const key = `${side}-${door}-${letter}`;
-        const isSelected = selectedKey === key;
-        return (
-          <button
-            key={key}
-            type="button"
-            className="zeb-touch-target"
-            disabled={disabled}
-            onClick={() =>
-              onPick({
-                side,
-                door,
-                seatLetter: letter,
-                doorLabel: `${carNo}-${door}`,
-              })
-            }
-            style={{
-              width: 26,
-              height: 30,
-              padding: 0,
-              border: `2px solid ${isSelected ? LINE_OLIVE : "transparent"}`,
-              borderRadius: 4,
-              background: isSelected ? LINE_OLIVE : SEEK_CAR_UI.seat,
-              color: "#fff",
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: disabled ? "default" : "pointer",
-              opacity: disabled ? 0.55 : 1,
-              boxShadow: isSelected ? `0 0 0 2px ${LINE_OLIVE_LIGHT}` : "none",
-            }}
-          >
-            {letter}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function SeekCrossSectionRow({ carNo, side, selectedKey, onPick, disabled }) {
-  const segments = buildSeekCarRowSegments(side);
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        minWidth: "min-content",
-        padding: "6px 4px",
-        background: C.card,
-        borderRadius: 10,
-        border: `1px solid ${C.border}`,
-      }}
-    >
-      {segments.map((segment, index) => {
-        if (segment.type === "priority") {
-          return <SeekPrioritySeats key={`${side}-pri-${index}`} />;
-        }
-        if (segment.type === "door") {
-          return (
-            <SeekDoorMarker
-              key={`${side}-door-${segment.door}-${index}`}
-              carNo={carNo}
-              door={segment.door}
-            />
-          );
-        }
-        return (
-          <SeekSeatBench
-            key={`${side}-seats-${segment.door}-${index}`}
-            carNo={carNo}
-            side={side}
-            door={segment.door}
-            selectedKey={selectedKey}
-            onPick={onPick}
-            disabled={disabled}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
+// ─── Step 3 (seek): 좌석 맵에서 위치 선택 (leave와 동일 UI) ───────────
 function StepSeekDoor({
   line,
   station,
   currentStation,
+  trainId,
+  lineNumber,
+  direction,
+  drtnInfo,
   onNext,
   onBack,
   isSubmitting = false,
-  trainId = null,
 }) {
-  const [selectedCar, setSelectedCar] = useState(1);
-  const [pendingPick, setPendingPick] = useState(null);
-
-  const layout = resolveCarLayout(line);
+  const carCount = resolveCarCountFromLineProp(line);
+  const carNumbers = Array.from({ length: carCount }, (_, index) => index + 1);
+  const [selectedCar, setSelectedCar] = useState(null);
+  const [selectedSeat, setSelectedSeat] = useState(null);
   const lineColor = LINE_OLIVE;
-  const lineColorLight = LINE_OLIVE_LIGHT;
-  const lineDisplayName = (() => {
-    const primary = (line || "").split("·")[0].trim();
-    const compact = primary.replace(/\s+/g, "");
-    const seoulLineNo = compact.match(/^서울([1-9])호선$/);
-    if (seoulLineNo?.[1]) return `서울 ${seoulLineNo[1]}호선`;
-    if (/^인천1호선$/.test(compact)) return "인천 1호선";
-    if (/^인천2호선$/.test(compact)) return "인천 2호선";
-    return primary || "서울 7호선";
-  })();
+
   const directionBanner = station
-    ? `${formatStationDisplayName(station)} 방향 ↑`
-    : "진행 방향 ↑";
-  const carNumbers = Array.from({ length: layout.carCount }, (_, index) => index + 1);
-  const selectedKey = pendingPick
-    ? `${pendingPick.side}-${pendingPick.door}-${pendingPick.seatLetter}`
+    ? `${String(station).trim().replace(/역$/u, "")}방향 ↑`
+    : "진행방향 ↑";
+
+  const pick = selectedSeat
+    ? buildSeekPickFromSeatInfo(selectedSeat, station, selectedCar)
     : null;
-  const pickResultLine = pendingPick
-    ? buildSeekPickResultLine({
-        side: pendingPick.side,
-        doorLabel: pendingPick.doorLabel,
-        seatLetter: pendingPick.seatLetter,
-      })
-    : "";
+  const pickResultLine = pick?.pickResultLine ?? "";
 
   useEffect(() => {
-    setPendingPick(null);
-  }, [selectedCar]);
+    setSelectedCar((prev) => (prev != null && prev > carCount ? null : prev));
+    setSelectedSeat(null);
+  }, [line, carCount]);
 
-  function handleSeatPick(pick) {
+  function handleSeatClick(seat) {
     if (isSubmitting) return;
-    setPendingPick(pick);
+    setSelectedSeat((prev) => (prev?.id === seat.id ? null : seat));
   }
 
-  function handleConfirmYes() {
-    if (!pendingPick || isSubmitting) return;
-    const mapped = mapSeekSelectionToSubmission({
-      car: selectedCar,
-      door: pendingPick.door,
-      doorLabel: pendingPick.doorLabel,
-      side: pendingPick.side,
-      seatLetter: pendingPick.seatLetter,
-      lineLabel: line,
-    });
-    if (!mapped) return;
-
-    const placementSummary = buildSeekPlacementSummary({
-      station,
-      side: pendingPick.side,
-      doorLabel: pendingPick.doorLabel,
-      seatLetter: pendingPick.seatLetter,
-    });
+  function handleConfirm() {
+    if (!selectedSeat || isSubmitting) return;
+    const info = buildSeekPickFromSeatInfo(selectedSeat, station, selectedCar);
+    if (!info.doorLabel) return;
 
     onNext({
-      car: mapped.car,
-      door: mapped.door,
-      doorLabel: mapped.doorLabel,
-      side: pendingPick.side,
-      seatLetter: pendingPick.seatLetter,
-      placementSummary,
-      pickResultLine,
+      car: info.car,
+      door: info.door,
+      doorLabel: info.doorLabel,
+      side: info.side,
+      seatLetter: info.seatLetter,
+      placementSummary: info.pickResultLine,
+      pickResultLine: info.pickResultLine,
       seat: {
-        doorLabel: mapped.doorLabel,
-        car: mapped.car,
-        door: mapped.door,
-        side: pendingPick.side,
-        seatLetter: pendingPick.seatLetter,
-        placementSummary,
-        pickResultLine,
-        seatSide: mapped.seatSide,
-        seatNumber: mapped.seatNumber,
+        ...selectedSeat,
+        doorLabel: info.doorLabel,
+        car: info.car,
+        door: info.door,
+        side: info.side,
+        seatLetter: info.seatLetter,
+        placementSummary: info.pickResultLine,
+        pickResultLine: info.pickResultLine,
       },
     });
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "14px 16px 10px",
-          borderBottom: `1px solid ${C.border}`,
-          background: C.card,
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-        }}
-      >
-        <button
-          type="button"
-          className="zeb-touch-target"
-          onClick={onBack}
-          disabled={isSubmitting}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: isSubmitting ? "default" : "pointer",
-            padding: 0,
-            color: C.text,
-            fontSize: 20,
-            lineHeight: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: MOBILE.touchMin,
-            height: MOBILE.touchMin,
-            opacity: isSubmitting ? 0.5 : 1,
-          }}
-        >
-          ←
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <span
-            style={{
-              display: "inline-block",
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#fff",
-              background: lineColor,
-              borderRadius: 999,
-              padding: "3px 10px",
-              marginBottom: 4,
-            }}
-          >
-            {lineDisplayName}
-          </span>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>위치 선택</div>
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: lineColor,
-            fontWeight: 700,
-            background: lineColorLight,
-            borderRadius: 20,
-            padding: "4px 10px",
-            flexShrink: 0,
-          }}
-        >
-          3 / 3
-        </div>
-      </div>
-
+      <Header step={3} onBack={onBack} title="좌석 선택" line={line} />
       <div
         style={{
           flex: 1,
           overflow: "auto",
-          padding: `12px ${MOBILE.pageX}px 0`,
+          padding: `8px ${MOBILE.pageX}px 0`,
           position: "relative",
         }}
       >
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
-
-        <div style={{ display: "flex", gap: 6, justifyContent: "center", paddingBottom: 14 }}>
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              style={{
-                width: i === 3 ? 20 : 6,
-                height: 6,
-                borderRadius: 3,
-                background: lineColor,
-                transition: "width 0.2s",
-              }}
-            />
-          ))}
-        </div>
+        <StepDots step={3} />
 
         <p
           style={{
-            margin: "0 0 12px",
+            margin: "12px 0 8px",
             fontSize: 20,
             fontWeight: 800,
             color: lineColor,
             textAlign: "center",
-            lineHeight: 1.35,
           }}
         >
           {directionBanner}
         </p>
-
         {trainId ? (
           <p style={{ margin: "0 0 12px", fontSize: 13, color: C.muted, textAlign: "center" }}>
             열차 {trainId}
           </p>
         ) : null}
 
-        <p style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 600, color: C.text }}>호차</p>
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            marginBottom: 14,
-          }}
-        >
-          {carNumbers.map((carNo) => (
-            <button
-              key={carNo}
-              type="button"
-              className="zeb-touch-target"
-              disabled={isSubmitting}
-              onClick={() => setSelectedCar(carNo)}
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 10,
-                border: `1.5px solid ${selectedCar === carNo ? lineColor : C.border}`,
-                background: selectedCar === carNo ? lineColor : C.card,
-                color: selectedCar === carNo ? "#fff" : C.text,
-                fontSize: MOBILE.inputFontSize,
-                fontWeight: 700,
-                cursor: isSubmitting ? "default" : "pointer",
-                opacity: isSubmitting ? 0.55 : 1,
-              }}
-            >
-              {carNo}
-            </button>
-          ))}
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 380,
-            marginBottom: 12,
-          }}
-        >
-          <p
-            style={{
-              margin: "0 0 6px",
-              fontSize: 12,
-              fontWeight: 700,
-              color: C.muted,
-              textAlign: "center",
-            }}
-          >
-            좌측
-          </p>
-          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4 }}>
-            <SeekCrossSectionRow
-              carNo={selectedCar}
-              side="좌측"
-              selectedKey={selectedKey}
-              onPick={handleSeatPick}
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <div
-            style={{
-              flex: "1 1 32%",
-              minHeight: 130,
-              margin: "10px 0",
-              borderRadius: 10,
-              background: SEEK_CAR_UI.aisle,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <span style={{ fontSize: 14, fontWeight: 700, color: C.muted }}>← 넓은 통로 →</span>
-          </div>
-
-          <p
-            style={{
-              margin: "0 0 6px",
-              fontSize: 12,
-              fontWeight: 700,
-              color: C.muted,
-              textAlign: "center",
-            }}
-          >
-            우측
-          </p>
-          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 4 }}>
-            <SeekCrossSectionRow
-              carNo={selectedCar}
-              side="우측"
-              selectedKey={selectedKey}
-              onPick={handleSeatPick}
-              disabled={isSubmitting}
-            />
+        <div style={{ marginTop: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>호차</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {carNumbers.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className="zeb-touch-target"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setSelectedCar(n);
+                  setSelectedSeat(null);
+                }}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 10,
+                  border: `1.5px solid ${selectedCar === n ? lineColor : C.border}`,
+                  background: selectedCar === n ? lineColor : C.card,
+                  color: selectedCar === n ? "#fff" : C.text,
+                  fontSize: MOBILE.inputFontSize,
+                  fontWeight: 700,
+                  cursor: isSubmitting ? "default" : "pointer",
+                  opacity: isSubmitting ? 0.55 : 1,
+                }}
+              >
+                {n}
+              </button>
+            ))}
           </div>
         </div>
 
-        <p style={{ margin: 0, fontSize: 13, color: C.muted, textAlign: "center", lineHeight: 1.5 }}>
-          앉을 자리(A~G)를 눌러 주세요
-        </p>
+        {selectedCar ? (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>
+              {selectedCar}호차 · 앉으신 자리를 눌러 주세요
+            </div>
+            <SubwaySeatMap
+              key={`${trainId}-${selectedCar}-seek`}
+              line={line}
+              station={station || currentStation || ""}
+              trainNo={trainId}
+              lineNumber={lineNumber}
+              direction={direction}
+              drtnInfo={drtnInfo}
+              car={selectedCar}
+              interactionMode="seek"
+              selectedSeatId={selectedSeat?.id}
+              onSeatClick={handleSeatClick}
+            />
+          </div>
+        ) : null}
+
+        {pickResultLine ? (
+          <p
+            style={{
+              margin: "16px 0 8px",
+              padding: "14px 16px",
+              borderRadius: 12,
+              background: LINE_OLIVE_LIGHT,
+              border: `1.5px solid ${lineColor}`,
+              fontSize: 18,
+              fontWeight: 800,
+              color: lineColor,
+              textAlign: "center",
+              lineHeight: 1.45,
+            }}
+          >
+            {pickResultLine}
+          </p>
+        ) : null}
       </div>
 
       <div
@@ -3005,71 +2710,32 @@ function StepSeekDoor({
           borderTop: `1px solid ${C.border}`,
         }}
       >
-        {pendingPick ? (
-          <>
-            <p
-              style={{
-                margin: "0 0 12px",
-                fontSize: 16,
-                fontWeight: 800,
-                color: C.text,
-                textAlign: "center",
-                lineHeight: 1.45,
-              }}
-            >
-              {pickResultLine}
-            </p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <button
-                type="button"
-                className="zeb-touch-target"
-                disabled={isSubmitting}
-                onClick={() => setPendingPick(null)}
-                style={{
-                  minHeight: MOBILE.touchMin,
-                  borderRadius: 12,
-                  border: `1.5px solid ${C.border}`,
-                  background: C.card,
-                  color: C.text,
-                  fontSize: 16,
-                  fontWeight: 700,
-                  cursor: isSubmitting ? "default" : "pointer",
-                  opacity: isSubmitting ? 0.55 : 1,
-                }}
-              >
-                NO
-              </button>
-              <button
-                type="button"
-                className="zeb-touch-target"
-                disabled={isSubmitting}
-                onClick={handleConfirmYes}
-                aria-busy={isSubmitting || undefined}
-                style={{
-                  minHeight: MOBILE.touchMin,
-                  borderRadius: 12,
-                  border: "none",
-                  background: isSubmitting ? "#D1D5DB" : lineColor,
-                  color: "#fff",
-                  fontSize: 16,
-                  fontWeight: 700,
-                  cursor: isSubmitting ? "default" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}
-              >
-                {isSubmitting ? <LoadingSpinner /> : null}
-                YES
-              </button>
-            </div>
-          </>
-        ) : (
-          <p style={{ margin: 0, fontSize: 14, color: C.muted, textAlign: "center" }}>
-            좌석을 선택하면 확인 버튼이 나타납니다
-          </p>
-        )}
+        <button
+          type="button"
+          className="zeb-touch-target"
+          onClick={handleConfirm}
+          disabled={!selectedSeat || isSubmitting}
+          aria-busy={isSubmitting || undefined}
+          style={{
+            width: "100%",
+            minHeight: MOBILE.touchMin,
+            padding: "12px 0",
+            background: selectedSeat && !isSubmitting ? lineColor : "#D1D5DB",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            fontSize: 16,
+            fontWeight: 700,
+            cursor: selectedSeat && !isSubmitting ? "pointer" : "default",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+        >
+          {isSubmitting ? <LoadingSpinner /> : null}
+          {selectedSeat ? "네, 맞아요" : "좌석을 선택해 주세요"}
+        </button>
       </div>
     </div>
   );
@@ -3199,10 +2865,17 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
     });
   const seekPickResultLine =
     seat?.pickResultLine ||
+    buildSeekCompactLine({
+      station,
+      side: seat?.side,
+      car: seat?.car ?? car,
+      door: seat?.door,
+      seatLetter: seat?.seatLetter || seat?.seatColumn,
+    }) ||
     buildSeekPickResultLine({
       side: seat?.side,
       doorLabel: seekDoorLabel,
-      seatLetter: seat?.seatLetter,
+      seatLetter: seat?.seatLetter || seat?.seatColumn,
     });
   const seatLabel = (() => {
     if (!car) return "";
@@ -3502,20 +3175,28 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       stopSubmitting("로그인이 필요합니다.");
       return;
     }
-    if (!trainId || !info?.doorLabel || !station || !info?.side || !info?.seatLetter) {
+    if (!trainId || !station || !info?.doorLabel) {
       stopSubmitting("열차, 위치, 하차역을 확인해 주세요.");
       return;
     }
 
     const mapped =
-      mapSeekSelectionToSubmission({
-        car: info.car,
-        door: info.door,
-        doorLabel: info.doorLabel,
-        side: info.side,
-        seatLetter: info.seatLetter,
-        lineLabel: normalizedLine,
-      }) || mapSeekDoorToSubmission(info.doorLabel, normalizedLine);
+      info.seat?.seatSide && info.seat?.seatNumber
+        ? {
+            car: info.car,
+            door: info.door,
+            doorLabel: info.doorLabel,
+            seatSide: info.seat.seatSide,
+            seatNumber: info.seat.seatNumber,
+          }
+        : mapSeekSelectionToSubmission({
+            car: info.car,
+            door: info.door,
+            doorLabel: info.doorLabel,
+            side: info.side,
+            seatLetter: info.seatLetter,
+            lineLabel: normalizedLine,
+          }) || mapSeekDoorToSubmission(info.doorLabel, normalizedLine);
     if (!mapped?.seatSide || !mapped?.seatNumber) {
       stopSubmitting("위치 정보를 변환할 수 없습니다.");
       return;
@@ -3620,7 +3301,8 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         doorLabel: info.doorLabel,
         side: info.side,
         seatLetter: info.seatLetter,
-        placementSummary: info.placementSummary,
+        placementSummary: info.placementSummary || info.pickResultLine,
+        pickResultLine: info.pickResultLine,
       };
 
       try {
@@ -3958,6 +3640,9 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
             station={station}
             currentStation={currentStationName}
             trainId={trainId}
+            lineNumber={lineNumber}
+            direction={trainDirection}
+            drtnInfo={trainDrtnInfo}
             isSubmitting={isSubmitting}
             onNext={(info) => {
               setSubmitError("");
