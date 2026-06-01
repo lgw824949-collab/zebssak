@@ -443,13 +443,13 @@ export default function Home() {
 
             <section className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
-                <p className="text-[14px] font-semibold text-[#888888]">최적혼잡역</p>
+                <p className="text-[14px] font-semibold text-[#888888]">환승역 수</p>
                 <p className="zeb-mono mt-1.5 text-[30px] font-extrabold leading-none" style={{ color: LINE7_OLIVE }}>
                   66개
                 </p>
               </div>
               <div className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
-                <p className="text-[14px] font-semibold text-[#888888]">평균 탑승시간</p>
+                <p className="text-[14px] font-semibold text-[#888888]">평균착석 시간</p>
                 <p className="zeb-mono mt-1.5 text-[30px] font-extrabold leading-none" style={{ color: LINE7_OLIVE }}>
                   30분
                 </p>
