@@ -399,8 +399,8 @@ function DoorPickerButtons({ carNum, lineColor, selectedDoorLabel, onDoorSelect 
   return (
     <div
       style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        display: "flex",
+        flexDirection: "column",
         gap: 10,
         width: "100%",
       }}
@@ -418,6 +418,7 @@ function DoorPickerButtons({ carNum, lineColor, selectedDoorLabel, onDoorSelect 
             aria-label={`${carNum}호차 ${doorNo}번 출입문`}
             aria-pressed={isSelected}
             style={{
+              width: "100%",
               minHeight: 52,
               padding: "12px 8px",
               borderRadius: 12,
