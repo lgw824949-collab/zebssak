@@ -155,19 +155,6 @@ const VOICE_PARSE_PENDING_KEY = "voiceParsePending";
 const GPS_MAX_RADIUS_KM = 1;
 const BOARDING_GPS_CACHE_TTL_MS = 5 * 60 * 1000;
 const TRAIN_LIST_REFRESH_MS = 30000;
-/** 호선별 전체 출입문 목록 (예: 1-1 ~ 10-4) */
-function buildSeekDoorGroups(lineLabel) {
-  const layout = resolveCarLayout(lineLabel);
-  return Array.from({ length: layout.carCount }, (_, carIndex) => {
-    const car = carIndex + 1;
-    const doors = Array.from({ length: layout.doorCount }, (_, doorIndex) => {
-      const door = doorIndex + 1;
-      return { label: `${car}-${door}`, car, door };
-    });
-    return { car, doors };
-  });
-}
-
 /** seek 모드 출입문 라벨(2-1 등) → API 제출용 car / seat_side / seat_number */
 function mapSeekDoorToSubmission(doorLabel, lineLabel) {
   const match = String(doorLabel || "").match(/^(\d+)-(\d+)$/);
@@ -2409,168 +2396,6 @@ function StepTrain({
   );
 }
 
-/** seek 출입문 UI — 통로 중앙 번호 없이, 좌석 행 사이 좌측「문」으로 표시 */
-const SEEK_DOOR_SECTIONS = 3;
-const SEEK_DOOR_SEAT_ROWS = 6;
-
-function SeekDoorCarLayout({
-  car,
-  layout,
-  lineColor,
-  lineColorLight,
-  selectedDoor,
-  isSubmitting,
-  onSelectDoor,
-}) {
-  const aisleStyle = {
-    width: 48,
-    flexShrink: 0,
-    background: `${lineColor}1A`,
-    borderRadius: 6,
-  };
-
-  const renderSeatStrip = (side) => (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 3,
-        alignItems: side === "left" ? "flex-start" : "flex-end",
-      }}
-    >
-      {Array.from({ length: SEEK_DOOR_SEAT_ROWS }, (_, rowIndex) => (
-        <div
-          key={`${side}-seat-${rowIndex}`}
-          style={{
-            width: 28,
-            height: 14,
-            borderRadius: 3,
-            background: "#EBEBEB",
-            border: "1px solid #D0D0D0",
-          }}
-        />
-      ))}
-    </div>
-  );
-
-  const renderSeatSectionRow = (sectionIndex) => (
-    <div
-      key={`section-${sectionIndex}`}
-      style={{
-        display: "flex",
-        alignItems: "stretch",
-        gap: 4,
-        width: "100%",
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>{renderSeatStrip("left")}</div>
-      <div style={aisleStyle} aria-hidden />
-      <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "flex-end" }}>
-        {renderSeatStrip("right")}
-      </div>
-    </div>
-  );
-
-  const renderDoorMarker = (doorNum) => {
-    const label = `${car}-${doorNum}`;
-    const isSelected = selectedDoor === label;
-    return (
-      <div
-        key={label}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          width: "100%",
-        }}
-      >
-        <button
-          type="button"
-          className="zeb-touch-target"
-          disabled={isSubmitting}
-          onClick={() => onSelectDoor(label)}
-          aria-label={`${car}호차 ${doorNum}번 출입문`}
-          aria-pressed={isSelected}
-          style={{
-            flexShrink: 0,
-            minWidth: 40,
-            minHeight: 40,
-            padding: "6px 10px",
-            borderRadius: 8,
-            border: `1.5px solid ${isSelected ? lineColor : C.border}`,
-            background: isSelected ? lineColor : C.card,
-            color: isSelected ? "#fff" : lineColor,
-            fontSize: 14,
-            fontWeight: 800,
-            cursor: isSubmitting ? "default" : "pointer",
-            transition: "all 0.15s",
-            opacity: isSubmitting ? 0.55 : 1,
-          }}
-        >
-          문
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
-      </div>
-    );
-  };
-
-  const priorityBar = (key) => (
-    <div
-      key={key}
-      style={{
-        display: "flex",
-        gap: 4,
-        width: "100%",
-        margin: "2px 0",
-      }}
-    >
-      <div
-        style={{
-          flex: 1,
-          height: 10,
-          borderRadius: 4,
-          background: C.priority.bg,
-          border: `1px solid ${C.priority.border}`,
-        }}
-      />
-      <div style={aisleStyle} aria-hidden />
-      <div
-        style={{
-          flex: 1,
-          height: 10,
-          borderRadius: 4,
-          background: C.priority.bg,
-          border: `1px solid ${C.priority.border}`,
-        }}
-      />
-    </div>
-  );
-
-  const bodyRows = [priorityBar("prio-top"), renderDoorMarker(1)];
-  for (let sectionIndex = 0; sectionIndex < SEEK_DOOR_SECTIONS; sectionIndex += 1) {
-    bodyRows.push(renderSeatSectionRow(sectionIndex));
-    if (sectionIndex < SEEK_DOOR_SECTIONS - 1) {
-      bodyRows.push(renderDoorMarker(sectionIndex + 2));
-    }
-  }
-  bodyRows.push(renderDoorMarker(layout.doorCount));
-  bodyRows.push(priorityBar("prio-bottom"));
-
-  return (
-    <div
-      style={{
-        padding: "10px 8px",
-        borderRadius: 12,
-        border: `1.5px solid ${selectedDoor?.startsWith(`${car}-`) ? lineColor : C.border}`,
-        background: selectedDoor?.startsWith(`${car}-`) ? lineColorLight : C.card,
-        transition: "border-color 0.15s, background 0.15s",
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{bodyRows}</div>
-    </div>
-  );
-}
-
 // ─── Step 3 (seek): 출입문 선택 ────────────────────────────────────
 function StepSeekDoor({
   line,
@@ -2581,7 +2406,7 @@ function StepSeekDoor({
   drtnInfo = null,
 }) {
   const [selectedDoor, setSelectedDoor] = useState(null);
-  const doorGroups = buildSeekDoorGroups(line);
+  const [activeCar, setActiveCar] = useState(1);
   const layout = resolveCarLayout(line);
   const lineColor = LINE_OLIVE;
   const lineColorLight = LINE_OLIVE_LIGHT;
@@ -2598,7 +2423,15 @@ function StepSeekDoor({
   const selectedCar = selectedDoor
     ? Number.parseInt(String(selectedDoor).split("-")[0], 10)
     : null;
+  const selectedDoorNo = selectedDoor
+    ? Number.parseInt(String(selectedDoor).split("-")[1], 10)
+    : null;
   const carNumbers = Array.from({ length: layout.carCount }, (_, index) => index + 1);
+
+  useEffect(() => {
+    if (!selectedCar || !Number.isInteger(selectedCar)) return;
+    setActiveCar(selectedCar);
+  }, [selectedCar]);
   const trainSummaryParts = [];
   if (trainId) trainSummaryParts.push(`열차 ${trainId}`);
   if (directionLabel) trainSummaryParts.push(directionLabel);
@@ -2716,7 +2549,7 @@ function StepSeekDoor({
               textAlign: "center",
             }}
           >
-            {selectedCar}호차 {selectedDoor}번 출입문 선택됨
+            {selectedCar}호차 {selectedDoorNo}번 출입문 선택됨
           </div>
         ) : null}
 
@@ -2731,10 +2564,14 @@ function StepSeekDoor({
           }}
         >
           {carNumbers.map((carNum) => {
-            const isActiveCar = selectedCar === carNum;
+            const isActiveCar = activeCar === carNum;
             return (
-              <div
+              <button
                 key={carNum}
+                type="button"
+                className="zeb-touch-target"
+                disabled={isSubmitting}
+                onClick={() => setActiveCar(carNum)}
                 style={{
                   flex: "1 0 32px",
                   minWidth: 32,
@@ -2749,61 +2586,25 @@ function StepSeekDoor({
                   color: isActiveCar ? "#fff" : C.muted,
                   border: `1px solid ${isActiveCar ? lineColor : C.border}`,
                   transition: "background 0.15s, color 0.15s",
+                  cursor: isSubmitting ? "default" : "pointer",
+                  opacity: isSubmitting ? 0.55 : 1,
                 }}
               >
                 {carNum}
-              </div>
+              </button>
             );
           })}
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-            paddingBottom: 8,
-          }}
-        >
-          {doorGroups.map(({ car }, groupIndex) => (
-            <div key={car}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginBottom: 8,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: selectedCar === car ? lineColor : C.muted,
-                    letterSpacing: "-0.2px",
-                  }}
-                >
-                  {car}호차
-                </span>
-                <span
-                  style={{
-                    flex: 1,
-                    height: 1,
-                    background: groupIndex === 0 ? "transparent" : C.border,
-                  }}
-                />
-              </div>
-              <SeekDoorCarLayout
-                car={car}
-                layout={layout}
-                lineColor={lineColor}
-                lineColorLight={lineColorLight}
-                selectedDoor={selectedDoor}
-                isSubmitting={isSubmitting}
-                onSelectDoor={setSelectedDoor}
-              />
-            </div>
-          ))}
+        <div style={{ paddingBottom: 8 }}>
+          <SubwaySeatMap
+            key={`seek-door-${activeCar}-${line}`}
+            line={line}
+            car={activeCar}
+            doorPickerMode
+            selectedDoorLabel={selectedDoor}
+            onDoorSelect={setSelectedDoor}
+          />
         </div>
       </div>
 
@@ -2855,8 +2656,8 @@ function StepSeekDoor({
           }}
         >
           {isSubmitting ? <LoadingSpinner /> : null}
-          {selectedDoor
-            ? `${selectedDoor}번 출입문 — 탑승 요청`
+          {selectedDoor && selectedCar && selectedDoorNo
+            ? `${selectedCar}호차 ${selectedDoorNo}번 출입문 — 탑승 요청`
             : "출입문을 선택해 주세요"}
         </button>
       </div>

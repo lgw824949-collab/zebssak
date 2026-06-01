@@ -21,7 +21,7 @@ interface StoredUser {
 const GPS_MAX_RADIUS_KM = 1
 const LINE7_OLIVE = '#747F00'
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
-const HOME_UI_VERSION = '2026-06-01-boarding-7-olive'
+const HOME_UI_VERSION = '2026-06-01-seek-door-map'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {

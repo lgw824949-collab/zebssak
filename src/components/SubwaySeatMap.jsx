@@ -396,6 +396,9 @@ export default function SubwaySeatMap({
   car,
   carNumber,
   interactionMode = "seek",
+  doorPickerMode = false,
+  selectedDoorLabel = null,
+  onDoorSelect,
   selectedSeatId,
   onSeatClick,
   onSeatSelect,
@@ -490,14 +493,16 @@ export default function SubwaySeatMap({
   }, [trainNo, lineNumber, carNum, direction, seatsPerSection]);
 
   useEffect(() => {
+    if (doorPickerMode) return;
     void loadAlighting();
     const timer = setInterval(() => {
       void loadAlighting();
     }, 30000);
     return () => clearInterval(timer);
-  }, [loadAlighting]);
+  }, [loadAlighting, doorPickerMode]);
 
   useEffect(() => {
+    if (doorPickerMode) return;
     const stationName = (station || "").trim().replace(/역$/, "");
     if (!stationName || incheonLine) {
       setQuickExitHint(
@@ -571,7 +576,7 @@ export default function SubwaySeatMap({
     return () => {
       active = false;
     };
-  }, [station, line, direction, drtnInfo, carNum, incheonLine]);
+  }, [station, line, direction, drtnInfo, carNum, incheonLine, doorPickerMode]);
 
   const recommendedDoor =
     quickExitHint?.type === "exit" && quickExitHint.car === carNum
@@ -620,6 +625,7 @@ export default function SubwaySeatMap({
   }, [carNum, recommendedDoor]);
 
   useLayoutEffect(() => {
+    if (doorPickerMode) return;
     updateAisleBadges();
 
     const observer = new ResizeObserver(() => {
@@ -636,7 +642,7 @@ export default function SubwaySeatMap({
       observer.disconnect();
       window.removeEventListener("resize", updateAisleBadges);
     };
-  }, [updateAisleBadges, leftSeats, rightSeats, activeCar, lineColor]);
+  }, [updateAisleBadges, leftSeats, rightSeats, activeCar, lineColor, doorPickerMode]);
 
   const renderSeatSectionColumn = (side, sectionIndex, seats, doorNo) => {
     const door = doorNo;
@@ -664,6 +670,7 @@ export default function SubwaySeatMap({
           recommended={isRecommended}
           seatLetter={columnLetter}
           onClick={() => {
+            if (doorPickerMode) return;
             if (!canSelectSeatStatus(status, interactionMode)) return;
             const api = mapSeatIdToApi(seatId, seatsPerSection);
             const info = {
@@ -704,6 +711,49 @@ export default function SubwaySeatMap({
     );
   };
 
+  const renderSideDoorRow = (doorNo) => {
+    const label = `${carNum}-${doorNo}`;
+    const isSelected = selectedDoorLabel === label;
+    return (
+      <div
+        key={`side-door-${doorNo}`}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          width: "100%",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "flex-start" }}>
+          <button
+            type="button"
+            className="zeb-touch-target"
+            onClick={() => onDoorSelect?.(label)}
+            aria-label={`${carNum}호차 ${doorNo}번 출입문`}
+            aria-pressed={isSelected}
+            style={{
+              minWidth: 40,
+              minHeight: 40,
+              padding: "6px 12px",
+              borderRadius: 8,
+              border: `1.5px solid ${isSelected ? lineColor : "#E2E8F0"}`,
+              background: isSelected ? lineColor : "#FFFFFF",
+              color: isSelected ? "#fff" : lineColor,
+              fontSize: 14,
+              fontWeight: 800,
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            문
+          </button>
+        </div>
+        <div style={{ width: 48, flexShrink: 0 }} aria-hidden />
+        <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
+      </div>
+    );
+  };
+
   /** 노약자 → 출입문1-1 → A~F → … → 출입문1-4 → 노약자 */
   const renderCarBody = () => {
     const rows = [
@@ -722,7 +772,11 @@ export default function SubwaySeatMap({
     ];
 
     rows.push(
-      <AisleDoorDivider key="door-1" label={`${carNum}-1`} lineColor={lineColor} />
+      doorPickerMode ? (
+        renderSideDoorRow(1)
+      ) : (
+        <AisleDoorDivider key="door-1" label={`${carNum}-1`} lineColor={lineColor} />
+      )
     );
 
     for (let sectionIndex = 0; sectionIndex < SECTIONS; sectionIndex += 1) {
@@ -762,17 +816,25 @@ export default function SubwaySeatMap({
 
       if (sectionIndex < SECTIONS - 1) {
         rows.push(
-          <AisleDoorDivider
-            key={`door-${sectionIndex + 2}`}
-            label={`${carNum}-${sectionIndex + 2}`}
-            lineColor={lineColor}
-          />
+          doorPickerMode ? (
+            renderSideDoorRow(sectionIndex + 2)
+          ) : (
+            <AisleDoorDivider
+              key={`door-${sectionIndex + 2}`}
+              label={`${carNum}-${sectionIndex + 2}`}
+              lineColor={lineColor}
+            />
+          )
         );
       }
     }
 
     rows.push(
-      <AisleDoorDivider key="door-4" label={`${carNum}-4`} lineColor={lineColor} />
+      doorPickerMode ? (
+        renderSideDoorRow(4)
+      ) : (
+        <AisleDoorDivider key="door-4" label={`${carNum}-4`} lineColor={lineColor} />
+      )
     );
 
     rows.push(
@@ -816,33 +878,35 @@ export default function SubwaySeatMap({
             zIndex: 0,
           }}
         />
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            zIndex: 4,
-          }}
-        >
-          {aisleBadges.map((badge) => (
-            <div
-              key={badge.label}
-              style={{
-                position: "absolute",
-                left: "50%",
-                top: badge.top,
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              <AisleSectionBadge
-                label={badge.label}
-                lineColor={lineColor}
-                highlighted={badge.highlighted}
-              />
-            </div>
-          ))}
-        </div>
+        {!doorPickerMode ? (
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 4,
+            }}
+          >
+            {aisleBadges.map((badge) => (
+              <div
+                key={badge.label}
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  top: badge.top,
+                  transform: "translate(-50%, -50%)",
+                }}
+              >
+                <AisleSectionBadge
+                  label={badge.label}
+                  lineColor={lineColor}
+                  highlighted={badge.highlighted}
+                />
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -896,7 +960,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {carAlightingCount > 0 ? (
+      {!doorPickerMode && carAlightingCount > 0 ? (
         <div
           style={{
             display: "flex",
@@ -920,7 +984,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {quickExitHint?.type === "exit" ? (
+      {!doorPickerMode && quickExitHint?.type === "exit" ? (
         <div
           style={{
             marginBottom: 8,
@@ -941,7 +1005,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {quickExitHint?.type === "info" ? (
+      {!doorPickerMode && quickExitHint?.type === "info" ? (
         <div
           style={{
             marginBottom: 8,
@@ -956,11 +1020,11 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {alightingLoadError ? (
+      {!doorPickerMode && alightingLoadError ? (
         <p style={{ fontSize: 11, color: "#94A3B8", marginBottom: 8 }}>{alightingLoadError}</p>
       ) : null}
 
-      {directionLabel ? (
+      {!doorPickerMode && directionLabel ? (
         <div
           style={{
             background: lineColor,
@@ -1001,17 +1065,31 @@ export default function SubwaySeatMap({
         <span style={{ fontSize: 11, color: "#78909C", fontWeight: 700 }}>우측 →</span>
       </div>
 
-      <p
-        style={{
-          margin: "0 0 8px",
-          fontSize: 11,
-          color: "#94A3B8",
-          textAlign: "center",
-          lineHeight: 1.4,
-        }}
-      >
-        맨 위부터 노약자 → 출입문 1-1~1-3 구역 · 좌·우 각 6석(A~F)
-      </p>
+      {!doorPickerMode ? (
+        <p
+          style={{
+            margin: "0 0 8px",
+            fontSize: 11,
+            color: "#94A3B8",
+            textAlign: "center",
+            lineHeight: 1.4,
+          }}
+        >
+          맨 위부터 노약자 → 출입문 1-1~1-3 구역 · 좌·우 각 6석(A~F)
+        </p>
+      ) : (
+        <p
+          style={{
+            margin: "0 0 8px",
+            fontSize: 11,
+            color: "#94A3B8",
+            textAlign: "center",
+            lineHeight: 1.4,
+          }}
+        >
+          좌측「문」을 눌러 지금 서 있는 출입문을 선택하세요
+        </p>
+      )}
       <div
         style={{
           background: "#FFFFFF",
@@ -1031,7 +1109,7 @@ export default function SubwaySeatMap({
         {renderCarBody()}
       </div>
 
-      {selectedSeat ? (
+      {selectedSeat && !doorPickerMode ? (
         <div
           style={{
             marginTop: 12,
@@ -1056,6 +1134,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
+      {!doorPickerMode ? (
       <div
         style={{
           display: "flex",
@@ -1088,6 +1167,7 @@ export default function SubwaySeatMap({
           </div>
         ))}
       </div>
+      ) : null}
     </div>
   );
 }
