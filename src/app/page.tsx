@@ -355,13 +355,13 @@ export default function Home() {
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col bg-[#F7F8FA]">
+    <div className="mx-auto flex h-dvh max-h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-[#F7F8FA]">
       <CongestionHaltModal
         open={showCongestionModal}
         onClose={() => setShowCongestionModal(false)}
         congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(selectedLineLabel)]}
       />
-      <main className="flex flex-1 flex-col pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] pt-5">
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pb-[max(2.75rem,env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] pt-5">
         {homeStep === 'mode' ? (
           <header className="mb-2 flex shrink-0 items-center justify-end">
             <Link
@@ -375,10 +375,10 @@ export default function Home() {
         ) : null}
 
         {homeStep === 'mode' ? (
-          <div className="flex flex-1 flex-col gap-4 pb-8 pt-1">
+          <div className="flex flex-col gap-5 pb-6 pt-1">
             <section>
               <span
-                className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-bold"
+                className="inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-[14px] font-bold"
                 style={{
                   borderColor: `${LINE7_OLIVE}33`,
                   backgroundColor: `${LINE7_OLIVE}14`,
@@ -393,10 +393,10 @@ export default function Home() {
                 서울 7호선 단독 운영 중
               </span>
 
-              <h1 className="mt-5 whitespace-pre-line text-[34px] font-extrabold leading-[1.1] tracking-tight text-[#1A1A1A]">
+              <h1 className="mt-5 whitespace-pre-line text-[42px] font-extrabold leading-[1.08] tracking-tight text-[#1A1A1A]">
                 {'빈자리,\n잽싸게'}
               </h1>
-              <p className="mt-3 whitespace-pre-line text-[15px] font-medium leading-relaxed text-[#5C6570]">
+              <p className="mt-3 whitespace-pre-line text-[17px] font-medium leading-relaxed text-[#5C6570]">
                 {'지하철 착석 P2P 매칭 서비스\n실데이터 분석 기반 최적 노선 선정'}
               </p>
 
@@ -408,7 +408,7 @@ export default function Home() {
                 ].map((item) => (
                   <li
                     key={item.step}
-                    className="flex min-w-0 flex-1 flex-col rounded-xl border px-2.5 py-2.5"
+                    className="flex min-w-0 flex-1 flex-col rounded-xl border px-3 py-3"
                     style={
                       item.active
                         ? {
@@ -419,19 +419,19 @@ export default function Home() {
                     }
                   >
                     <span
-                      className="text-[10px] font-bold uppercase tracking-wide"
+                      className="text-[14px] font-bold uppercase tracking-wide"
                       style={{ color: item.active ? LINE7_OLIVE : '#B0B5BD' }}
                     >
                       {item.step}단계
                     </span>
                     <span
-                      className="mt-1 truncate text-[12px] font-extrabold"
+                      className="mt-1 truncate text-[15px] font-extrabold"
                       style={{ color: item.active ? '#1A1A1A' : '#888888' }}
                     >
                       {item.label}
                     </span>
                     <span
-                      className="mt-0.5 text-[10px] font-semibold"
+                      className="mt-0.5 text-[14px] font-semibold"
                       style={{ color: item.active ? LINE7_OLIVE : '#B0B5BD' }}
                     >
                       {item.active ? '운영 중' : '예정'}
@@ -441,32 +441,32 @@ export default function Home() {
               </ol>
             </section>
 
-            <section className="grid grid-cols-2 gap-2.5">
-              <div className="rounded-xl border border-[#EBEBEB] bg-white p-3.5 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
-                <p className="text-[12px] font-semibold text-[#888888]">최적혼잡역</p>
-                <p className="zeb-mono mt-1 text-[22px] font-extrabold" style={{ color: LINE7_OLIVE }}>
+            <section className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
+                <p className="text-[14px] font-semibold text-[#888888]">최적혼잡역</p>
+                <p className="zeb-mono mt-1.5 text-[30px] font-extrabold leading-none" style={{ color: LINE7_OLIVE }}>
                   66개
                 </p>
-                <p className="mt-0.5 text-[11px] font-medium text-[#5C6570]">전 노선 1위</p>
+                <p className="mt-1 text-[14px] font-medium text-[#5C6570]">전 노선 1위</p>
               </div>
-              <div className="rounded-xl border border-[#EBEBEB] bg-white p-3.5 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
-                <p className="text-[12px] font-semibold text-[#888888]">평균 탑승시간</p>
-                <p className="zeb-mono mt-1 text-[22px] font-extrabold" style={{ color: LINE7_OLIVE }}>
+              <div className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
+                <p className="text-[14px] font-semibold text-[#888888]">평균 탑승시간</p>
+                <p className="zeb-mono mt-1.5 text-[30px] font-extrabold leading-none" style={{ color: LINE7_OLIVE }}>
                   30분
                 </p>
-                <p className="mt-0.5 text-[11px] font-medium text-[#5C6570]">착석 수요 최고</p>
+                <p className="mt-1 text-[14px] font-medium text-[#5C6570]">착석 수요 최고</p>
               </div>
             </section>
 
             <section className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
-              <h2 className="text-[15px] font-extrabold text-[#1A1A1A]">왜 7호선인가요?</h2>
-              <ul className="mt-3 space-y-2.5">
+              <h2 className="text-[17px] font-extrabold text-[#1A1A1A]">왜 7호선인가요?</h2>
+              <ul className="mt-3 space-y-3">
                 {[
                   '서울교통공사 실데이터 분석 결과',
                   '최적 혼잡도 역 수 전 노선 1위',
                   '장암~부평구청 최장 직선 노선',
                 ].map((text) => (
-                  <li key={text} className="flex items-start gap-2 text-[13px] font-medium leading-snug text-[#5C6570]">
+                  <li key={text} className="flex items-start gap-2.5 text-[16px] font-medium leading-snug text-[#5C6570]">
                     <span
                       className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
                       style={{ backgroundColor: LINE7_OLIVE }}
@@ -478,12 +478,12 @@ export default function Home() {
               </ul>
             </section>
 
-            <section className="mt-auto flex flex-col gap-2.5">
+            <section className="flex shrink-0 flex-col gap-3 pt-1">
               <button
                 type="button"
                 disabled={isMatchingPaused}
                 onClick={() => handleModeSelect('seek')}
-                className="zeb-touch-target flex h-14 w-full items-center justify-center rounded-xl text-[18px] font-extrabold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                className="zeb-touch-target flex h-[3.25rem] w-full items-center justify-center rounded-xl text-[19px] font-extrabold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
                 style={{
                   backgroundColor: LINE7_OLIVE,
                   boxShadow: `0 6px 18px ${LINE7_OLIVE}40`,
@@ -496,7 +496,7 @@ export default function Home() {
                 type="button"
                 disabled={isMatchingPaused}
                 onClick={() => handleModeSelect('leave')}
-                className="zeb-touch-target flex h-12 w-full items-center justify-center rounded-xl border border-[#EBEBEB] bg-white text-[15px] font-semibold text-[#1A1A1A] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                className="zeb-touch-target flex h-[3rem] w-full items-center justify-center rounded-xl border border-[#EBEBEB] bg-white text-[18px] font-semibold text-[#1A1A1A] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 내릴게요
               </button>
