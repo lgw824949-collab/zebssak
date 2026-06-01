@@ -2396,6 +2396,11 @@ function StepTrain({
   );
 }
 
+/** seek 출입문 좌석 배치도 기준 크기(600px) → 표시 크기(900px), 비율 1.5배 */
+const SEEK_DOOR_MAP_BASE_PX = 600;
+const SEEK_DOOR_MAP_DISPLAY_PX = 900;
+const SEEK_DOOR_MAP_SCALE = SEEK_DOOR_MAP_DISPLAY_PX / SEEK_DOOR_MAP_BASE_PX;
+
 // ─── Step 3 (seek): 출입문 선택 ────────────────────────────────────
 function StepSeekDoor({
   line,
@@ -2596,15 +2601,38 @@ function StepSeekDoor({
           })}
         </div>
 
-        <div style={{ paddingBottom: 8 }}>
-          <SubwaySeatMap
-            key={`seek-door-${activeCar}-${line}`}
-            line={line}
-            car={activeCar}
-            doorPickerMode
-            selectedDoorLabel={selectedDoor}
-            onDoorSelect={setSelectedDoor}
-          />
+        <div
+          style={{
+            paddingBottom: 8,
+            width: SEEK_DOOR_MAP_DISPLAY_PX,
+            maxWidth: "100%",
+            height: SEEK_DOOR_MAP_DISPLAY_PX,
+            margin: "0 auto",
+            overflow: "hidden",
+            position: "relative",
+          }}
+        >
+          <div
+            style={{
+              width: SEEK_DOOR_MAP_BASE_PX,
+              height: SEEK_DOOR_MAP_BASE_PX,
+              transform: `scale(${SEEK_DOOR_MAP_SCALE})`,
+              transformOrigin: "top center",
+              position: "absolute",
+              left: "50%",
+              top: 0,
+              marginLeft: -SEEK_DOOR_MAP_BASE_PX / 2,
+            }}
+          >
+            <SubwaySeatMap
+              key={`seek-door-${activeCar}-${line}`}
+              line={line}
+              car={activeCar}
+              doorPickerMode
+              selectedDoorLabel={selectedDoor}
+              onDoorSelect={setSelectedDoor}
+            />
+          </div>
         </div>
       </div>
 
