@@ -13,6 +13,63 @@ const SEOUL_SUBWAY_ID_BY_LINE: Record<string, string> = {
   seoul9: '1009',
 }
 
+export const SEOUL_LINE_NAME_BY_PARAM: Record<string, string> = {
+  seoul1: '1호선',
+  seoul1_incheon: '1호선',
+  seoul1_cheonan: '1호선',
+  seoul2: '2호선',
+  seoul3: '3호선',
+  seoul4: '4호선',
+  seoul5: '5호선',
+  seoul6: '6호선',
+  seoul7: '7호선',
+  seoul8: '8호선',
+  seoul9: '9호선',
+}
+
+export function resolveSeoulLineName(lineParam: string): string | null {
+  return SEOUL_LINE_NAME_BY_PARAM[lineParam] ?? null
+}
+
+/** 2호선은 내선/외선, 그 외 호선은 상행/하행 */
+export function mapSeoulDirectionLabel(updnLine: string, subwayName: string): string {
+  if (subwayName.includes('2호선')) {
+    if (updnLine === '0') return '외선'
+    if (updnLine === '1') return '내선'
+    return '방향 미상'
+  }
+  if (updnLine === '0') return '상행'
+  if (updnLine === '1') return '하행'
+  return '방향 미상'
+}
+
+export function mapPositionRowToTrainFields(
+  row: SeoulPositionRow,
+  defaultLineName: string
+): {
+  train_no: string
+  station_name: string
+  direction: string
+  direction_code: string
+  is_express: boolean
+} | null {
+  const trainNo = row.trainNo?.trim()
+  const stationName = row.statnNm?.trim()
+  if (!trainNo || !stationName) return null
+
+  const directionCode = row.updnLine?.trim() ?? ''
+  const subwayName = row.subwayNm?.trim() ?? defaultLineName
+  const directAt = row.directAt?.trim() ?? '0'
+
+  return {
+    train_no: trainNo,
+    station_name: stationName,
+    direction: mapSeoulDirectionLabel(directionCode, subwayName),
+    direction_code: directionCode,
+    is_express: directAt === '1',
+  }
+}
+
 export interface SeoulArrivalRow {
   subwayId?: string
   updnLine?: string

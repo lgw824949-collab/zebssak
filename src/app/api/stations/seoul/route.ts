@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import {
   fetchRealtimePositionRows,
   getSeoulMetroApiKey,
+  mapPositionRowToTrainFields,
   type SeoulPositionRow,
 } from '@/lib/seoul-metro'
 
@@ -66,50 +67,13 @@ function resolveSeoulLine(lineParam: string | null): {
   }
 }
 
-/** 2호선은 내선/외선, 그 외 호선은 상행/하행으로 표기 */
-function mapDirectionLabel(updnLine: string, subwayName: string): string {
-  if (subwayName.includes('2호선')) {
-    if (updnLine === '0') {
-      return '외선'
-    }
-    if (updnLine === '1') {
-      return '내선'
-    }
-    return '방향 미상'
-  }
-
-  if (updnLine === '0') {
-    return '상행'
-  }
-  if (updnLine === '1') {
-    return '하행'
-  }
-
-  return '방향 미상'
-}
-
 function mapTrainRow(
   row: SeoulPositionRow,
   defaultLineName: string
 ): SeoulTrainPosition | null {
-  const trainNo = row.trainNo?.trim()
-  const stationName = row.statnNm?.trim()
-
-  if (!trainNo || !stationName) {
-    return null
-  }
-
-  const directionCode = row.updnLine?.trim() ?? ''
-  const subwayName = row.subwayNm?.trim() ?? defaultLineName
-  const directAt = row.directAt?.trim() ?? '0'
-
-  return {
-    train_no: trainNo,
-    station_name: stationName,
-    direction: mapDirectionLabel(directionCode, subwayName),
-    direction_code: directionCode,
-    is_express: directAt === '1',
-  }
+  const mapped = mapPositionRowToTrainFields(row, defaultLineName)
+  if (!mapped) return null
+  return mapped
 }
 
 /**

@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server'
 import {
   adjustBarvlDtSeconds,
   fetchRealtimeArrivalRows,
+  fetchRealtimePositionRows,
   filterArrivalsBySubwayId,
+  mapPositionRowToTrainFields,
   normalizeSeoulTrainNo,
+  resolveSeoulLineName,
   resolveSeoulSubwayId,
   type SeoulArrivalRow,
 } from '@/lib/seoul-metro'
@@ -106,7 +109,6 @@ const SEOUL_LINE_NUM_BY_PARAM: Record<SeoulLineParam, string> = {
 }
 const PUBLIC_DATA_API_HOST = 'http://openapi.seoul.go.kr:8088'
 const STATION_ORDER_CACHE_TTL_MS = 1000 * 60 * 60 * 12
-const SEOUL_TRAINS_UPSTREAM_TIMEOUT_MS = 4500
 const stationOrderCache = new Map<
   SeoulLineParam,
   { orderedStations: readonly string[]; expiresAt: number }
@@ -536,19 +538,16 @@ function isFallbackMockTrain(train: TrainListItem): boolean {
 }
 
 async function enrichSeoulTrainsWithArrival(
-  request: Request,
   seoulLine: SeoulLineParam,
   trains: TrainListItem[],
-  currentStation: string | null
+  currentStation: string | null,
+  arrivalsPreloaded?: SeoulArrivalRow[]
 ): Promise<TrainListItem[]> {
   if (!currentStation?.trim()) return trains
 
   const stationName = currentStation.trim().replace(/역$/u, '')
   const subwayId = resolveSeoulSubwayId(seoulLine)
-  const arrivals = filterArrivalsBySubwayId(
-    await fetchRealtimeArrivalRows(request, stationName),
-    subwayId
-  )
+  const arrivals = filterArrivalsBySubwayId(arrivalsPreloaded ?? [], subwayId)
 
   if (arrivals.length === 0) return trains
 
@@ -611,52 +610,57 @@ function filterSeoul1BranchTrains(
   })
 }
 
-/** seoul1~9: 내부 /api/stations/seoul?line=seoul{N} 실시간 데이터를 열차 목록으로 변환 */
+/** seoul1~9: 실시간 위치 + 역 도착 API 병렬 조회 */
 async function fetchSeoulTrains(
   request: Request,
   seoulLine: SeoulLineParam,
   currentStation: string | null
 ): Promise<TrainListItem[]> {
-  const seoulApiUrl = new URL('/api/stations/seoul', request.url)
-  seoulApiUrl.searchParams.set('line', toBaseSeoulLine(seoulLine))
-
-  let upstreamResponse: Response
-
-  try {
-    upstreamResponse = await fetch(seoulApiUrl, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(SEOUL_TRAINS_UPSTREAM_TIMEOUT_MS),
-    })
-  } catch {
+  const lineName = resolveSeoulLineName(toBaseSeoulLine(seoulLine))
+  if (!lineName) {
     return buildSeoulFallbackTrains(seoulLine, currentStation)
   }
 
-  let payload: SeoulStationsApiResponse
-  try {
-    payload = (await upstreamResponse.json()) as SeoulStationsApiResponse
-  } catch {
-    return buildSeoulFallbackTrains(seoulLine, currentStation)
+  const stationName = currentStation?.trim().replace(/역$/u, '') ?? ''
+  const [positionRows, arrivalRows] = await Promise.all([
+    fetchRealtimePositionRows(request, lineName),
+    stationName
+      ? fetchRealtimeArrivalRows(request, stationName)
+      : Promise.resolve([] as SeoulArrivalRow[]),
+  ])
+
+  let mapped: TrainListItem[]
+  if (positionRows.length === 0) {
+    mapped = buildSeoulFallbackTrains(seoulLine, currentStation)
+  } else {
+    mapped = filterSeoul1BranchTrains(
+      positionRows
+        .map((row) => {
+          const fields = mapPositionRowToTrainFields(row, lineName)
+          if (!fields) return null
+          return mapSeoulTrain(
+            {
+              train_no: fields.train_no,
+              station_name: fields.station_name,
+              direction: fields.direction,
+              direction_code: fields.direction_code,
+              is_express: fields.is_express,
+            },
+            seoulLine,
+            currentStation
+          )
+        })
+        .filter((train): train is TrainListItem => train !== null),
+      seoulLine
+    )
   }
 
-  if (!upstreamResponse.ok || payload.success === false) {
-    return buildSeoulFallbackTrains(seoulLine, currentStation)
-  }
-
-  const rawTrains = payload.data?.trains
-  if (!Array.isArray(rawTrains) || rawTrains.length === 0) {
-    return buildSeoulFallbackTrains(seoulLine, currentStation)
-  }
-
-  const mapped = filterSeoul1BranchTrains(
-    rawTrains
-      .map((train) => mapSeoulTrain(train, seoulLine, currentStation))
-      .filter((train): train is TrainListItem => train !== null),
-    seoulLine
+  return enrichSeoulTrainsWithArrival(
+    seoulLine,
+    mapped,
+    currentStation,
+    arrivalRows
   )
-
-  return enrichSeoulTrainsWithArrival(request, seoulLine, mapped, currentStation)
 }
 
 /**
