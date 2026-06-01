@@ -111,7 +111,7 @@ export function normalizeSeoulTrainNo(trainNo: string): string {
 
 /**
  * Vercel 등에서 swopenAPI 직접 HTTP 호출이 실패할 수 있어
- * next.config rewrites 프록시(/api/_seoul-metro)를 우선 사용합니다.
+ * /api/seoul-metro 런타임 프록시를 우선 사용합니다.
  */
 export function buildSeoulMetroApiUrl(
   request: Request,
@@ -121,7 +121,7 @@ export function buildSeoulMetroApiUrl(
   if (!key) return null
 
   const normalizedPath = pathAfterKey.replace(/^\/+/, '')
-  return new URL(`/api/_seoul-metro/${normalizedPath}`, request.url).toString()
+  return new URL(`/api/seoul-metro/${normalizedPath}`, request.url).toString()
 }
 
 export function buildSeoulMetroDirectUrl(pathAfterKey: string): string | null {

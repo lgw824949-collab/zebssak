@@ -6,7 +6,7 @@ const PROXY_TIMEOUT_MS = 12000
 
 /**
  * 서울 지하철 Open API HTTP 프록시 (런타임 env 사용)
- * GET /api/_seoul-metro/json/realtimeStationArrival/0/20/간석
+ * GET /api/seoul-metro/json/realtimeStationArrival/0/20/간석
  */
 export async function GET(
   request: Request,
