@@ -1757,7 +1757,11 @@ function StepTrain({
       const now = new Date();
       const arrival = new Date(now);
       arrival.setHours(Number(match[1]), Number(match[2]), Number(match[3] ?? 0), 0);
-      const diffSeconds = Math.floor((arrival.getTime() - now.getTime()) / 1000);
+      let diffSeconds = Math.floor((arrival.getTime() - now.getTime()) / 1000);
+      if (diffSeconds < 0) {
+        arrival.setDate(arrival.getDate() + 1);
+        diffSeconds = Math.floor((arrival.getTime() - now.getTime()) / 1000);
+      }
       return diffSeconds >= 0 ? diffSeconds : null;
     };
 
@@ -1799,9 +1803,7 @@ function StepTrain({
             .eq("station_name", stationName)
             .eq("direction", travelDirectionKey)
             .eq("day_type", dayType)
-            .gte("arrival_time", currentTime)
-            .order("arrival_time", { ascending: true })
-            .limit(3);
+            .order("arrival_time", { ascending: true });
 
           if (error) {
             throw error;
@@ -1811,27 +1813,40 @@ function StepTrain({
           const directionCode = travelDirectionKey === "up" ? "0" : "1";
           const seenTrainNumbers = new Set();
 
-          mapped = (Array.isArray(data) ? data : [])
+          const upcomingRows = (Array.isArray(data) ? data : [])
             .map((row) => {
               const trainNumber = String(row?.train_number ?? "").trim();
-              if (!trainNumber || seenTrainNumbers.has(trainNumber)) {
+              const barvlDt = computeBarvlDtFromArrivalTime(row?.arrival_time);
+              if (!trainNumber || barvlDt == null) {
                 return null;
               }
-              seenTrainNumbers.add(trainNumber);
-
-              return {
-                id: trainNumber,
-                current: stationName,
-                eta: directionLabel,
-                direction: directionLabel,
-                directionCode,
-                updnLine: directionCode,
-                barvlDt: computeBarvlDtFromArrivalTime(row?.arrival_time),
-                arvlMsg2: null,
-              };
+              return { row, trainNumber, barvlDt };
             })
             .filter(Boolean)
-            .slice(0, 3);
+            .sort((a, b) => a.barvlDt - b.barvlDt);
+
+          mapped = [];
+          for (const item of upcomingRows) {
+            if (seenTrainNumbers.has(item.trainNumber)) {
+              continue;
+            }
+            seenTrainNumbers.add(item.trainNumber);
+
+            mapped.push({
+              id: item.trainNumber,
+              current: stationName,
+              eta: directionLabel,
+              direction: directionLabel,
+              directionCode,
+              updnLine: directionCode,
+              barvlDt: item.barvlDt,
+              arvlMsg2: null,
+            });
+
+            if (mapped.length >= 3) {
+              break;
+            }
+          }
 
           console.log("[StepTrain] timetable 조회 결과", {
             lineCode,
