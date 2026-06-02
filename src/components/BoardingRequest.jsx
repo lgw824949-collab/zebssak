@@ -39,6 +39,17 @@ function resolveStationCodePrefixFromLineProp(lineLabel) {
   return "s1";
 }
 
+/** 운영 중인 노선 — 1개면 노선 선택(step 0) 생략 */
+const OPERATING_LINES = [
+  {
+    key: "seoul7",
+    label: "서울 7호선",
+    color: "#747F00",
+    directions: ["장암 방면", "석남 방면"],
+  },
+];
+const IS_SINGLE_OPERATING_LINE = OPERATING_LINES.length === 1;
+
 /** 호선별 객실 레이아웃 (SubwaySeatMap LINE_CAR_LAYOUT과 동일) */
 const LINE_CAR_LAYOUT = {
   seoul1: {
@@ -198,63 +209,30 @@ function mapSeekDoorToSubmission(doorLabel, lineLabel) {
 
 const SEEK_SEAT_LETTERS = ["A", "B", "C", "D", "E", "F", "G"];
 
-/** 예: 논현방향 좌측 3-2번 G열 */
-function buildSeekCompactLine({ station, side, car, door, seatLetter }) {
-  const dest = String(station || "")
-    .trim()
-    .replace(/역$/u, "");
-  const sideLabel =
-    side === "우측" || side === "right" ? "우측" : "좌측";
-  const parts = [];
-  if (dest) parts.push(`${dest}방향`);
-  parts.push(sideLabel);
-  if (car && door) parts.push(`${car}-${door}번`);
-  if (seatLetter) parts.push(`${seatLetter}열`);
-  return parts.join(" ");
-}
-
-function buildSeekPickResultLine({ side, doorLabel, seatLetter }) {
-  const sideLabel =
-    side === "우측" || side === "right" ? "우측" : side === "좌측" || side === "left" ? "좌측" : side;
-  const doorPart = doorLabel ? String(doorLabel).replace(/번$/u, "") : "";
-  const match = doorPart.match(/^(\d+)-(\d+)$/);
-  if (match) {
-    return buildSeekCompactLine({
-      station: null,
-      side: sideLabel,
-      car: Number.parseInt(match[1], 10),
-      door: Number.parseInt(match[2], 10),
-      seatLetter,
-    }).replace(/^\s+/, "");
-  }
-  const parts = [sideLabel, doorLabel ? `${doorLabel}번` : null, seatLetter ? `${seatLetter}열` : null].filter(
-    Boolean
-  );
-  return parts.join(" ");
-}
-
 function resolveSeekSideLabel(side) {
   return side === "right" || side === "우측" ? "우측" : "좌측";
 }
 
-function buildSeekPickFromSeatInfo(seat, station, fallbackCar) {
-  const car = seat?.car ?? fallbackCar;
-  const door = seat?.door;
-  const seatLetter = seat?.seatLetter || seat?.seatColumn;
-  const side = resolveSeekSideLabel(seat?.side);
-  const doorLabel = car && door ? `${car}-${door}` : "";
-  const pickResultLine = buildSeekCompactLine({ station, side, car, door, seatLetter });
-  return { car, door, doorLabel, side, seatLetter, pickResultLine };
-}
-
-function buildSeekPlacementSummary({ station, side, doorLabel, seatLetter }) {
+function buildSeekDoneLocationLine({ station, side, car, door, seatLetter }) {
   const parts = [
-    station ? `${formatStationDisplayName(station)} 방향 기준` : null,
-    side || null,
-    doorLabel ? `${doorLabel}번` : null,
+    station ? `${formatStationDisplayName(station)} 방향` : null,
+    resolveSeekSideLabel(side),
+    car && door ? `${car}-${door}번` : null,
     seatLetter ? `${seatLetter}열` : null,
   ].filter(Boolean);
   return parts.join(" · ");
+}
+
+function buildSeekPlacementSummary({ station, side, doorLabel, seatLetter, car, door }) {
+  const parsedCar = car ?? (doorLabel?.match(/^(\d+)-/)?.[1] ? Number.parseInt(doorLabel.match(/^(\d+)-/)[1], 10) : null);
+  const parsedDoor = door ?? (doorLabel?.match(/-(\d+)$/)?.[1] ? Number.parseInt(doorLabel.match(/-(\d+)$/)[1], 10) : null);
+  return buildSeekDoneLocationLine({
+    station,
+    side,
+    car: parsedCar,
+    door: parsedDoor,
+    seatLetter,
+  });
 }
 
 function mapSeekSeatLetterToIndex(letter) {
@@ -661,6 +639,115 @@ function resolveRemainingStops(
   return Math.max(3, Math.abs(indexDelta));
 }
 
+/** seek 자동 등록용 — 현재역 기준 최우선 열차 1편 */
+async function fetchPreferredTrainForSeek({ line, station, currentStation }) {
+  const apiLine = resolveApiLineFromLineProp(line);
+  if (!apiLine) return null;
+
+  let trains = [];
+
+  if (apiLine.startsWith("incheon")) {
+    const stationName = (currentStation ?? "").trim().replace(/역$/u, "");
+    if (!stationName) return null;
+
+    const stations = await fetchStationsForLine(line);
+    let travelDirectionKey = null;
+    if (stations && station) {
+      const findIndex = (name) => {
+        const target = normalizeStationLabel(name);
+        return stations.findIndex((row) => normalizeStationLabel(row?.name) === target);
+      };
+      travelDirectionKey = resolveTravelDirectionKeyFromIndices(
+        line,
+        findIndex(currentStation),
+        findIndex(station),
+        stations.length
+      );
+    }
+    if (!travelDirectionKey) return null;
+
+    const lineCode = apiLine === "incheon2" ? "l2" : "l1";
+    const dayType = [0, 6].includes(new Date().getDay()) ? "holiday" : "weekday";
+    const params = new URLSearchParams({
+      line_code: lineCode,
+      station_name: stationName,
+      direction: travelDirectionKey,
+      day_type: dayType,
+    });
+    const response = await fetch(`/api/timetable?${params.toString()}`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok || payload?.success === false) return null;
+
+    const directionLabel = travelDirectionKey === "up" ? "상행" : "하행";
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    const first = rows.find((row) => String(row?.train_number ?? "").trim());
+    if (!first) return null;
+
+    return {
+      id: String(first.train_number).trim(),
+      current: stationName,
+      direction: directionLabel,
+      eta: directionLabel,
+    };
+  }
+
+  const params = new URLSearchParams({ line: apiLine, station: station ?? "" });
+  if (currentStation?.trim()) {
+    params.set("current_station", currentStation.trim());
+  }
+
+  const response = await fetch(`/api/trains?${params.toString()}`, { cache: "no-store" });
+  if (!response.ok) return null;
+
+  const payload = await response.json();
+  const apiTrains = Array.isArray(payload?.trains) ? payload.trains : [];
+  trains = apiTrains
+    .map((row) => ({
+      id: row?.train_no ?? "",
+      current: row?.station_name?.trim() || "",
+      direction: row?.direction?.trim() || "하행",
+      eta:
+        (typeof row?.direction_display === "string" && row.direction_display.trim()) ||
+        `${String(station || "").trim().replace(/역$/u, "")} 방면`,
+      directionCode: row?.direction_code ?? row?.updnLine ?? null,
+    }))
+    .filter((row) => row.id);
+
+  const stations = await fetchStationsForLine(line);
+  if (stations && currentStation && station) {
+    const findIndex = (name) => {
+      const target = normalizeStationLabel(name);
+      return stations.findIndex((row) => normalizeStationLabel(row?.name) === target);
+    };
+    const travelDirectionKey = resolveTravelDirectionKeyFromIndices(
+      line,
+      findIndex(currentStation),
+      findIndex(station),
+      stations.length
+    );
+    if (travelDirectionKey) {
+      const filtered = trains.filter((train) => {
+        const code = String(train.directionCode ?? "").trim();
+        const layoutKey = resolveLineLayoutKey(line);
+        let key = null;
+        if (layoutKey === "seoul2") {
+          if (code === "1") key = "up";
+          if (code === "0") key = "down";
+        } else if (code === "0") key = "up";
+        else if (code === "1") key = "down";
+        return key === travelDirectionKey;
+      });
+      if (filtered.length > 0) trains = filtered;
+    }
+  }
+
+  const boarding = normalizeStationLabel(currentStation);
+  const atBoarding = boarding
+    ? trains.filter((train) => normalizeStationLabel(train.current) === boarding)
+    : [];
+  return atBoarding[0] ?? trains[0] ?? null;
+}
+
 /** 열차 방면 표시(예: 역삼 방면) → 빠른하차 drtnInfo */
 function resolveDrtnInfoFromDirectionDisplay(directionDisplay) {
   const value = (directionDisplay || "").trim();
@@ -683,10 +770,11 @@ function normalizeLineLabel(lineLabel) {
     }
   }
 
-  return "서울 1호선";
+  return OPERATING_LINES[0]?.label ?? "서울 7호선";
 }
 
-// ─── 색상 ────────────────────────────────────────────────────────
+const SEEK_PRIORITY_SEAT_COLOR = "#cc8c33";
+const SEEK_REGULAR_SEAT_COLOR = "#8c9eb2";
 const LINE_OLIVE = "#747F00";
 const LINE_OLIVE_LIGHT = "rgba(116, 127, 0, 0.14)";
 const LINE_OLIVE_LIGHT_BG = "#EEF0E0";
@@ -734,6 +822,134 @@ function formatStationDisplayName(stationName) {
   const name = (stationName || "").trim();
   if (!name) return "";
   return name.endsWith("역") ? name : `${name}역`;
+}
+
+// ─── Step 0: 노선 선택 (운영 노선 2개 이상일 때만) ─────────────────
+function StepLineSelect({ lines, onNext, onBack }) {
+  const [selectedLineKey, setSelectedLineKey] = useState(null);
+  const [selectedDirection, setSelectedDirection] = useState(null);
+
+  const selectedLine = lines.find((row) => row.key === selectedLineKey) ?? null;
+  const directionOptions = selectedLine?.directions ?? [];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
+      <Header step={0} onBack={onBack} title="노선 선택" line="" />
+      <div style={{ flex: 1, overflow: "auto", padding: `12px ${MOBILE.pageX}px 0` }}>
+        <p style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 600, color: C.text }}>
+          어느 노선을 이용하시나요?
+        </p>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+          }}
+        >
+          {lines.map((row) => {
+            const selected = selectedLineKey === row.key;
+            return (
+              <button
+                key={row.key}
+                type="button"
+                className="zeb-touch-target"
+                onClick={() => {
+                  setSelectedLineKey(row.key);
+                  setSelectedDirection(null);
+                }}
+                style={{
+                  minHeight: MOBILE.touchMin,
+                  padding: "12px 10px",
+                  borderRadius: 12,
+                  border: `2px solid ${selected ? row.color : C.border}`,
+                  background: selected ? `${row.color}14` : C.card,
+                  color: C.text,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  textAlign: "left",
+                }}
+              >
+                {row.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedLine && directionOptions.length > 0 ? (
+          <div style={{ marginTop: 20 }}>
+            <p style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: C.text }}>
+              방향 선택
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {directionOptions.map((direction) => {
+                const selected = selectedDirection === direction;
+                return (
+                  <button
+                    key={direction}
+                    type="button"
+                    className="zeb-touch-target"
+                    onClick={() => setSelectedDirection(direction)}
+                    style={{
+                      minHeight: MOBILE.touchMin,
+                      padding: "10px 14px",
+                      borderRadius: 999,
+                      border: `1.5px solid ${selected ? selectedLine.color : C.border}`,
+                      background: selected ? selectedLine.color : C.card,
+                      color: selected ? "#fff" : C.text,
+                      fontSize: 14,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {direction}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        style={{
+          padding: `12px ${MOBILE.pageX}px max(24px, env(safe-area-inset-bottom))`,
+          background: C.card,
+          borderTop: `1px solid ${C.border}`,
+        }}
+      >
+        <button
+          type="button"
+          className="zeb-touch-target"
+          disabled={!selectedLine || (directionOptions.length > 0 && !selectedDirection)}
+          onClick={() => {
+            if (!selectedLine) return;
+            onNext({
+              lineLabel: selectedLine.label,
+              direction: selectedDirection || directionOptions[0] || "",
+            });
+          }}
+          style={{
+            width: "100%",
+            minHeight: MOBILE.touchMin,
+            borderRadius: 12,
+            border: "none",
+            background:
+              selectedLine && (directionOptions.length === 0 || selectedDirection)
+                ? LINE_OLIVE
+                : "#D1D5DB",
+            color: "#fff",
+            fontSize: 16,
+            fontWeight: 700,
+            cursor:
+              selectedLine && (directionOptions.length === 0 || selectedDirection)
+                ? "pointer"
+                : "default",
+          }}
+        >
+          다음 — 목적지 선택
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ─── 공통 컴포넌트 ────────────────────────────────────────────────
@@ -906,6 +1122,7 @@ function SubmitSkeletonOverlay() {
 function StepStation({
   line,
   mode,
+  autoAdvance = false,
   boardingStationName,
   isDetectingBoardingStation,
   needsManualBoardingStation,
@@ -1231,6 +1448,12 @@ function StepStation({
   const canProceedToTrainStep =
     Boolean(selected) && Boolean(boardingStationName) && !isDetectingBoardingStation;
 
+  function tryAutoAdvanceDestination(stationName) {
+    if (!autoAdvance || !stationName) return;
+    if (!boardingStationName || isDetectingBoardingStation) return;
+    onNext(stationName);
+  }
+
   function confirmBoardingFromKeyboard() {
     if (boardingResults.length >= 1) {
       const station = boardingResults[0];
@@ -1242,8 +1465,10 @@ function StepStation({
 
   function confirmDestinationFromKeyboard() {
     if (results.length >= 1) {
-      setSelected(results[0]);
-      setQuery(results[0]);
+      const dest = results[0];
+      setSelected(dest);
+      setQuery(dest);
+      tryAutoAdvanceDestination(dest);
     }
   }
 
@@ -1509,6 +1734,7 @@ function StepStation({
                 onClick={() => {
                   setSelected(station);
                   setQuery(station);
+                  tryAutoAdvanceDestination(station);
                 }}
                 style={{
                   width: "100%",
@@ -1629,6 +1855,7 @@ function StepStation({
         ) : null}
       </div>
 
+      {!autoAdvance ? (
       <div
         style={{
           padding: `12px ${MOBILE.pageX}px max(24px, env(safe-area-inset-bottom))`,
@@ -1658,6 +1885,7 @@ function StepStation({
           다음 — 열차 선택
         </button>
       </div>
+      ) : null}
     </div>
   );
 }
@@ -2506,66 +2734,329 @@ function StepTrain({
   );
 }
 
-// ─── Step 3 (seek): 좌석 맵에서 위치 선택 (leave와 동일 UI) ───────────
-function StepSeekDoor({
+function buildSeekSeatMapDirectionHeading(station) {
+  const dest = formatStationDisplayName(station);
+  if (dest) return `${dest} 방향 ↑`;
+  return "진행 방향 ↑";
+}
+
+function SeekSeatLegend() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 14,
+        marginBottom: 10,
+        fontSize: 11,
+        color: C.muted,
+      }}
+    >
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+        <span
+          style={{
+            width: 12,
+            height: 12,
+            borderRadius: 2,
+            background: SEEK_PRIORITY_SEAT_COLOR,
+            display: "inline-block",
+          }}
+        />
+        노약자석
+      </span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+        <span
+          style={{
+            width: 12,
+            height: 12,
+            borderRadius: 2,
+            background: SEEK_REGULAR_SEAT_COLOR,
+            display: "inline-block",
+          }}
+        />
+        일반석
+      </span>
+    </div>
+  );
+}
+
+function SeekBenchRow({ side, car, doorOrder, onSeatClick, disabled }) {
+  const items = [];
+
+  for (let i = 0; i < 3; i += 1) {
+    items.push({ kind: "priority", key: `${side}-ps-${i}` });
+  }
+
+  doorOrder.forEach((door, idx) => {
+    items.push({ kind: "door", door, key: `${side}-door-${door}` });
+    if (idx < doorOrder.length - 1) {
+      const seatDoor = doorOrder[idx];
+      SEEK_SEAT_LETTERS.forEach((letter) => {
+        items.push({
+          kind: "seat",
+          side,
+          door: seatDoor,
+          letter,
+          key: `${side}-${seatDoor}-${letter}`,
+        });
+      });
+    }
+  });
+
+  for (let i = 0; i < 3; i += 1) {
+    items.push({ kind: "priority", key: `${side}-pe-${i}` });
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 2,
+        overflowX: "auto",
+        padding: "2px 0",
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
+      {items.map((item) => {
+        if (item.kind === "priority") {
+          return (
+            <div
+              key={item.key}
+              style={{
+                width: 12,
+                height: 22,
+                borderRadius: 3,
+                background: SEEK_PRIORITY_SEAT_COLOR,
+                flexShrink: 0,
+              }}
+            />
+          );
+        }
+
+        if (item.kind === "door") {
+          return (
+            <div
+              key={item.key}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                flexShrink: 0,
+                margin: "0 2px",
+              }}
+            >
+              <div
+                style={{
+                  width: 3,
+                  height: 26,
+                  background: LINE_OLIVE,
+                  borderRadius: 2,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: LINE_OLIVE,
+                  marginTop: 2,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {car}-{item.door}
+              </span>
+            </div>
+          );
+        }
+
+        return (
+          <button
+            key={item.key}
+            type="button"
+            className="zeb-touch-target"
+            disabled={disabled}
+            onClick={(e) => {
+              if (disabled) return;
+              e.currentTarget.style.background = LINE_OLIVE;
+              onSeatClick({
+                side: item.side,
+                door: item.door,
+                seatLetter: item.letter,
+                key: item.key,
+              });
+            }}
+            style={{
+              width: 16,
+              height: 22,
+              minWidth: 16,
+              minHeight: 22,
+              borderRadius: 3,
+              border: "none",
+              background: SEEK_REGULAR_SEAT_COLOR,
+              flexShrink: 0,
+              cursor: disabled ? "default" : "pointer",
+              padding: 0,
+            }}
+            aria-label={`${item.side === "left" ? "좌측" : "우측"} ${car}-${item.door} ${item.letter}열`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function SeekCrossSectionDiagram({ car, onSeatClick, disabled }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 260,
+        borderRadius: 14,
+        border: `2px solid ${LINE_OLIVE}`,
+        background: C.card,
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ padding: "8px 6px 4px" }}>
+        <SeekBenchRow
+          side="left"
+          car={car}
+          doorOrder={[1, 2, 3, 4]}
+          onSeatClick={onSeatClick}
+          disabled={disabled}
+        />
+      </div>
+      <div
+        style={{
+          flex: "1 1 30%",
+          minHeight: "30%",
+          background: "#ECEFF3",
+          borderTop: `1px dashed ${C.border}`,
+          borderBottom: `1px dashed ${C.border}`,
+        }}
+      />
+      <div style={{ padding: "4px 6px 8px" }}>
+        <SeekBenchRow
+          side="right"
+          car={car}
+          doorOrder={[4, 3, 2, 1]}
+          onSeatClick={onSeatClick}
+          disabled={disabled}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 2 (seek): 호차 선택 ───────────────────────────────────────
+function StepSeekCar({ line, onCarPick, onBack, isLoading = false }) {
+  const carCount = resolveCarCountFromLineProp(line);
+  const carNumbers = Array.from({ length: carCount }, (_, index) => index + 1);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
+      <Header step={2} onBack={onBack} title="호차 선택" line={line} />
+      <div style={{ flex: 1, overflow: "auto", padding: `12px ${MOBILE.pageX}px 0`, position: "relative" }}>
+        {isLoading ? <SubmitSkeletonOverlay /> : null}
+        <StepDots step={2} />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+            maxWidth: 240,
+            margin: "24px auto 0",
+          }}
+        >
+          {carNumbers.map((n) => (
+            <button
+              key={n}
+              type="button"
+              className="zeb-touch-target"
+              disabled={isLoading}
+              onClick={() => onCarPick(n)}
+              style={{
+                width: "100%",
+                minHeight: 52,
+                borderRadius: 12,
+                border: `1.5px solid ${C.border}`,
+                background: C.card,
+                color: C.text,
+                fontSize: MOBILE.inputFontSize,
+                fontWeight: 700,
+                cursor: isLoading ? "default" : "pointer",
+                opacity: isLoading ? 0.55 : 1,
+              }}
+            >
+              {n}호차
+            </button>
+          ))}
+        </div>
+        {isLoading ? (
+          <p style={{ marginTop: 16, textAlign: "center", fontSize: 13, color: C.muted }}>
+            열차 정보를 불러오는 중…
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 3 (seek): 열차 단면 좌석 선택 ───────────────────────────────
+function StepSeekSeat({
   line,
   station,
-  currentStation,
-  trainId,
-  lineNumber,
-  direction,
-  drtnInfo,
+  car,
   onNext,
   onBack,
   isSubmitting = false,
 }) {
-  const carCount = resolveCarCountFromLineProp(line);
-  const carNumbers = Array.from({ length: carCount }, (_, index) => index + 1);
-  const [selectedCar, setSelectedCar] = useState(null);
-  const [selectedSeat, setSelectedSeat] = useState(null);
   const lineColor = LINE_OLIVE;
-
-  const directionBanner = station
-    ? `${String(station).trim().replace(/역$/u, "")}방향 ↑`
-    : "진행방향 ↑";
-
-  const pick = selectedSeat
-    ? buildSeekPickFromSeatInfo(selectedSeat, station, selectedCar)
-    : null;
-  const pickResultLine = pick?.pickResultLine ?? "";
-
-  useEffect(() => {
-    setSelectedCar((prev) => (prev != null && prev > carCount ? null : prev));
-    setSelectedSeat(null);
-  }, [line, carCount]);
+  const directionHeading = buildSeekSeatMapDirectionHeading(station);
 
   function handleSeatClick(seat) {
-    if (isSubmitting) return;
-    setSelectedSeat((prev) => (prev?.id === seat.id ? null : seat));
-  }
+    if (isSubmitting || !car) return;
 
-  function handleConfirm() {
-    if (!selectedSeat || isSubmitting) return;
-    const info = buildSeekPickFromSeatInfo(selectedSeat, station, selectedCar);
-    if (!info.doorLabel) return;
+    const sideLabel = seat.side === "right" ? "우측" : "좌측";
+    const doorLabel = `${car}-${seat.door}`;
+    const locationLine = buildSeekDoneLocationLine({
+      station,
+      side: sideLabel,
+      car,
+      door: seat.door,
+      seatLetter: seat.seatLetter,
+    });
+    const mapped = mapSeekSelectionToSubmission({
+      car,
+      door: seat.door,
+      doorLabel,
+      side: sideLabel,
+      seatLetter: seat.seatLetter,
+      lineLabel: line,
+    });
 
     onNext({
-      car: info.car,
-      door: info.door,
-      doorLabel: info.doorLabel,
-      side: info.side,
-      seatLetter: info.seatLetter,
-      placementSummary: info.pickResultLine,
-      pickResultLine: info.pickResultLine,
+      car,
+      door: seat.door,
+      doorLabel,
+      side: sideLabel,
+      seatLetter: seat.seatLetter,
+      placementSummary: locationLine,
+      pickResultLine: locationLine,
       seat: {
-        ...selectedSeat,
-        doorLabel: info.doorLabel,
-        car: info.car,
-        door: info.door,
-        side: info.side,
-        seatLetter: info.seatLetter,
-        placementSummary: info.pickResultLine,
-        pickResultLine: info.pickResultLine,
+        id: seat.key,
+        car,
+        door: seat.door,
+        side: sideLabel,
+        seatLetter: seat.seatLetter,
+        seatColumn: seat.seatLetter,
+        doorLabel,
+        placementSummary: locationLine,
+        pickResultLine: locationLine,
+        seatSide: mapped?.seatSide,
+        seatNumber: mapped?.seatNumber,
       },
     });
   }
@@ -2577,139 +3068,43 @@ function StepSeekDoor({
         style={{
           flex: 1,
           overflow: "auto",
-          padding: `8px ${MOBILE.pageX}px 0`,
+          padding: `8px ${MOBILE.pageX}px 16px`,
           position: "relative",
         }}
       >
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
         <StepDots step={3} />
 
-        <p
+        <SeekSeatLegend />
+
+        <div
           style={{
-            margin: "12px 0 8px",
-            fontSize: 20,
-            fontWeight: 800,
-            color: lineColor,
-            textAlign: "center",
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 12,
           }}
         >
-          {directionBanner}
-        </p>
-        <p style={{ margin: "0 0 8px", fontSize: 11, color: C.muted, textAlign: "center" }}>
-          호차 선택 후 좌석 배치도에서 자리를 눌러 주세요
-        </p>
-        {trainId ? (
-          <p style={{ margin: "0 0 12px", fontSize: 13, color: C.muted, textAlign: "center" }}>
-            열차 {trainId}
-          </p>
-        ) : null}
-
-        <div style={{ marginTop: 4 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>호차</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {carNumbers.map((n) => (
-              <button
-                key={n}
-                type="button"
-                className="zeb-touch-target"
-                disabled={isSubmitting}
-                onClick={() => {
-                  setSelectedCar(n);
-                  setSelectedSeat(null);
-                }}
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 10,
-                  border: `1.5px solid ${selectedCar === n ? lineColor : C.border}`,
-                  background: selectedCar === n ? lineColor : C.card,
-                  color: selectedCar === n ? "#fff" : C.text,
-                  fontSize: MOBILE.inputFontSize,
-                  fontWeight: 700,
-                  cursor: isSubmitting ? "default" : "pointer",
-                  opacity: isSubmitting ? 0.55 : 1,
-                }}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {selectedCar ? (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>
-              {selectedCar}호차 · 앉으신 자리를 눌러 주세요
-            </div>
-            <SubwaySeatMap
-              key={`${trainId}-${selectedCar}-seek`}
-              line={line}
-              station={station || currentStation || ""}
-              trainNo={trainId}
-              lineNumber={lineNumber}
-              direction={direction}
-              drtnInfo={drtnInfo}
-              car={selectedCar}
-              interactionMode="seek"
-              selectedSeatId={selectedSeat?.id}
-              onSeatClick={handleSeatClick}
-            />
-          </div>
-        ) : null}
-
-        {pickResultLine ? (
-          <p
+          <span style={{ fontSize: 18, fontWeight: 800, color: C.text }}>← 좌측</span>
+          <span
             style={{
-              margin: "16px 0 8px",
-              padding: "14px 16px",
-              borderRadius: 12,
-              background: LINE_OLIVE_LIGHT,
-              border: `1.5px solid ${lineColor}`,
               fontSize: 18,
               fontWeight: 800,
               color: lineColor,
               textAlign: "center",
-              lineHeight: 1.45,
+              lineHeight: 1.35,
+              wordBreak: "keep-all",
             }}
           >
-            {pickResultLine}
-          </p>
-        ) : null}
-      </div>
+            {directionHeading}
+          </span>
+          <span style={{ fontSize: 18, fontWeight: 800, color: C.text, textAlign: "right" }}>
+            우측 →
+          </span>
+        </div>
 
-      <div
-        style={{
-          padding: `12px ${MOBILE.pageX}px max(24px, env(safe-area-inset-bottom))`,
-          background: C.card,
-          borderTop: `1px solid ${C.border}`,
-        }}
-      >
-        <button
-          type="button"
-          className="zeb-touch-target"
-          onClick={handleConfirm}
-          disabled={!selectedSeat || isSubmitting}
-          aria-busy={isSubmitting || undefined}
-          style={{
-            width: "100%",
-            minHeight: MOBILE.touchMin,
-            padding: "12px 0",
-            background: selectedSeat && !isSubmitting ? lineColor : "#D1D5DB",
-            color: "#fff",
-            border: "none",
-            borderRadius: 12,
-            fontSize: 16,
-            fontWeight: 700,
-            cursor: selectedSeat && !isSubmitting ? "pointer" : "default",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-          }}
-        >
-          {isSubmitting ? <LoadingSpinner /> : null}
-          {selectedSeat ? "네, 맞아요" : "좌석을 선택해 주세요"}
-        </button>
+        <SeekCrossSectionDiagram car={car} onSeatClick={handleSeatClick} disabled={isSubmitting} />
       </div>
     </div>
   );
@@ -2829,27 +3224,22 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
   const matchedOnRegister = seat?.matched === true;
   const seekDoorLabel =
     seat?.doorLabel || (seat?.car && seat?.door ? `${seat.car}-${seat.door}` : "");
-  const seekPlacementSummary =
-    seat?.placementSummary ||
-    buildSeekPlacementSummary({
-      station,
-      side: seat?.side,
-      doorLabel: seekDoorLabel,
-      seatLetter: seat?.seatLetter,
-    });
-  const seekPickResultLine =
+  const seekDoneLocationLine =
     seat?.pickResultLine ||
-    buildSeekCompactLine({
+    buildSeekDoneLocationLine({
       station,
       side: seat?.side,
       car: seat?.car ?? car,
       door: seat?.door,
       seatLetter: seat?.seatLetter || seat?.seatColumn,
     }) ||
-    buildSeekPickResultLine({
+    buildSeekPlacementSummary({
+      station,
       side: seat?.side,
       doorLabel: seekDoorLabel,
       seatLetter: seat?.seatLetter || seat?.seatColumn,
+      car: seat?.car ?? car,
+      door: seat?.door,
     });
   const seatLabel = (() => {
     if (!car) return "";
@@ -2945,25 +3335,11 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
             </span>
             <span style={{ fontWeight: 700, color: C.text, textAlign: "right" }}>위{"\u00a0\u00a0"}치</span>
             <span style={{ color: C.text, fontWeight: 600, textAlign: "left", lineHeight: 1.45 }}>
-              {seekPickResultLine || seekPlacementSummary || (seekDoorLabel ? `${seekDoorLabel}번 출입문 앞` : "—")}
+              {seekDoneLocationLine || (seekDoorLabel ? `${seekDoorLabel}번 출입문 앞` : "—")}
             </span>
           </div>
-          {seekPickResultLine || seekPlacementSummary ? (
-            <p
-              style={{
-                fontSize: 15,
-                fontWeight: 700,
-                color: C.text,
-                margin: "0 0 12px",
-                lineHeight: 1.5,
-                maxWidth: 300,
-              }}
-            >
-              {seekPickResultLine || seekPlacementSummary}
-            </p>
-          ) : null}
           <p style={{ fontSize: 12, color: C.muted, margin: "0 0 32px", lineHeight: 1.5 }}>
-            {formatStationDisplayName(station)} 도착 전 알림
+            {formatStationDisplayName(station)} 도착 전 알림을 드릴게요
           </p>
         </>
       )}
@@ -3012,17 +3388,27 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
 }
 
 // ─── 메인 ─────────────────────────────────────────────────────────
-export default function BoardingRequest({ line = "서울 1호선 · 소요산 방면", mode = "seek" }) {
+export default function BoardingRequest({ line = "서울 7호선 · 장암 방면", mode = "seek" }) {
   const router = useRouter();
   const isLeaveMode = mode === "leave";
-  const normalizedLine = normalizeLineLabel(line);
-  const [step, setStep] = useState(1);
+  const [activeLineLabel, setActiveLineLabel] = useState(() =>
+    IS_SINGLE_OPERATING_LINE ? OPERATING_LINES[0].label : normalizeLineLabel(line)
+  );
+  const [lineDirectionSuffix, setLineDirectionSuffix] = useState(() =>
+    IS_SINGLE_OPERATING_LINE ? OPERATING_LINES[0].directions?.[0] ?? "" : ""
+  );
+  const normalizedLine = lineDirectionSuffix
+    ? `${activeLineLabel} · ${lineDirectionSuffix}`
+    : activeLineLabel;
+  const [step, setStep] = useState(() => (IS_SINGLE_OPERATING_LINE ? 1 : 0));
   const [station, setStation] = useState(null);
   const [trainId, setTrainId] = useState(null);
   const [trainDirection, setTrainDirection] = useState("하행");
   const [trainDrtnInfo, setTrainDrtnInfo] = useState("");
   const [trainCurrentStation, setTrainCurrentStation] = useState("");
   const [seatInfo, setSeatInfo] = useState(null);
+  const [seekCar, setSeekCar] = useState(null);
+  const [isSeekCarLoading, setIsSeekCarLoading] = useState(false);
   const [currentStationName, setCurrentStationName] = useState("");
   const [isDetectingBoardingStation, setIsDetectingBoardingStation] = useState(true);
   const [needsManualBoardingStation, setNeedsManualBoardingStation] = useState(false);
@@ -3033,16 +3419,39 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
 
   // URL·props(호선/모드) 변경 시 단계·열차 선택을 초기화합니다.
   useEffect(() => {
-    setStep(1);
+    if (IS_SINGLE_OPERATING_LINE) {
+      setActiveLineLabel(OPERATING_LINES[0].label);
+      setLineDirectionSuffix(OPERATING_LINES[0].directions?.[0] ?? "");
+      setStep(1);
+    } else {
+      setActiveLineLabel(normalizeLineLabel(line));
+      setLineDirectionSuffix("");
+      setStep(0);
+    }
     setStation(null);
     setTrainId(null);
     setTrainDirection("하행");
     setTrainDrtnInfo("");
     setTrainCurrentStation("");
     setSeatInfo(null);
+    setSeekCar(null);
+    setIsSeekCarLoading(false);
     setSubmitError("");
     setIsSubmitting(false);
-  }, [normalizedLine, mode]);
+  }, [line, mode]);
+
+  // 운영 노선 1개일 때 URL lineLabel을 서울 7호선으로 맞춥니다.
+  useEffect(() => {
+    if (!IS_SINGLE_OPERATING_LINE || typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const current = params.get("lineLabel")?.trim();
+    if (current === OPERATING_LINES[0].label) return;
+
+    params.set("lineLabel", OPERATING_LINES[0].label);
+    params.set("type", isLeaveMode ? "leave" : "seek");
+    router.replace(`/boarding?${params.toString()}`);
+  }, [router, isLeaveMode]);
 
   // 탑승 화면 진입 시 역 목록을 미리 받아 두어 검색·열차 단계 지연을 줄입니다.
   useEffect(() => {
@@ -3464,13 +3873,19 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
   }
 
   const reset = () => {
-    setStep(1);
+    setStep(IS_SINGLE_OPERATING_LINE ? 1 : 0);
+    if (IS_SINGLE_OPERATING_LINE) {
+      setActiveLineLabel(OPERATING_LINES[0].label);
+      setLineDirectionSuffix(OPERATING_LINES[0].directions?.[0] ?? "");
+    }
     setStation(null);
     setTrainId(null);
     setTrainDirection("하행");
     setTrainDrtnInfo("");
     setTrainCurrentStation("");
     setSeatInfo(null);
+    setSeekCar(null);
+    setIsSeekCarLoading(false);
     setSubmitError("");
     setIsSubmitting(false);
   };
@@ -3490,8 +3905,59 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     setStep(1);
   }
 
+  function handleBackFromStep1() {
+    if (IS_SINGLE_OPERATING_LINE) {
+      exitToHome();
+      return;
+    }
+    setStep(0);
+  }
+
+  function handleLineSelectComplete({ lineLabel, direction }) {
+    setActiveLineLabel(lineLabel);
+    setLineDirectionSuffix(direction || "");
+    setStep(1);
+  }
+
   function handleBackFromStep3() {
+    if (!isLeaveMode) {
+      setSeekCar(null);
+      setTrainId(null);
+    }
     setStep(2);
+  }
+
+  async function handleSeekCarPick(carNumber) {
+    if (isSeekCarLoading || isSubmitting) return;
+
+    setSubmitError("");
+    setIsSeekCarLoading(true);
+    setSeekCar(carNumber);
+
+    try {
+      const train = await fetchPreferredTrainForSeek({
+        line: normalizedLine,
+        station,
+        currentStation: currentStationName,
+      });
+
+      if (!train?.id) {
+        setSubmitError("열차 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        setSeekCar(null);
+        return;
+      }
+
+      setTrainId(train.id);
+      setTrainDirection(train.direction || "하행");
+      setTrainDrtnInfo(resolveDrtnInfoFromDirectionDisplay(train.eta));
+      setTrainCurrentStation(train.current || "");
+      setStep(3);
+    } catch {
+      setSubmitError("열차 정보를 불러오지 못했습니다.");
+      setSeekCar(null);
+    } finally {
+      setIsSeekCarLoading(false);
+    }
   }
 
   function handleTrainPick(train) {
@@ -3556,11 +4022,21 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       paddingLeft: `max(${MOBILE.pageX}px, env(safe-area-inset-left))`,
       paddingRight: `max(${MOBILE.pageX}px, env(safe-area-inset-right))`,
     }}>
+      {step === 0 && !IS_SINGLE_OPERATING_LINE ? (
+        <StepFade stepKey={`step-0-${mode}`}>
+          <StepLineSelect
+            lines={OPERATING_LINES}
+            onNext={handleLineSelectComplete}
+            onBack={exitToHome}
+          />
+        </StepFade>
+      ) : null}
       {step === 1 && (
         <StepFade stepKey={`step-1-${mode}`}>
         <StepStation
           line={normalizedLine}
           mode={mode}
+          autoAdvance={!isLeaveMode}
           boardingStationName={currentStationName}
           isDetectingBoardingStation={isDetectingBoardingStation}
           needsManualBoardingStation={needsManualBoardingStation}
@@ -3570,13 +4046,14 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
             setStation(s);
             setStep(2);
           }}
-          onBack={exitToHome}
+          onBack={handleBackFromStep1}
           onParsedModeChange={handleVoiceModeChange}
         />
         </StepFade>
       )}
       {step === 2 && (
         <StepFade stepKey={`step-2-${mode}-${station ?? ""}`}>
+        {isLeaveMode ? (
         <StepTrain
           key={`${normalizedLine}-${mode}-${station ?? ""}-${currentStationName}`}
           line={normalizedLine}
@@ -3586,6 +4063,14 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
           onTrainPick={handleTrainPick}
           onBack={handleBackFromStep2}
         />
+        ) : (
+          <StepSeekCar
+            line={normalizedLine}
+            onCarPick={(car) => void handleSeekCarPick(car)}
+            onBack={handleBackFromStep2}
+            isLoading={isSeekCarLoading}
+          />
+        )}
         </StepFade>
       )}
       {step === 3 && (
@@ -3607,15 +4092,11 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
             }}
             onBack={handleBackFromStep3}
           />
-        ) : (
-          <StepSeekDoor
+        ) : seekCar ? (
+          <StepSeekSeat
             line={normalizedLine}
             station={station}
-            currentStation={currentStationName}
-            trainId={trainId}
-            lineNumber={lineNumber}
-            direction={trainDirection}
-            drtnInfo={trainDrtnInfo}
+            car={seekCar}
             isSubmitting={isSubmitting}
             onNext={(info) => {
               setSubmitError("");
@@ -3624,7 +4105,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
             }}
             onBack={handleBackFromStep3}
           />
-        )}
+        ) : null}
         </StepFade>
       )}
       {submitError ? (
