@@ -1442,7 +1442,18 @@ function StepStation({
           </div>
         ) : null}
 
-        <div style={{ marginTop: 14 }}>
+        <div
+          style={{
+            marginTop: 14,
+            position: "relative",
+            borderRadius: 16,
+            background: lineColor,
+            padding: "16px 18px",
+            color: "#fff",
+            overflow: "hidden",
+          }}
+        >
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 600, opacity: 0.85 }}>목적지</p>
           <input
             className="zeb-field"
             ref={inputRef}
@@ -1459,13 +1470,15 @@ function StepStation({
             }}
             placeholder={searchPlaceholder}
             style={{
+              marginTop: 8,
               width: "100%",
-              padding: "14px 16px",
-              border: `1.5px solid ${query || selected ? lineColor : C.border}`,
-              borderRadius: 12,
+              padding: "12px 14px",
+              border: "none",
+              borderRadius: 10,
               fontSize: MOBILE.inputFontSize,
-              fontWeight: 500,
-              background: C.card,
+              fontWeight: 700,
+              background: "rgba(255,255,255,0.95)",
+              color: C.text,
               outline: "none",
               boxSizing: "border-box",
             }}
