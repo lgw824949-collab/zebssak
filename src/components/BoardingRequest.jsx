@@ -2592,6 +2592,17 @@ function StepSeekDoor({
         >
           지금 서 있는 위치를 눌러 주세요
         </p>
+        <p
+          style={{
+            margin: "0 0 6px",
+            fontSize: 12,
+            fontWeight: 700,
+            color: lineColor,
+            textAlign: "center",
+          }}
+        >
+          먼저 호차를 선택해 주세요
+        </p>
 
         <div
           style={{
