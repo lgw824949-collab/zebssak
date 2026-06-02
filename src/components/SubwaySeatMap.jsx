@@ -632,6 +632,70 @@ export default function SubwaySeatMap({
     );
   };
 
+  /**
+   * 하차 모드: 가운데 섹션(1-1/1-2/1-3) 클릭 시
+   * 해당 구역 C열을 자동 선택해 하단 선택 텍스트와 연결
+   */
+  const handleCenterSectionPick = (doorNo) => {
+    if (interactionMode !== "leave" || doorPickerMode) return;
+    const sectionIndex = Math.max(0, doorNo - 1);
+    const visualRank = 2; // C열
+    const seatInSection = regularSeatIndexOrder[visualRank];
+    const side = selectedSeat?.side === "right" ? "right" : "left";
+    const seats = side === "right" ? rightSeats : leftSeats;
+    const idx = sectionIndex * seatsPerSection + seatInSection;
+    const status = seats[idx] || "empty";
+    if (!canSelectSeatStatus(status, interactionMode)) return;
+
+    const seatId = `${side}-d${doorNo}-s${seatInSection}`;
+    const columnLetter = getSeatColumnLetter(visualRank);
+    const api = mapSeatIdToApi(seatId, seatsPerSection);
+    const info = {
+      id: seatId,
+      car: carNum,
+      door: doorNo,
+      side,
+      status,
+      seatSide: api?.seatSide,
+      seatNumber: api?.seatNumber,
+      seatColumn: columnLetter,
+      seatLetter: columnLetter,
+      seatLabel: formatSelectedSeatLabel(carNum, doorNo, columnLetter, side),
+    };
+    setSelectedSeat(info);
+    onSeatClick?.(info);
+    onSeatSelect?.(info);
+  };
+
+  const renderCenterSectionMarker = (doorNo) => (
+    <button
+      type="button"
+      onClick={() => handleCenterSectionPick(doorNo)}
+      aria-label={`${carNum}호차 ${doorNo}번 섹션 선택`}
+      style={{
+        fontSize: AISLE_SECTION_BADGE_FONT_SIZE,
+        fontWeight: 800,
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontVariantNumeric: "tabular-nums",
+        color: lineColor,
+        background: "#FFFFFF",
+        padding: "5px 8px",
+        borderRadius: 6,
+        border: `2px solid ${lineColor}`,
+        lineHeight: 1.1,
+        boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
+        whiteSpace: "nowrap",
+        textAlign: "center",
+        display: "inline-block",
+        boxSizing: "border-box",
+        cursor: interactionMode === "leave" ? "pointer" : "default",
+      }}
+      disabled={interactionMode !== "leave"}
+    >
+      {`${carNum}-${doorNo}`}
+    </button>
+  );
+
   const sideColumnStyle = useCallback(
     () => ({
       width: SIDE_COLUMN_WIDTH,
@@ -648,10 +712,32 @@ export default function SubwaySeatMap({
   );
 
   /** 좌·우 끝 | 통로 | 좌·우 끝 */
-  const renderBenchRow = ({ key, leftEntrance = null, leftSeat = null, rightSeat = null, rightEntrance = null, marginBottom = 4 }) => (
+  const renderBenchRow = ({
+    key,
+    leftEntrance = null,
+    leftSeat = null,
+    rightSeat = null,
+    rightEntrance = null,
+    centerMarker = null,
+    marginBottom = 4,
+  }) => (
     <div key={key} style={{ ...carRowStyle, marginBottom }}>
       <div style={sideColumnStyle()}>{leftEntrance || leftSeat}</div>
-      {renderFlexAisleSpacer()}
+      {centerMarker ? (
+        <div
+          style={{
+            flex: 1,
+            minWidth: AISLE_GAP,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          {centerMarker}
+        </div>
+      ) : (
+        renderFlexAisleSpacer()
+      )}
       <div style={sideColumnStyle()}>{rightEntrance || rightSeat}</div>
     </div>
   );
@@ -670,11 +756,13 @@ export default function SubwaySeatMap({
 
     for (let visualRank = 0; visualRank < REGULAR_SEATS_PER_SIDE; visualRank += 1) {
       const seatInSection = regularSeatIndexOrder[visualRank];
+      const isCenterMarkerRow = interactionMode === "leave" && visualRank === 2;
       rows.push(
         renderBenchRow({
           key: `sec-${sectionIndex}-rank-${visualRank}`,
           leftSeat: renderSeatAt("left", sectionIndex, leftSeats, doorNo, visualRank, seatInSection),
           rightSeat: renderSeatAt("right", sectionIndex, rightSeats, doorNo, visualRank, seatInSection),
+          centerMarker: isCenterMarkerRow ? renderCenterSectionMarker(doorNo) : null,
         })
       );
     }
