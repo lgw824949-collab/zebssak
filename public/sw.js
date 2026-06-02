@@ -1,4 +1,4 @@
-const SW_VERSION = '2026-06-01-seek-flow-v3'
+const SW_VERSION = '2026-06-01-seek-flow-v4'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting())

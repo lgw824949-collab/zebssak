@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import SubwaySeatMap, { mapSeatIdToApi } from "@/components/SubwaySeatMap";
 import { handleUnauthorizedResponse } from "@/lib/auth-client";
@@ -233,6 +233,16 @@ function buildSeekPlacementSummary({ station, side, doorLabel, seatLetter, car, 
     door: parsedDoor,
     seatLetter,
   });
+}
+
+function buildSeekPickFromSeatInfo(seat, station, fallbackCar) {
+  const car = seat?.car ?? fallbackCar;
+  const door = seat?.door;
+  const seatLetter = seat?.seatLetter || seat?.seatColumn;
+  const side = resolveSeekSideLabel(seat?.side);
+  const doorLabel = car && door ? `${car}-${door}` : "";
+  const pickResultLine = buildSeekDoneLocationLine({ station, side, car, door, seatLetter });
+  return { car, door, doorLabel, side, seatLetter, pickResultLine };
 }
 
 function mapSeekSeatLetterToIndex(letter) {
@@ -773,8 +783,6 @@ function normalizeLineLabel(lineLabel) {
   return OPERATING_LINES[0]?.label ?? "서울 7호선";
 }
 
-const SEEK_PRIORITY_SEAT_COLOR = "#cc8c33";
-const SEEK_REGULAR_SEAT_COLOR = "#8c9eb2";
 const LINE_OLIVE = "#747F00";
 const LINE_OLIVE_LIGHT = "rgba(116, 127, 0, 0.14)";
 const LINE_OLIVE_LIGHT_BG = "#EEF0E0";
@@ -2740,214 +2748,38 @@ function buildSeekSeatMapDirectionHeading(station) {
   return "진행 방향 ↑";
 }
 
-function SeekSeatLegend() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 14,
-        marginBottom: 10,
-        fontSize: 11,
-        color: C.muted,
-      }}
-    >
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-        <span
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: 2,
-            background: SEEK_PRIORITY_SEAT_COLOR,
-            display: "inline-block",
-          }}
-        />
-        노약자석
-      </span>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-        <span
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: 2,
-            background: SEEK_REGULAR_SEAT_COLOR,
-            display: "inline-block",
-          }}
-        />
-        일반석
-      </span>
-    </div>
-  );
-}
+/** SubwaySeatMap 내부 안내 문구 숨김 — seek 상단 3줄 헤더만 사용 */
+function hideSubwaySeatMapIntroChrome(container) {
+  const root = container?.firstElementChild;
+  if (!root) return;
 
-function SeekBenchRow({ side, car, doorOrder, onSeatClick, disabled }) {
-  const items = [];
+  let passedCarBody = false;
+  for (const child of root.children) {
+    const style = child.getAttribute("style") || "";
+    const isCarBody =
+      (style.includes("borderRadius: 14") || style.includes("border-radius: 14")) &&
+      style.includes("2px solid");
 
-  for (let i = 0; i < 3; i += 1) {
-    items.push({ kind: "priority", key: `${side}-ps-${i}` });
-  }
-
-  doorOrder.forEach((door, idx) => {
-    items.push({ kind: "door", door, key: `${side}-door-${door}` });
-    if (idx < doorOrder.length - 1) {
-      const seatDoor = doorOrder[idx];
-      SEEK_SEAT_LETTERS.forEach((letter) => {
-        items.push({
-          kind: "seat",
-          side,
-          door: seatDoor,
-          letter,
-          key: `${side}-${seatDoor}-${letter}`,
-        });
-      });
+    if (isCarBody) {
+      passedCarBody = true;
+      continue;
     }
-  });
 
-  for (let i = 0; i < 3; i += 1) {
-    items.push({ kind: "priority", key: `${side}-pe-${i}` });
+    if (!passedCarBody) {
+      child.style.display = "none";
+      continue;
+    }
+
+    const label = child.textContent || "";
+    if (
+      label.includes("노약자석") ||
+      label.includes("빈 자리") ||
+      label.includes("곧 하차") ||
+      label.includes("선택한")
+    ) {
+      child.style.display = "none";
+    }
   }
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 2,
-        overflowX: "auto",
-        padding: "2px 0",
-        WebkitOverflowScrolling: "touch",
-      }}
-    >
-      {items.map((item) => {
-        if (item.kind === "priority") {
-          return (
-            <div
-              key={item.key}
-              style={{
-                width: 12,
-                height: 22,
-                borderRadius: 3,
-                background: SEEK_PRIORITY_SEAT_COLOR,
-                flexShrink: 0,
-              }}
-            />
-          );
-        }
-
-        if (item.kind === "door") {
-          return (
-            <div
-              key={item.key}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                flexShrink: 0,
-                margin: "0 2px",
-              }}
-            >
-              <div
-                style={{
-                  width: 3,
-                  height: 26,
-                  background: LINE_OLIVE,
-                  borderRadius: 2,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 700,
-                  color: LINE_OLIVE,
-                  marginTop: 2,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {car}-{item.door}
-              </span>
-            </div>
-          );
-        }
-
-        return (
-          <button
-            key={item.key}
-            type="button"
-            className="zeb-touch-target"
-            disabled={disabled}
-            onClick={(e) => {
-              if (disabled) return;
-              e.currentTarget.style.background = LINE_OLIVE;
-              onSeatClick({
-                side: item.side,
-                door: item.door,
-                seatLetter: item.letter,
-                key: item.key,
-              });
-            }}
-            style={{
-              width: 16,
-              height: 22,
-              minWidth: 16,
-              minHeight: 22,
-              borderRadius: 3,
-              border: "none",
-              background: SEEK_REGULAR_SEAT_COLOR,
-              flexShrink: 0,
-              cursor: disabled ? "default" : "pointer",
-              padding: 0,
-            }}
-            aria-label={`${item.side === "left" ? "좌측" : "우측"} ${car}-${item.door} ${item.letter}열`}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function SeekCrossSectionDiagram({ car, onSeatClick, disabled }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 260,
-        borderRadius: 14,
-        border: `2px solid ${LINE_OLIVE}`,
-        background: C.card,
-        overflow: "hidden",
-      }}
-    >
-      <div style={{ padding: "8px 6px 4px" }}>
-        <SeekBenchRow
-          side="left"
-          car={car}
-          doorOrder={[1, 2, 3, 4]}
-          onSeatClick={onSeatClick}
-          disabled={disabled}
-        />
-      </div>
-      <div
-        style={{
-          flex: "1 1 30%",
-          minHeight: "30%",
-          background: "#ECEFF3",
-          borderTop: `1px dashed ${C.border}`,
-          borderBottom: `1px dashed ${C.border}`,
-        }}
-      />
-      <div style={{ padding: "4px 6px 8px" }}>
-        <SeekBenchRow
-          side="right"
-          car={car}
-          doorOrder={[4, 3, 2, 1]}
-          onSeatClick={onSeatClick}
-          disabled={disabled}
-        />
-      </div>
-    </div>
-  );
 }
 
 // ─── Step 2 (seek): 호차 선택 ───────────────────────────────────────
@@ -3004,60 +2836,58 @@ function StepSeekCar({ line, onCarPick, onBack, isLoading = false }) {
   );
 }
 
-// ─── Step 3 (seek): 열차 단면 좌석 선택 ───────────────────────────────
+// ─── Step 3 (seek): SubwaySeatMap 좌석 선택 ───────────────────────────
 function StepSeekSeat({
   line,
   station,
+  currentStation,
+  trainId,
+  lineNumber,
+  direction,
+  drtnInfo,
   car,
   onNext,
   onBack,
   isSubmitting = false,
 }) {
+  const [selectedSeat, setSelectedSeat] = useState(null);
+  const mapShellRef = useRef(null);
   const lineColor = LINE_OLIVE;
   const directionHeading = buildSeekSeatMapDirectionHeading(station);
+
+  useLayoutEffect(() => {
+    if (!car || !mapShellRef.current) return;
+    hideSubwaySeatMapIntroChrome(mapShellRef.current);
+  }, [car, selectedSeat, trainId, station, direction, drtnInfo, lineNumber]);
 
   function handleSeatClick(seat) {
     if (isSubmitting || !car) return;
 
-    const sideLabel = seat.side === "right" ? "우측" : "좌측";
-    const doorLabel = `${car}-${seat.door}`;
-    const locationLine = buildSeekDoneLocationLine({
-      station,
-      side: sideLabel,
-      car,
-      door: seat.door,
-      seatLetter: seat.seatLetter,
-    });
-    const mapped = mapSeekSelectionToSubmission({
-      car,
-      door: seat.door,
-      doorLabel,
-      side: sideLabel,
-      seatLetter: seat.seatLetter,
-      lineLabel: line,
-    });
+    setSelectedSeat(seat);
 
-    onNext({
-      car,
-      door: seat.door,
-      doorLabel,
-      side: sideLabel,
-      seatLetter: seat.seatLetter,
-      placementSummary: locationLine,
-      pickResultLine: locationLine,
-      seat: {
-        id: seat.key,
-        car,
-        door: seat.door,
-        side: sideLabel,
-        seatLetter: seat.seatLetter,
-        seatColumn: seat.seatLetter,
-        doorLabel,
-        placementSummary: locationLine,
-        pickResultLine: locationLine,
-        seatSide: mapped?.seatSide,
-        seatNumber: mapped?.seatNumber,
-      },
+    window.requestAnimationFrame(() => {
+      const info = buildSeekPickFromSeatInfo(seat, station, car);
+      if (!info.doorLabel) return;
+
+      onNext({
+        car: info.car,
+        door: info.door,
+        doorLabel: info.doorLabel,
+        side: info.side,
+        seatLetter: info.seatLetter,
+        placementSummary: info.pickResultLine,
+        pickResultLine: info.pickResultLine,
+        seat: {
+          ...seat,
+          doorLabel: info.doorLabel,
+          car: info.car,
+          door: info.door,
+          side: info.side,
+          seatLetter: info.seatLetter,
+          placementSummary: info.pickResultLine,
+          pickResultLine: info.pickResultLine,
+        },
+      });
     });
   }
 
@@ -3075,8 +2905,6 @@ function StepSeekSeat({
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
         <StepDots step={3} />
 
-        <SeekSeatLegend />
-
         <div
           style={{
             display: "grid",
@@ -3084,6 +2912,7 @@ function StepSeekSeat({
             alignItems: "center",
             gap: 8,
             marginBottom: 12,
+            marginTop: 8,
           }}
         >
           <span style={{ fontSize: 18, fontWeight: 800, color: C.text }}>← 좌측</span>
@@ -3104,7 +2933,21 @@ function StepSeekSeat({
           </span>
         </div>
 
-        <SeekCrossSectionDiagram car={car} onSeatClick={handleSeatClick} disabled={isSubmitting} />
+        <div ref={mapShellRef} className="zeb-seek-seat-map-shell">
+          <SubwaySeatMap
+            key={`${trainId}-${car}-seek`}
+            line={line}
+            station={station || currentStation || ""}
+            trainNo={trainId}
+            lineNumber={lineNumber}
+            direction={direction}
+            drtnInfo={drtnInfo}
+            car={car}
+            interactionMode="seek"
+            selectedSeatId={selectedSeat?.id}
+            onSeatClick={handleSeatClick}
+          />
+        </div>
       </div>
     </div>
   );
@@ -4022,7 +3865,8 @@ export default function BoardingRequest({ line = "서울 7호선 · 장암 방�
       paddingLeft: `max(${MOBILE.pageX}px, env(safe-area-inset-left))`,
       paddingRight: `max(${MOBILE.pageX}px, env(safe-area-inset-right))`,
     }}>
-      {step === 0 && !IS_SINGLE_OPERATING_LINE ? (
+      {/* 운영 노선 1개(서울 7호선): LineSelect(step 0) 생략 — IS_SINGLE_OPERATING_LINE 시 step 1부터 */}
+      {/* {step === 0 && !IS_SINGLE_OPERATING_LINE ? (
         <StepFade stepKey={`step-0-${mode}`}>
           <StepLineSelect
             lines={OPERATING_LINES}
@@ -4030,7 +3874,7 @@ export default function BoardingRequest({ line = "서울 7호선 · 장암 방�
             onBack={exitToHome}
           />
         </StepFade>
-      ) : null}
+      ) : null} */}
       {step === 1 && (
         <StepFade stepKey={`step-1-${mode}`}>
         <StepStation
@@ -4096,6 +3940,11 @@ export default function BoardingRequest({ line = "서울 7호선 · 장암 방�
           <StepSeekSeat
             line={normalizedLine}
             station={station}
+            currentStation={currentStationName}
+            trainId={trainId}
+            lineNumber={lineNumber}
+            direction={trainDirection}
+            drtnInfo={trainDrtnInfo}
             car={seekCar}
             isSubmitting={isSubmitting}
             onNext={(info) => {
