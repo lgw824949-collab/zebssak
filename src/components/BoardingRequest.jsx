@@ -757,22 +757,6 @@ function Header({ step, onBack, title, line }) {
   );
 }
 
-function StepDots({ step }) {
-  return (
-    <div style={{ display: "flex", gap: 6, justifyContent: "center", padding: "12px 0 0" }}>
-      {[1, 2, 3].map(i => (
-        <div key={i} style={{
-          width: i === step ? 20 : 6,
-          height: 6,
-          borderRadius: 3,
-          background: i === step ? C.primary : C.border,
-          transition: "width 0.2s",
-        }} />
-      ))}
-    </div>
-  );
-}
-
 function LoadingSpinner({ size = 18, color = "#fff" }) {
   return (
     <span
@@ -2804,20 +2788,19 @@ function StepSeat({
   const requireSeatOnLeave = isSeoulLine;
   const carCount = resolveCarCountFromLineProp(line);
   const carNumbers = Array.from({ length: carCount }, (_, index) => index + 1);
-  const [selectedCar, setSelectedCar] = useState(null);
+  const [selectedCar, setSelectedCar] = useState(carNumbers[0] ?? 1);
   const [selectedSeat, setSelectedSeat] = useState(null);
 
   useEffect(() => {
-    setSelectedCar((prev) => (prev != null && prev > carCount ? null : prev));
+    setSelectedCar((prev) => (prev != null && prev <= carCount ? prev : carNumbers[0] ?? 1));
     setSelectedSeat(null);
-  }, [line, carCount]);
+  }, [line, carCount, carNumbers]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
       <Header step={3} onBack={onBack} title="호차 · 좌석 선택" line={line} />
       <div style={{ flex: 1, overflow: "auto", padding: "16px 16px 0", position: "relative" }}>
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
-        <StepDots step={3} />
 
         <div style={{ marginTop: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>호차 선택</div>

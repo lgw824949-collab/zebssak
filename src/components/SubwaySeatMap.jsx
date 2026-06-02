@@ -416,6 +416,8 @@ export default function SubwaySeatMap({
   const showCarTabs = totalCars > 1 && controlledCar == null;
   /** BoardingRequest Step 3 — 맵만, 중복 안내·노약자석 제외 */
   const seekEmbedMode = interactionMode === "seek" && controlledCar != null;
+  /** 하차 등록 내장 모드 — 좌/우 텍스트 라벨 최소화 */
+  const leaveEmbedMode = interactionMode === "leave" && controlledCar != null;
   const incheonLine = isIncheonLine(line);
 
   const loadAlighting = useCallback(async () => {
@@ -743,9 +745,9 @@ export default function SubwaySeatMap({
 
     const sideLabelsRow = (
       <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: seekEmbedMode ? 6 : 4 }} aria-hidden>
-        <span style={sideLabelStyle}>← 좌측</span>
+        <span style={sideLabelStyle}>{leaveEmbedMode ? "" : "← 좌측"}</span>
         {renderFlexAisleSpacer()}
-        <span style={sideLabelStyle}>우측 →</span>
+        <span style={sideLabelStyle}>{leaveEmbedMode ? "" : "우측 →"}</span>
       </div>
     );
 
