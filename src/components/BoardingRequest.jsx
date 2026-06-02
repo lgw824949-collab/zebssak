@@ -2821,7 +2821,13 @@ function StepSeat({
 
         <div style={{ marginTop: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>호차 선택</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: 8,
+            }}
+          >
             {carNumbers.map((n) => (
               <button
                 key={n}
@@ -2833,20 +2839,21 @@ function StepSeat({
                   setSelectedSeat(null);
                 }}
                 style={{
-                  width: 44,
-                  height: 44,
+                  width: "100%",
+                  minHeight: 44,
+                  padding: "0 8px",
                   borderRadius: 10,
                   border: `1.5px solid ${selectedCar === n ? C.primary : C.border}`,
                   background: selectedCar === n ? C.primary : C.card,
                   color: selectedCar === n ? "#fff" : C.text,
-                  fontSize: MOBILE.inputFontSize,
+                  fontSize: 14,
                   fontWeight: 700,
                   cursor: isSubmitting ? "default" : "pointer",
                   transition: "all 0.15s",
                   opacity: isSubmitting ? 0.55 : 1,
                 }}
               >
-                {n}
+                {n}호차
               </button>
             ))}
           </div>
