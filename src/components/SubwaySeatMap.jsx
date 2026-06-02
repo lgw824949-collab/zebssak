@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatExitDoorDisplayLabel } from "@/lib/match-display";
 
 /** LineSelect.jsx 노선색과 동일 */
 const LINE_COLORS = {
@@ -124,14 +125,11 @@ function getSeatColumnLetter(visualRankFromTop) {
   return SIDE_SEAT_LETTERS[visualRankFromTop] ?? null;
 }
 
-/** 출입문 표시 라벨 — 예: 출1-1 (API·선택 키는 car-door 숫자만) */
-export function formatExitDoorDisplayLabel(carNum, doorNo) {
-  return `출${carNum}-${doorNo}`;
-}
+export { formatExitDoorDisplayLabel } from "@/lib/match-display";
 
-/** 입구 행 배지 — 노약자석↔A열 사이 (출1-1 대신 1-1 형식) */
+/** 입구 행 배지 — 노약자석↔A열 사이 */
 function formatEntranceRowLabel(carNum, doorNo) {
-  return `${carNum}-${doorNo}`;
+  return formatExitDoorDisplayLabel(carNum, doorNo);
 }
 
 /** 출1-1 또는 1-1 → { car, door, doorLabel } */
@@ -140,14 +138,14 @@ export function parseDoorLabelKey(label) {
   if (!match) return null;
   const car = Number.parseInt(match[1], 10);
   const door = Number.parseInt(match[2], 10);
-  return { car, door, doorLabel: `${car}-${door}` };
+  return { car, door, doorLabel: formatExitDoorDisplayLabel(car, door) };
 }
 
 /** 선택 좌석 표기 — 예: 1-1 · C열 · 좌측 */
 function formatSelectedSeatLabel(car, door, columnLetter, side) {
   const sideLabel = side === "left" ? "좌측" : "우측";
   const col = columnLetter ? `${columnLetter}열` : "열 미지정";
-  return `${car}-${door} · ${col} · ${sideLabel}`;
+  return `${formatExitDoorDisplayLabel(car, door)} · ${col} · ${sideLabel}`;
 }
 
 /** UI 방향 → 빠른하차 upbdnbSe (내선→상행, 외선→하행) */
@@ -688,7 +686,7 @@ export default function SubwaySeatMap({
     });
 
   const renderSideDoorRow = (doorNo) => {
-    const label = `${carNum}-${doorNo}`;
+    const label = formatExitDoorDisplayLabel(carNum, doorNo);
     const isSelected = selectedDoorLabel === label;
     return (
       <div key={`side-door-${doorNo}`} style={carRowStyle}>
@@ -897,7 +895,8 @@ export default function SubwaySeatMap({
         >
           <strong>{station}</strong> 하차 · 빠른하차{" "}
           <strong>
-            {quickExitHint.doorNo ?? `${quickExitHint.car}-${quickExitHint.door}`}
+            {quickExitHint.doorNo ??
+              formatExitDoorDisplayLabel(quickExitHint.car, quickExitHint.door)}
           </strong>
           {quickExitHint.platform ? ` · 승강장 ${quickExitHint.platform}` : ""}
         </div>

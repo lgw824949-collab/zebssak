@@ -74,7 +74,7 @@ function buildRequestSummary(row: MatchRequestDetailRow) {
 
   const carDoorShort =
     doorNumber != null && Number.isInteger(carNumber) && carNumber >= 1
-      ? `${carNumber}-${doorNumber}`
+      ? `출${carNumber}-${doorNumber}`
       : null
 
   return {

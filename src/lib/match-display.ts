@@ -28,7 +28,12 @@ export function doorNumberFromApiSeat(
   return door >= 1 && door <= 4 ? door : null
 }
 
-/** 앱 전체와 동일한 칸-문 표기 (예: 3-1) */
+/** 출입문 표시 — 예: 출1-1 */
+export function formatExitDoorDisplayLabel(carNum: number, doorNo: number): string {
+  return `출${carNum}-${doorNo}`
+}
+
+/** 앱 전체와 동일한 칸-문 표기 (예: 출3-1번 문 옆) */
 export function formatCarDoorPosition(
   carNumber: number,
   seatSide: 'A' | 'B',
@@ -38,7 +43,7 @@ export function formatCarDoorPosition(
   const door = doorNumberFromApiSeat(seatNumber, seatsPerSection)
   if (door == null || !Number.isInteger(carNumber) || carNumber < 1) return null
   const sideLabel = seatSide === 'A' ? 'A측' : 'B측'
-  return `${carNumber}-${door}번 문 옆 (${sideLabel})`
+  return `${formatExitDoorDisplayLabel(carNumber, door)}번 문 옆 (${sideLabel})`
 }
 
 export function formatStationDisplayName(name: string | null | undefined): string {

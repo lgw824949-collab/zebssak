@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import SubwaySeatMap, { mapSeatIdToApi } from "@/components/SubwaySeatMap";
+import { formatExitDoorDisplayLabel } from "@/lib/match-display";
 import { handleUnauthorizedResponse } from "@/lib/auth-client";
 import { normalizeDirectionForStorage } from "@/lib/match-direction";
 
@@ -190,7 +191,7 @@ function mapSeekDoorToSubmission(doorLabel, lineLabel) {
   return {
     car,
     door,
-    doorLabel,
+    doorLabel: formatExitDoorDisplayLabel(car, door),
     seatSide: seatApi.seatSide,
     seatNumber: seatApi.seatNumber,
   };
@@ -206,7 +207,7 @@ function buildSeekPickResultLine({ station, side, car, door, seatLetter }) {
   const parts = [
     station ? `${formatStationDisplayName(station)} 방향` : null,
     resolveSeekSideLabel(side),
-    car && door ? `${car}-${door}` : null,
+    car && door ? formatExitDoorDisplayLabel(car, door) : null,
     seatLetter ? `${seatLetter}열` : null,
   ].filter(Boolean);
   return parts.join(" · ");
@@ -217,7 +218,7 @@ function buildSeekPickFromSeatInfo(seat, station, fallbackCar) {
   const door = seat?.door;
   const seatLetter = seat?.seatLetter || seat?.seatColumn;
   const side = resolveSeekSideLabel(seat?.side);
-  const doorLabel = car && door ? `${car}-${door}` : "";
+  const doorLabel = car && door ? formatExitDoorDisplayLabel(car, door) : "";
   const pickResultLine = buildSeekPickResultLine({ station, side, car, door, seatLetter });
   return { car, door, doorLabel, side, seatLetter, pickResultLine };
 }
@@ -250,7 +251,7 @@ function mapSeekSelectionToSubmission({ car, door, doorLabel, side, seatLetter, 
   return {
     car,
     door,
-    doorLabel: doorLabel || `${car}-${door}`,
+    doorLabel: doorLabel || formatExitDoorDisplayLabel(car, door),
     seatSide: seatApi.seatSide,
     seatNumber: seatApi.seatNumber,
   };
@@ -2874,10 +2875,11 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
   const isLeaveMode = mode === "leave";
   const matchedOnRegister = seat?.matched === true;
   const seekDoorLabel =
-    seat?.doorLabel || (seat?.car && seat?.door ? `${seat.car}-${seat.door}` : "");
+    seat?.doorLabel ||
+    (seat?.car && seat?.door ? formatExitDoorDisplayLabel(seat.car, seat.door) : "");
   const seatLabel =
     seat?.car && seat?.door
-      ? ` · ${seat.car}-${seat.door}번 문 옆`
+      ? ` · ${formatExitDoorDisplayLabel(seat.car, seat.door)}번 문 옆`
       : "";
   const lineColor = LINE_OLIVE;
   const lineDisplayName = (() => {

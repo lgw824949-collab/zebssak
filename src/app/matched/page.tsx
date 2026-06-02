@@ -153,12 +153,12 @@ function seatSideToTravelSideLabel(seatSide: 'A' | 'B' | null | undefined): stri
 function formatSeatPositionKorean(guide: RequestSummary): string {
   const sideLabel = seatSideToTravelSideLabel(guide.seat_side)
   const carNumber = guide.car_number
-  const doorPart = guide.car_door_short?.includes('-')
-    ? guide.car_door_short.split('-')[1]
-    : null
+  const doorMatch = guide.car_door_short?.match(/^출?(\d+)-(\d+)$/)
+  const doorPart = doorMatch?.[2] ?? null
+  const carFromShort = doorMatch?.[1] ? Number.parseInt(doorMatch[1], 10) : carNumber
 
-  if (carNumber != null && doorPart && sideLabel) {
-    return `${carNumber}-${doorPart}번 문 옆 (${sideLabel})`
+  if (carFromShort != null && doorPart && sideLabel) {
+    return `출${carFromShort}-${doorPart}번 문 옆 (${sideLabel})`
   }
 
   const fallback = (guide.seat_position_label ?? '').trim()
