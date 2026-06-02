@@ -24,6 +24,8 @@ const ALIGHTING_BG_ALPHA = "26";
 /** 통로 열·좌석 열 고정 폭 */
 const SEAT_CELL = 40;
 const AISLE_GAP = 20;
+/** 출1-1 배지와 A~F 좌석이 같은 폭 열 안에서 가운데 정렬 */
+const SIDE_COLUMN_WIDTH = 56;
 const AISLE_SECTION_BADGE_FONT_SIZE = 13;
 
 const PRIORITY = 3;
@@ -629,12 +631,13 @@ export default function SubwaySeatMap({
   };
 
   const sideColumnStyle = useCallback(
-    (side) => ({
-      width: SEAT_CELL,
+    () => ({
+      width: SIDE_COLUMN_WIDTH,
+      minWidth: SIDE_COLUMN_WIDTH,
       flexShrink: 0,
       display: "flex",
       flexDirection: "column",
-      alignItems: side === "left" ? "flex-start" : "flex-end",
+      alignItems: "center",
       justifyContent: "center",
       overflow: "visible",
       boxSizing: "border-box",
@@ -645,9 +648,9 @@ export default function SubwaySeatMap({
   /** 좌·우 끝 | 통로 | 좌·우 끝 — 입구(1-1)와 A~F가 같은 열 */
   const renderBenchRow = ({ key, leftEntrance = null, leftSeat = null, rightSeat = null, rightEntrance = null, marginBottom = 4 }) => (
     <div key={key} style={{ ...carRowStyle, marginBottom }}>
-      <div style={sideColumnStyle("left")}>{leftEntrance || leftSeat}</div>
+      <div style={sideColumnStyle()}>{leftEntrance || leftSeat}</div>
       {renderFlexAisleSpacer()}
-      <div style={sideColumnStyle("right")}>{rightEntrance || rightSeat}</div>
+      <div style={sideColumnStyle()}>{rightEntrance || rightSeat}</div>
     </div>
   );
 
@@ -690,7 +693,7 @@ export default function SubwaySeatMap({
     const isSelected = selectedDoorLabel === label;
     return (
       <div key={`side-door-${doorNo}`} style={carRowStyle}>
-        <div style={sideColumnStyle("left")}>
+        <div style={sideColumnStyle()}>
           <button
             type="button"
             className="zeb-touch-target"
@@ -716,7 +719,7 @@ export default function SubwaySeatMap({
           </button>
         </div>
         {renderFlexAisleSpacer()}
-        <div style={sideColumnStyle("right")} aria-hidden />
+        <div style={sideColumnStyle()} aria-hidden />
       </div>
     );
   };
@@ -724,13 +727,16 @@ export default function SubwaySeatMap({
   /** 노약자 → 입구1-1 → A~F → 입구1-2 → … → 입구1-4 → 노약자 */
   const renderCarBody = () => {
     const sideLabelStyle = {
-      width: SEAT_CELL,
+      width: SIDE_COLUMN_WIDTH,
+      minWidth: SIDE_COLUMN_WIDTH,
       fontSize: 12,
       fontWeight: 800,
       color: lineColor,
       textAlign: "center",
       lineHeight: 1.2,
       userSelect: "none",
+      flexShrink: 0,
+      boxSizing: "border-box",
     };
 
     const rows = [];
@@ -739,7 +745,7 @@ export default function SubwaySeatMap({
       <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: seekEmbedMode ? 6 : 4 }} aria-hidden>
         <span style={sideLabelStyle}>← 좌측</span>
         {renderFlexAisleSpacer()}
-        <span style={{ ...sideLabelStyle, textAlign: "right", width: SEAT_CELL }}>우측 →</span>
+        <span style={sideLabelStyle}>우측 →</span>
       </div>
     );
 
@@ -747,11 +753,11 @@ export default function SubwaySeatMap({
       rows.push(
         sideLabelsRow,
         <div key="row-prio-top" style={carRowStyle}>
-          <div style={sideColumnStyle("left")}>
+          <div style={sideColumnStyle()}>
             <PriorityBlock side="left" placement="top" />
           </div>
           {renderFlexAisleSpacer()}
-          <div style={sideColumnStyle("right")}>
+          <div style={sideColumnStyle()}>
             <PriorityBlock side="right" placement="top" />
           </div>
         </div>
@@ -781,11 +787,11 @@ export default function SubwaySeatMap({
     if (!seekEmbedMode) {
       rows.push(
         <div key="row-prio-bottom" style={carRowStyle}>
-          <div style={sideColumnStyle("left")}>
+          <div style={sideColumnStyle()}>
             <PriorityBlock side="left" placement="bottom" />
           </div>
           {renderFlexAisleSpacer()}
-          <div style={sideColumnStyle("right")}>
+          <div style={sideColumnStyle()}>
             <PriorityBlock side="right" placement="bottom" />
           </div>
         </div>
