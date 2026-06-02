@@ -217,6 +217,17 @@
     font-size: max(17px, 0.8125rem);
     -webkit-tap-highlight-color: transparent;
   }
+
+  .zeb-no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .zeb-no-scrollbar::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
 }
 
 /* ── v0.dev 홈 디자인 시스템 (레거시 주석) ── */

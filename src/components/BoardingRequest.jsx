@@ -263,7 +263,8 @@ function applySeekSeatMapShellLayout(container) {
   if (!root) return;
 
   root.style.padding = "0";
-  root.style.maxWidth = "100%";
+  root.style.maxWidth = "none";
+  root.style.minWidth = "560px";
 
   for (const child of root.children) {
     const style = (child.getAttribute("style") || "").toLowerCase();
@@ -2606,12 +2607,11 @@ function StepSeekDoor({
 
         <div
           style={{
-            display: "flex",
-            gap: 6,
-            overflowX: "auto",
-            paddingBottom: 4,
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: 8,
+            paddingBottom: 2,
             marginBottom: 8,
-            WebkitOverflowScrolling: "touch",
           }}
         >
           {carNumbers.map((carNum) => {
@@ -2629,21 +2629,20 @@ function StepSeekDoor({
                 aria-label={`${carNum}호차`}
                 aria-pressed={isActive}
                 style={{
-                  flex: "0 0 auto",
-                  minWidth: 44,
+                  width: "100%",
                   minHeight: 44,
-                  padding: "0 12px",
+                  padding: "0 8px",
                   borderRadius: 10,
                   border: `1.5px solid ${isActive ? lineColor : C.border}`,
                   background: isActive ? lineColor : C.card,
                   color: isActive ? "#fff" : C.text,
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: 700,
                   cursor: isSubmitting ? "default" : "pointer",
                   opacity: isSubmitting ? 0.55 : 1,
                 }}
               >
-                {carNum}
+                {carNum}호차
               </button>
             );
           })}
@@ -2651,16 +2650,18 @@ function StepSeekDoor({
 
         <div
           ref={mapShellRef}
-          className="zeb-seek-seat-map-shell"
+          className="zeb-seek-seat-map-shell zeb-no-scrollbar"
           style={{
             flex: 1,
             minHeight: 0,
-            overflowY: "auto",
-            overflowX: "hidden",
+            overflow: "auto",
             WebkitOverflowScrolling: "touch",
+            touchAction: "pan-x pan-y",
             background: C.card,
             borderRadius: 12,
             border: `1px solid ${C.border}`,
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
           }}
         >
           {!trainId ? (
