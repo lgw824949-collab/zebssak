@@ -11,7 +11,7 @@ import {
   type CongestionStatus,
 } from '@/lib/congestion'
 
-const BOARDING_UI_VERSION = '2026-06-01-seek-flow-v23'
+const BOARDING_UI_VERSION = '2026-06-01-seek-flow-v24'
 
 function BoardingPageContent() {
   const router = useRouter()

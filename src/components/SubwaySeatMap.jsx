@@ -583,6 +583,11 @@ export default function SubwaySeatMap({
 
   const renderAisleSpacer = () => <div style={aisleSpacerStyle} aria-hidden />;
 
+  /** 좌·우 열 사이 — 늘어나 우측 열을 컨테이너 오른쪽 끝에 붙임 */
+  const renderFlexAisleSpacer = () => (
+    <div style={{ flex: 1, minWidth: AISLE_GAP, flexShrink: 1 }} aria-hidden />
+  );
+
   const renderEntranceBadge = (doorNo) =>
     !doorPickerMode ? (
       <AisleSectionBadge
@@ -654,7 +659,7 @@ export default function SubwaySeatMap({
   const renderBenchRow = ({ key, leftEntrance = null, leftSeat = null, rightSeat = null, rightEntrance = null, marginBottom = 4 }) => (
     <div key={key} style={{ ...carRowStyle, marginBottom }}>
       <div style={sideColumnStyle("left")}>{leftEntrance || leftSeat}</div>
-      {renderAisleSpacer()}
+      {renderFlexAisleSpacer()}
       <div style={sideColumnStyle("right")}>{rightEntrance || rightSeat}</div>
     </div>
   );
@@ -723,7 +728,7 @@ export default function SubwaySeatMap({
             문
           </button>
         </div>
-        {renderAisleSpacer()}
+        {renderFlexAisleSpacer()}
         <div style={sideColumnStyle("right")} aria-hidden />
       </div>
     );
@@ -746,8 +751,8 @@ export default function SubwaySeatMap({
     const sideLabelsRow = (
       <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: seekEmbedMode ? 6 : 4 }} aria-hidden>
         <span style={sideLabelStyle}>← 좌측</span>
-        {renderAisleSpacer()}
-        <span style={{ ...sideLabelStyle, textAlign: "center" }}>우측 →</span>
+        {renderFlexAisleSpacer()}
+        <span style={{ ...sideLabelStyle, textAlign: "right", width: SEAT_CELL }}>우측 →</span>
       </div>
     );
 
@@ -758,7 +763,7 @@ export default function SubwaySeatMap({
           <div style={sideColumnStyle("left")}>
             <PriorityBlock side="left" placement="top" />
           </div>
-          {renderAisleSpacer()}
+          {renderFlexAisleSpacer()}
           <div style={sideColumnStyle("right")}>
             <PriorityBlock side="right" placement="top" />
           </div>
@@ -792,7 +797,7 @@ export default function SubwaySeatMap({
           <div style={sideColumnStyle("left")}>
             <PriorityBlock side="left" placement="bottom" />
           </div>
-          {renderAisleSpacer()}
+          {renderFlexAisleSpacer()}
           <div style={sideColumnStyle("right")}>
             <PriorityBlock side="right" placement="bottom" />
           </div>
