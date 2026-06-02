@@ -23,10 +23,8 @@ const AISLE_BG_ALPHA = "1A";
 const ALIGHTING_BG_ALPHA = "26";
 
 const PRIORITY = 3;
-/** 좌석(플랫폼) 구역 수 · 일반석 3구역 */
+/** 좌석 구역 수 · 출입문 1-1 ~ 1-3 · 일반석 3구역 */
 const SECTIONS = 3;
-/** 구역 경계 출입문 수 (N-1 ~ N-4) */
-const DOORS_PER_CAR = SECTIONS + 1;
 
 /** 호선별 객실 레이아웃 (P3: 3~9호선·인천 6호차·7석) */
 const LINE_CAR_LAYOUT = {
@@ -37,7 +35,7 @@ const LINE_CAR_LAYOUT = {
   seoul4: { seatsPerSection: 7, carCount: 6 },
   seoul5: { seatsPerSection: 7, carCount: 6 },
   seoul6: { seatsPerSection: 7, carCount: 6 },
-  seoul7: { seatsPerSection: 7, carCount: 8 },
+  seoul7: { seatsPerSection: 7, carCount: 6 },
   seoul8: { seatsPerSection: 7, carCount: 6 },
   seoul9: { seatsPerSection: 7, carCount: 6 },
   incheon1: { seatsPerSection: 7, carCount: 6 },
@@ -386,86 +384,6 @@ function canSelectSeatStatus(status, interactionMode) {
   if (status === "elderly") return false;
   if (interactionMode === "leave") return status === "empty";
   return status === "alighting" || status === "empty";
-}
-
-/** doorPickerMode: 호차별 출입문 번호 (N-1 ~ N-4) */
-function DoorPickerButtons({ totalCars, lineColor, selectedDoorLabel, onDoorSelect }) {
-  const doorsPerCar = DOORS_PER_CAR;
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 18,
-        width: "100%",
-        boxSizing: "border-box",
-      }}
-    >
-      {Array.from({ length: totalCars }, (_, carIndex) => {
-        const carNum = carIndex + 1;
-        const selectedCar =
-          selectedDoorLabel != null
-            ? Number.parseInt(String(selectedDoorLabel).split("-")[0], 10)
-            : null;
-        const isCarHighlighted = selectedCar === carNum;
-
-        return (
-          <section key={carNum} aria-label={`${carNum}호차 출입문`}>
-            <div
-              style={{
-                marginBottom: 10,
-                fontSize: 15,
-                fontWeight: 800,
-                color: isCarHighlighted ? lineColor : "#1A1A1A",
-              }}
-            >
-              {carNum}호차
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: `repeat(${doorsPerCar}, minmax(0, 1fr))`,
-                gap: 8,
-                width: "100%",
-              }}
-            >
-              {Array.from({ length: doorsPerCar }, (_, doorIndex) => {
-                const doorNo = doorIndex + 1;
-                const label = `${carNum}-${doorNo}`;
-                const isSelected = selectedDoorLabel === label;
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    className="zeb-touch-target"
-                    onClick={() => onDoorSelect?.(label)}
-                    aria-label={`${carNum}호차 ${doorNo}번 출입문`}
-                    aria-pressed={isSelected}
-                    style={{
-                      minHeight: 48,
-                      padding: "12px 6px",
-                      borderRadius: 10,
-                      border: `2px solid ${isSelected ? lineColor : "#E2E8F0"}`,
-                      background: isSelected ? lineColor : "#FFFFFF",
-                      color: isSelected ? "#FFFFFF" : lineColor,
-                      fontSize: 15,
-                      fontWeight: 800,
-                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                      fontVariantNumeric: "tabular-nums",
-                      cursor: "pointer",
-                      transition: "background 0.15s, border-color 0.15s, color 0.15s",
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
-    </div>
-  );
 }
 
 export default function SubwaySeatMap({
@@ -992,28 +910,6 @@ export default function SubwaySeatMap({
       </div>
     );
   };
-
-  if (doorPickerMode) {
-    return (
-      <div
-        style={{
-          fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
-          width: "100%",
-          margin: "0 auto",
-          padding:
-            "0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))",
-          boxSizing: "border-box",
-        }}
-      >
-        <DoorPickerButtons
-          totalCars={totalCars}
-          lineColor={lineColor}
-          selectedDoorLabel={selectedDoorLabel}
-          onDoorSelect={onDoorSelect}
-        />
-      </div>
-    );
-  }
 
   return (
     <div
