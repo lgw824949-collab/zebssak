@@ -2909,10 +2909,13 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
   const seekDoorLabel =
     seat?.doorLabel ||
     (seat?.car && seat?.door ? formatExitDoorDisplayLabel(seat.car, seat.door) : "");
-  const seatLabel =
-    seat?.car && seat?.door
-      ? ` · ${formatExitDoorDisplayLabel(seat.car, seat.door)}번 문 옆`
-      : "";
+  const doneDoorLabel = isLeaveMode
+    ? (seat?.car || car) && seat?.door
+      ? formatExitDoorDisplayLabel(seat?.car || car, seat.door)
+      : "-"
+    : seekDoorLabel || "-";
+  const doneSeatLabel = seat?.seatLetter ? `${seat.seatLetter}열` : "-";
+  const doneDirectionLabel = seat?.side ? resolveSeekSideLabel(seat.side) : "-";
   const lineColor = LINE_OLIVE;
   const lineDisplayName = (() => {
     const primary = (line || "").split("·")[0].trim();
@@ -2954,19 +2957,15 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
         {isLeaveMode ? "하차 등록 완료!" : "등록 완료!"}
       </div>
       <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.7, marginBottom: 32 }}>
-        {line}<br />
-        {isLeaveMode ? (
-          <>
-            열차 <strong style={{ color: C.text }}>{trainId}</strong> ·{" "}
-            <strong style={{ color: C.text }}>{car}번 호차</strong>
-            {seatLabel ? <>{seatLabel}</> : null}
-          </>
-        ) : (
-          <>
-            열차 <strong style={{ color: C.text }}>{trainId}</strong> ·{" "}
-            <strong style={{ color: C.text }}>{seekDoorLabel || "출입문"}</strong> 출입문 앞
-          </>
-        )}
+        {line}
+        <br />
+        열차: <strong style={{ color: C.text }}>{trainId || "-"}</strong>
+        <br />
+        출입문: <strong style={{ color: C.text }}>{doneDoorLabel}</strong>
+        <br />
+        좌석: <strong style={{ color: C.text }}>{doneSeatLabel}</strong>
+        <br />
+        방향: <strong style={{ color: C.text }}>{doneDirectionLabel}</strong>
         <br />
         {isLeaveMode ? (
           <>
