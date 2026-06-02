@@ -23,8 +23,6 @@ const ALIGHTING_BG_ALPHA = "26";
 /** 통로 열·좌석 열 고정 폭 */
 const SEAT_CELL = 40;
 const AISLE_GAP = 20;
-/** 입구 배지 열 — A~F 좌석 열과 분리해 1열 정렬 유지 */
-const ENTRANCE_COL = 44;
 const AISLE_SECTION_BADGE_FONT_SIZE = 13;
 
 const PRIORITY = 3;
@@ -644,33 +642,20 @@ export default function SubwaySeatMap({
       flexShrink: 0,
       display: "flex",
       flexDirection: "column",
-      alignItems: side === "left" ? "flex-end" : "flex-start",
-      overflow: "hidden",
+      alignItems: side === "left" ? "flex-start" : "flex-end",
+      justifyContent: "center",
+      overflow: "visible",
       boxSizing: "border-box",
     }),
     []
   );
 
-  const entranceColumnStyle = useCallback(
-    (side) => ({
-      width: ENTRANCE_COL,
-      flexShrink: 0,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: side === "left" ? "flex-start" : "flex-end",
-      boxSizing: "border-box",
-    }),
-    []
-  );
-
-  /** 입구 배지 열 | 좌석 | 통로 | 좌석 | 입구 배지 열 — 모든 행 동일 폭 */
+  /** 좌·우 끝 | 통로 | 좌·우 끝 — 입구(1-1)와 A~F가 같은 열 */
   const renderBenchRow = ({ key, leftEntrance = null, leftSeat = null, rightSeat = null, rightEntrance = null, marginBottom = 4 }) => (
     <div key={key} style={{ ...carRowStyle, marginBottom }}>
-      <div style={entranceColumnStyle("left")}>{leftEntrance}</div>
-      <div style={sideColumnStyle("left")}>{leftSeat}</div>
+      <div style={sideColumnStyle("left")}>{leftEntrance || leftSeat}</div>
       {renderAisleSpacer()}
-      <div style={sideColumnStyle("right")}>{rightSeat}</div>
-      <div style={entranceColumnStyle("right")}>{rightEntrance}</div>
+      <div style={sideColumnStyle("right")}>{rightEntrance || rightSeat}</div>
     </div>
   );
 
@@ -760,11 +745,9 @@ export default function SubwaySeatMap({
 
     const sideLabelsRow = (
       <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: seekEmbedMode ? 6 : 4 }} aria-hidden>
-        <div style={entranceColumnStyle("left")} />
         <span style={sideLabelStyle}>← 좌측</span>
         {renderAisleSpacer()}
         <span style={{ ...sideLabelStyle, textAlign: "center" }}>우측 →</span>
-        <div style={entranceColumnStyle("right")} />
       </div>
     );
 
