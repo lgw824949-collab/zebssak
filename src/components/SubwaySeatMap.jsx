@@ -645,43 +645,11 @@ export default function SubwaySeatMap({
     []
   );
 
-  /** 통로 가운데 섹션 마커(1-1, 1-2, 1-3) */
-  const renderCenterSectionMarker = (doorNo) => (
-    <AisleSectionBadge
-      compact
-      label={`${carNum}-${doorNo}`}
-      lineColor={lineColor}
-      highlighted={recommendedDoor === doorNo}
-    />
-  );
-
-  /** 좌·우 끝 | 통로(필요 시 가운데 마커) | 좌·우 끝 */
-  const renderBenchRow = ({
-    key,
-    leftEntrance = null,
-    leftSeat = null,
-    rightSeat = null,
-    rightEntrance = null,
-    centerMarker = null,
-    marginBottom = 4,
-  }) => (
+  /** 좌·우 끝 | 통로 | 좌·우 끝 */
+  const renderBenchRow = ({ key, leftEntrance = null, leftSeat = null, rightSeat = null, rightEntrance = null, marginBottom = 4 }) => (
     <div key={key} style={{ ...carRowStyle, marginBottom }}>
       <div style={sideColumnStyle()}>{leftEntrance || leftSeat}</div>
-      {centerMarker ? (
-        <div
-          style={{
-            flex: 1,
-            minWidth: AISLE_GAP,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          {centerMarker}
-        </div>
-      ) : (
-        renderFlexAisleSpacer()
-      )}
+      {renderFlexAisleSpacer()}
       <div style={sideColumnStyle()}>{rightEntrance || rightSeat}</div>
     </div>
   );
@@ -700,13 +668,11 @@ export default function SubwaySeatMap({
 
     for (let visualRank = 0; visualRank < REGULAR_SEATS_PER_SIDE; visualRank += 1) {
       const seatInSection = regularSeatIndexOrder[visualRank];
-      const isCenterMarkerRow = visualRank === 2; // C행 기준
       rows.push(
         renderBenchRow({
           key: `sec-${sectionIndex}-rank-${visualRank}`,
           leftSeat: renderSeatAt("left", sectionIndex, leftSeats, doorNo, visualRank, seatInSection),
           rightSeat: renderSeatAt("right", sectionIndex, rightSeats, doorNo, visualRank, seatInSection),
-          centerMarker: isCenterMarkerRow ? renderCenterSectionMarker(doorNo) : null,
         })
       );
     }
