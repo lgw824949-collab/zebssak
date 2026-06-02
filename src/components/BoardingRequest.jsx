@@ -262,35 +262,34 @@ function buildSeekSeatMapDirectionHeading(station) {
   return "진행 방향 ↑";
 }
 
-/** SubwaySeatMap 안내 문구 숨김 — 상단 3줄(좌·목적지·우)만 표시 */
+/** SubwaySeatMap 안내 문구만 숨김 — 객실 본문(테두리 박스)은 절대 숨기지 않음 */
 function hideSubwaySeatMapIntroChrome(container) {
   const root = container?.firstElementChild;
   if (!root) return;
 
-  let passedCarBody = false;
   for (const child of root.children) {
-    const style = child.getAttribute("style") || "";
+    const style = (child.getAttribute("style") || "").toLowerCase();
+    const text = child.textContent || "";
+
     const isCarBody =
-      (style.includes("borderRadius: 14") || style.includes("border-radius: 14")) &&
+      (style.includes("border-radius: 14") || style.includes("borderradius: 14")) &&
       style.includes("2px solid");
 
     if (isCarBody) {
-      passedCarBody = true;
+      child.style.removeProperty("display");
       continue;
     }
 
-    if (!passedCarBody) {
-      child.style.display = "none";
-      continue;
-    }
+    const shouldHide =
+      text.includes("A(위)") ||
+      text.includes("맨 위부터") ||
+      text.includes("노약자석") ||
+      text.includes("빈 자리") ||
+      text.includes("곧 하차") ||
+      text.includes("선택한 자리") ||
+      (text.includes("방면") && style.includes("background") && !style.includes("border-radius: 14"));
 
-    const label = child.textContent || "";
-    if (
-      label.includes("노약자석") ||
-      label.includes("빈 자리") ||
-      label.includes("곧 하차") ||
-      label.includes("선택한")
-    ) {
+    if (shouldHide) {
       child.style.display = "none";
     }
   }
@@ -2649,13 +2648,32 @@ function StepSeekDoor({
           ref={mapShellRef}
           className="zeb-seek-seat-map-shell"
           style={{
-            maxHeight: "min(52vh, 460px)",
+            minHeight: 320,
+            maxHeight: "min(58vh, 520px)",
             overflowY: "auto",
             overflowX: "hidden",
             WebkitOverflowScrolling: "touch",
             marginBottom: 8,
+            background: C.card,
+            borderRadius: 12,
+            border: `1px solid ${C.border}`,
           }}
         >
+          {!trainId ? (
+            <p
+              style={{
+                padding: "24px 16px",
+                textAlign: "center",
+                fontSize: 14,
+                color: C.muted,
+                lineHeight: 1.5,
+              }}
+            >
+              열차 정보를 불러오지 못했습니다.
+              <br />
+              이전 단계에서 열차를 다시 선택해 주세요.
+            </p>
+          ) : (
           <SubwaySeatMap
             key={`seek-seat-${trainId}-${activeCar}-${line}`}
             line={line}
@@ -2669,6 +2687,7 @@ function StepSeekDoor({
             selectedSeatId={selectedSeat?.id}
             onSeatClick={handleSeatClick}
           />
+          )}
         </div>
 
         {pickPreview?.pickResultLine ? (
