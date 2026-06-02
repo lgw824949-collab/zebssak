@@ -21,7 +21,7 @@ interface StoredUser {
 const GPS_MAX_RADIUS_KM = 1
 const LINE7_OLIVE = '#747F00'
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
-const HOME_UI_VERSION = '2026-06-01-seek-flow-v8'
+const HOME_UI_VERSION = '2026-06-01-seek-flow-v14'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {
@@ -61,16 +61,19 @@ const HOME_LINE_OPTIONS = [
   },
 ] as const
 
-type HomeFlowMode = 'seek' | 'leave'
-type HomeStep = 'mode' | 'line'
+/** 단독 운영 노선 — 노선 선택 단계 생략 시 사용 */
+const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
 
-function ChevronRightIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden className="shrink-0" style={{ color: LINE7_OLIVE }}>
-      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  )
-}
+type HomeFlowMode = 'seek' | 'leave'
+// type HomeStep = 'mode' | 'line'
+
+// function ChevronRightIcon() {
+//   return (
+//     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden className="shrink-0" style={{ color: LINE7_OLIVE }}>
+//       <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+//     </svg>
+//   )
+// }
 
 function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (v: number) => (v * Math.PI) / 180
@@ -103,7 +106,6 @@ export default function Home() {
   const [congestionStatus, setCongestionStatus] = useState<CongestionStatus | null>(null)
   const [showCongestionModal, setShowCongestionModal] = useState(false)
   const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 7호선')
-  const [homeStep, setHomeStep] = useState<HomeStep>('mode')
   const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
   const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
@@ -114,13 +116,9 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    const lineLabel = homeStep === 'line' ? selectedLineLabel : '서울 7호선'
-    const paused = isLineHalted(congestionStatus, lineLabel)
+    const paused = isLineHalted(congestionStatus, DEFAULT_HOME_LINE_LABEL)
     setIsMatchingPaused(paused)
-    if (paused && !isLoadingData && homeStep === 'line') {
-      setShowCongestionModal(true)
-    }
-  }, [congestionStatus, selectedLineLabel, isLoadingData, homeStep])
+  }, [congestionStatus, isLoadingData])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -191,31 +189,35 @@ export default function Home() {
 
   function handleModeSelect(mode: HomeFlowMode) {
     setHomeMode(mode)
-    setHomeStep('line')
+    // 단독 노선(서울 7호선) — 노선 선택 단계 생략
+    // setHomeStep('line')
+    handleLinePick(DEFAULT_HOME_LINE_LABEL, mode)
   }
 
-  function handleBackToModeStep() {
-    setHomeStep('mode')
-    setHomeMode(null)
-  }
+  // function handleBackToModeStep() {
+  //   setHomeStep('mode')
+  //   setHomeMode(null)
+  // }
 
-  async function proceedToBoarding(lineLabel: string) {
-    if (!homeMode) return
+  async function proceedToBoarding(lineLabel: string, modeOverride?: HomeFlowMode) {
+    const mode = modeOverride ?? homeMode
+    if (!mode) return
     if (isLineHalted(congestionStatus, lineLabel)) {
       setSelectedLineLabel(lineLabel)
       setShowCongestionModal(true)
       return
     }
     setSelectedLineLabel(lineLabel)
-    if (homeMode === 'seek') {
+    if (mode === 'seek') {
       void startSeekByLineSelection(lineLabel)
       return
     }
-    void pushBoardingPage(lineLabel, 'leave')
+    void pushBoardingPage(lineLabel, mode)
   }
 
-  function handleLinePick(lineLabel: string) {
-    if (isMatchingPaused || !homeMode) return
+  function handleLinePick(lineLabel: string, modeOverride?: HomeFlowMode) {
+    const mode = modeOverride ?? homeMode
+    if (isMatchingPaused || !mode) return
 
     if (isLineHalted(congestionStatus, lineLabel)) {
       setSelectedLineLabel(lineLabel)
@@ -226,14 +228,14 @@ export default function Home() {
     const token = localStorage.getItem('token')
     if (!token) {
       const params = new URLSearchParams({
-        type: homeMode,
+        type: mode,
         lineLabel,
       })
       router.push(`/register?${params.toString()}`)
       return
     }
 
-    void proceedToBoarding(lineLabel)
+    void proceedToBoarding(lineLabel, mode)
   }
 
   async function saveDetectedLocation(
@@ -362,8 +364,7 @@ export default function Home() {
         congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(selectedLineLabel)]}
       />
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pb-[max(2.75rem,env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] pt-5">
-        {homeStep === 'mode' ? (
-          <header className="mb-2 flex shrink-0 items-center justify-end">
+        <header className="mb-2 flex shrink-0 items-center justify-end">
             <Link
               href={isLoggedIn ? '/profile' : '/login'}
               className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-[#EBEBEB] bg-white text-sm font-bold text-[#888888]"
@@ -372,10 +373,8 @@ export default function Home() {
               {isLoggedIn ? displayName!.slice(0, 1).toUpperCase() : '👤'}
             </Link>
           </header>
-        ) : null}
 
-        {homeStep === 'mode' ? (
-          <div className="flex flex-col gap-5 pb-6 pt-1">
+        <div className="flex flex-col gap-5 pb-6 pt-1">
             <section>
               <span
                 className="inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-[14px] font-bold"
@@ -508,6 +507,8 @@ export default function Home() {
               ) : null}
             </section>
           </div>
+
+        {/* 단독 노선 — 노선 선택 UI (복원 시 homeStep === 'line' 분기로 되돌리기)
         ) : (
           <section className="flex flex-1 flex-col">
             <div className="mb-8 flex items-center justify-between">
@@ -571,6 +572,7 @@ export default function Home() {
             ) : null}
           </section>
         )}
+        */}
       </main>
     </div>
   )
