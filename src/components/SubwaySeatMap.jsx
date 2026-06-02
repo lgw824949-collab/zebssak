@@ -342,12 +342,9 @@ function AisleSectionBadge({ label, lineColor, highlighted, compact = false }) {
         pointerEvents: "none",
         userSelect: "none",
         whiteSpace: "nowrap",
-        maxWidth: "100%",
         textAlign: "center",
         display: "inline-block",
         boxSizing: "border-box",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
       }}
     >
       {label}
@@ -572,23 +569,6 @@ export default function SubwaySeatMap({
     []
   );
 
-  const entranceAisleStyle = useMemo(
-    () => ({
-      width: AISLE_COLUMN_WIDTH,
-      flexShrink: 0,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      background: `${lineColor}${AISLE_BG_ALPHA}`,
-      padding: "8px 4px",
-      boxSizing: "border-box",
-      borderRadius: 8,
-      border: `2px solid ${lineColor}`,
-      pointerEvents: "none",
-    }),
-    [lineColor]
-  );
-
   const sideColumnStyle = useCallback(
     (side) => ({
       width: SEAT_CELL,
@@ -616,32 +596,65 @@ export default function SubwaySeatMap({
 
   const renderAisleSpacer = () => <div style={aisleSpacerStyle} aria-hidden />;
 
-  /** 노약자석 ↔ A열 사이 입구 — 라벨은 이 한 줄에만 */
-  const renderEntranceRow = (doorNo) => (
-    <div
-      key={`entrance-${doorNo}`}
-      style={{
-        ...carRowStyle,
-        alignItems: "center",
-        margin: "6px 0",
-        padding: "2px 0",
-      }}
-      aria-label={`${carNum}호차 ${doorNo}번 출입문`}
-    >
-      <div style={{ width: SEAT_CELL, flexShrink: 0 }} aria-hidden />
-      <div style={entranceAisleStyle}>
-        {!doorPickerMode ? (
-          <AisleSectionBadge
-            compact
-            label={formatEntranceRowLabel(carNum, doorNo)}
-            lineColor={lineColor}
-            highlighted={recommendedDoor === doorNo}
-          />
-        ) : null}
+  /** 노약자석 ↔ A열 사이 입구 — 라벨은 좌·우 1열(통로 쪽), 가운데 없음 */
+  const renderEntranceRow = (doorNo) => {
+    const label = formatEntranceRowLabel(carNum, doorNo);
+    const badge =
+      !doorPickerMode ? (
+        <AisleSectionBadge
+          compact
+          label={label}
+          lineColor={lineColor}
+          highlighted={recommendedDoor === doorNo}
+        />
+      ) : null;
+
+    return (
+      <div
+        key={`entrance-${doorNo}`}
+        style={{
+          ...carRowStyle,
+          alignItems: "center",
+          margin: "6px 0",
+          padding: "2px 0",
+        }}
+        aria-label={`${carNum}호차 ${doorNo}번 출입문`}
+      >
+        <div
+          style={{
+            width: SEAT_CELL,
+            flexShrink: 0,
+            display: "flex",
+            justifyContent: "flex-end",
+            alignItems: "center",
+            overflow: "visible",
+          }}
+        >
+          {badge}
+        </div>
+        {renderAisleSpacer()}
+        <div
+          style={{
+            width: SEAT_CELL,
+            flexShrink: 0,
+            display: "flex",
+            justifyContent: "flex-start",
+            alignItems: "center",
+            overflow: "visible",
+          }}
+        >
+          {badge ? (
+            <AisleSectionBadge
+              compact
+              label={label}
+              lineColor={lineColor}
+              highlighted={recommendedDoor === doorNo}
+            />
+          ) : null}
+        </div>
       </div>
-      <div style={{ width: SEAT_CELL, flexShrink: 0 }} aria-hidden />
-    </div>
-  );
+    );
+  };
 
   const renderSeatSectionColumn = (side, sectionIndex, seats, doorNo) => {
     const door = doorNo;
