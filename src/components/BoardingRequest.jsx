@@ -263,8 +263,8 @@ function applySeekSeatMapShellLayout(container) {
   if (!root) return;
 
   root.style.padding = "0";
-  root.style.maxWidth = "none";
-  root.style.minWidth = "560px";
+  root.style.maxWidth = "100%";
+  root.style.removeProperty("min-width");
 
   for (const child of root.children) {
     const style = (child.getAttribute("style") || "").toLowerCase();
