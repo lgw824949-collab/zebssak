@@ -941,7 +941,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {!seekEmbedMode ? (
+      {!seekEmbedMode && !leaveEmbedMode ? (
       <div
         style={{
           display: "flex",
@@ -966,7 +966,7 @@ export default function SubwaySeatMap({
       </div>
       ) : null}
 
-      {!seekEmbedMode && !doorPickerMode ? (
+      {!seekEmbedMode && !leaveEmbedMode && !doorPickerMode ? (
         <p
           style={{
             margin: "0 0 8px",
