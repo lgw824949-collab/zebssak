@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 /** LineSelect.jsx 노선색과 동일 */
 const LINE_COLORS = {
@@ -122,6 +122,20 @@ const SIDE_SEAT_LETTERS = ["A", "B", "C", "D", "E", "F"];
 /** 화면 위(출입문·목적지) → 아래: A~F (좌·우 각각 동일) */
 function getSeatColumnLetter(visualRankFromTop) {
   return SIDE_SEAT_LETTERS[visualRankFromTop] ?? null;
+}
+
+/** 출입문 표시 라벨 — 예: 출1-1 (API·선택 키는 car-door 숫자만) */
+export function formatExitDoorDisplayLabel(carNum, doorNo) {
+  return `출${carNum}-${doorNo}`;
+}
+
+/** 출1-1 또는 1-1 → { car, door, doorLabel } */
+export function parseDoorLabelKey(label) {
+  const match = String(label || "").match(/^출?(\d+)-(\d+)$/);
+  if (!match) return null;
+  const car = Number.parseInt(match[1], 10);
+  const door = Number.parseInt(match[2], 10);
+  return { car, door, doorLabel: `${car}-${door}` };
 }
 
 /** 선택 좌석 표기 — 예: 1-1 · C열 · 좌측 */
@@ -337,46 +351,51 @@ function AisleSectionBadge({ label, lineColor, highlighted }) {
   );
 }
 
-/** 출입문 구분 (통로만) */
-function AisleDoorDivider({ label, lineColor }) {
+/** 출입문 구분 — 좌·우 1열(출입문 양쪽)에 동일 라벨 */
+function AisleDoorDivider({ displayLabel, lineColor, highlighted = false }) {
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
         width: "100%",
-        padding: "3px 0",
+        padding: "4px 0",
+        gap: 4,
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
       <div
         style={{
-          width: AISLE_COLUMN_WIDTH,
-          flexShrink: 0,
+          flex: 1,
+          minWidth: 0,
           display: "flex",
+          justifyContent: "flex-end",
           alignItems: "center",
-          justifyContent: "center",
-          background: `${lineColor}${AISLE_BG_ALPHA}`,
-          borderRadius: 6,
-          padding: "2px 0",
+          paddingRight: 2,
         }}
       >
-        <span
-          style={{
-            fontSize: AISLE_SECTION_BADGE_FONT_SIZE,
-            fontWeight: 800,
-            fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-            fontVariantNumeric: "tabular-nums",
-            color: lineColor,
-            lineHeight: 1.1,
-            userSelect: "none",
-            pointerEvents: "none",
-          }}
-        >
-          {label}
-        </span>
+        <AisleSectionBadge
+          label={displayLabel}
+          lineColor={lineColor}
+          highlighted={highlighted}
+        />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
+      <div style={{ width: AISLE_COLUMN_WIDTH, flexShrink: 0 }} aria-hidden />
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: "flex",
+          justifyContent: "flex-start",
+          alignItems: "center",
+          paddingLeft: 2,
+        }}
+      >
+        <AisleSectionBadge
+          label={displayLabel}
+          lineColor={lineColor}
+          highlighted={highlighted}
+        />
+      </div>
     </div>
   );
 }
@@ -588,10 +607,6 @@ export default function SubwaySeatMap({
       ? quickExitHint.door
       : null;
 
-  const carBodyRef = useRef(null);
-  const sectionRefs = useRef([]);
-  const [aisleBadges, setAisleBadges] = useState([]);
-
   const aisleColumnStyle = useMemo(
     () => ({
       width: AISLE_COLUMN_WIDTH,
@@ -607,47 +622,6 @@ export default function SubwaySeatMap({
     }),
     [lineColor]
   );
-
-  const updateAisleBadges = useCallback(() => {
-    const body = carBodyRef.current;
-    if (!body) return;
-
-    const bodyRect = body.getBoundingClientRect();
-    const next = sectionRefs.current
-      .map((el, sectionIndex) => {
-        if (!el) return null;
-        const rect = el.getBoundingClientRect();
-        const doorNo = sectionIndex + 1;
-        return {
-          top: rect.top - bodyRect.top + rect.height / 2,
-          label: `${carNum}-${doorNo}`,
-          highlighted: recommendedDoor === doorNo,
-        };
-      })
-      .filter(Boolean);
-
-    setAisleBadges(next);
-  }, [carNum, recommendedDoor]);
-
-  useLayoutEffect(() => {
-    if (doorPickerMode) return;
-    updateAisleBadges();
-
-    const observer = new ResizeObserver(() => {
-      updateAisleBadges();
-    });
-
-    if (carBodyRef.current) observer.observe(carBodyRef.current);
-    sectionRefs.current.forEach((el) => {
-      if (el) observer.observe(el);
-    });
-
-    window.addEventListener("resize", updateAisleBadges);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updateAisleBadges);
-    };
-  }, [updateAisleBadges, leftSeats, rightSeats, activeCar, lineColor, doorPickerMode]);
 
   const renderSeatSectionColumn = (side, sectionIndex, seats, doorNo) => {
     const door = doorNo;
@@ -800,7 +774,12 @@ export default function SubwaySeatMap({
       doorPickerMode ? (
         renderSideDoorRow(1)
       ) : (
-        <AisleDoorDivider key="door-1" label={`${carNum}-1`} lineColor={lineColor} />
+        <AisleDoorDivider
+          key="door-1"
+          displayLabel={formatExitDoorDisplayLabel(carNum, 1)}
+          lineColor={lineColor}
+          highlighted={recommendedDoor === 1}
+        />
       )
     );
 
@@ -810,9 +789,6 @@ export default function SubwaySeatMap({
       rows.push(
         <div
           key={`row-section-${sectionIndex}`}
-          ref={(el) => {
-            sectionRefs.current[sectionIndex] = el;
-          }}
           style={{
             display: "flex",
             alignItems: "stretch",
@@ -846,8 +822,9 @@ export default function SubwaySeatMap({
           ) : (
             <AisleDoorDivider
               key={`door-${sectionIndex + 2}`}
-              label={`${carNum}-${sectionIndex + 2}`}
+              displayLabel={formatExitDoorDisplayLabel(carNum, sectionIndex + 2)}
               lineColor={lineColor}
+              highlighted={recommendedDoor === sectionIndex + 2}
             />
           )
         );
@@ -858,7 +835,12 @@ export default function SubwaySeatMap({
       doorPickerMode ? (
         renderSideDoorRow(4)
       ) : (
-        <AisleDoorDivider key="door-4" label={`${carNum}-4`} lineColor={lineColor} />
+        <AisleDoorDivider
+          key="door-4"
+          displayLabel={formatExitDoorDisplayLabel(carNum, 4)}
+          lineColor={lineColor}
+          highlighted={recommendedDoor === 4}
+        />
       )
     );
 
@@ -879,7 +861,6 @@ export default function SubwaySeatMap({
 
     return (
       <div
-        ref={carBodyRef}
         style={{
           position: "relative",
           display: "flex",
@@ -903,35 +884,6 @@ export default function SubwaySeatMap({
             zIndex: 0,
           }}
         />
-        {!doorPickerMode ? (
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
-              inset: 0,
-              pointerEvents: "none",
-              zIndex: 4,
-            }}
-          >
-            {aisleBadges.map((badge) => (
-              <div
-                key={badge.label}
-                style={{
-                  position: "absolute",
-                  left: "50%",
-                  top: badge.top,
-                  transform: "translate(-50%, -50%)",
-                }}
-              >
-                <AisleSectionBadge
-                  label={badge.label}
-                  lineColor={lineColor}
-                  highlighted={badge.highlighted}
-                />
-              </div>
-            ))}
-          </div>
-        ) : null}
       </div>
     );
   };
@@ -1100,7 +1052,7 @@ export default function SubwaySeatMap({
             lineHeight: 1.4,
           }}
         >
-          맨 위부터 노약자 → 출입문 1-1~1-3 구역 · 좌·우 각 6석(A~F)
+          맨 위부터 노약자 → 출입문 출1-1~출1-3 구역 · 좌·우 각 6석(A~F)
         </p>
       ) : (
         <p
