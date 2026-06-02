@@ -414,6 +414,8 @@ export default function SubwaySeatMap({
   const carNum = activeCar + 1;
   // 부모(BoardingRequest)에서 car를 넘기면 호차 선택 UI는 상위에서만 표시합니다.
   const showCarTabs = totalCars > 1 && controlledCar == null;
+  /** BoardingRequest Step 3 — 맵만, 중복 안내·노약자석 제외 */
+  const seekEmbedMode = interactionMode === "seek" && controlledCar != null;
   const incheonLine = isIncheonLine(line);
 
   const loadAlighting = useCallback(async () => {
@@ -733,22 +735,34 @@ export default function SubwaySeatMap({
       userSelect: "none",
     };
 
-    const rows = [
-      <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: 4, gap: 6 }} aria-hidden>
-        <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>← 좌측</span>
-        {renderAisleSpacer()}
-        <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>우측 →</span>
-      </div>,
-      <div key="row-prio-top" style={carRowStyle}>
-        <div style={sideColumnStyle("left")}>
-          <PriorityBlock side="left" placement="top" />
+    const rows = [];
+
+    if (!seekEmbedMode) {
+      rows.push(
+        <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: 4, gap: 6 }} aria-hidden>
+          <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>← 좌측</span>
+          {renderAisleSpacer()}
+          <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>우측 →</span>
+        </div>,
+        <div key="row-prio-top" style={carRowStyle}>
+          <div style={sideColumnStyle("left")}>
+            <PriorityBlock side="left" placement="top" />
+          </div>
+          {renderAisleSpacer()}
+          <div style={sideColumnStyle("right")}>
+            <PriorityBlock side="right" placement="top" />
+          </div>
         </div>
-        {renderAisleSpacer()}
-        <div style={sideColumnStyle("right")}>
-          <PriorityBlock side="right" placement="top" />
+      );
+    } else {
+      rows.push(
+        <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: 6, gap: 6 }} aria-hidden>
+          <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>← 좌측</span>
+          {renderAisleSpacer()}
+          <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>우측 →</span>
         </div>
-      </div>,
-    ];
+      );
+    }
 
     if (doorPickerMode) {
       rows.push(renderSideDoorRow(1));
@@ -768,17 +782,19 @@ export default function SubwaySeatMap({
       rows.push(renderDoorFourRow());
     }
 
-    rows.push(
-      <div key="row-prio-bottom" style={carRowStyle}>
-        <div style={sideColumnStyle("left")}>
-          <PriorityBlock side="left" placement="bottom" />
+    if (!seekEmbedMode) {
+      rows.push(
+        <div key="row-prio-bottom" style={carRowStyle}>
+          <div style={sideColumnStyle("left")}>
+            <PriorityBlock side="left" placement="bottom" />
+          </div>
+          {renderAisleSpacer()}
+          <div style={sideColumnStyle("right")}>
+            <PriorityBlock side="right" placement="bottom" />
+          </div>
         </div>
-        {renderAisleSpacer()}
-        <div style={sideColumnStyle("right")}>
-          <PriorityBlock side="right" placement="bottom" />
-        </div>
-      </div>
-    );
+      );
+    }
 
     return (
       <div
@@ -802,7 +818,7 @@ export default function SubwaySeatMap({
         maxWidth: 380,
         width: "100%",
         margin: "0 auto",
-        padding: "0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))",
+        padding: seekEmbedMode ? "0" : "0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))",
         boxSizing: "border-box",
       }}
     >
@@ -908,7 +924,7 @@ export default function SubwaySeatMap({
         <p style={{ fontSize: 11, color: "#94A3B8", marginBottom: 8 }}>{alightingLoadError}</p>
       ) : null}
 
-      {!doorPickerMode && directionLabel ? (
+      {!doorPickerMode && directionLabel && !seekEmbedMode ? (
         <div
           style={{
             background: lineColor,
@@ -926,6 +942,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
+      {!seekEmbedMode ? (
       <div
         style={{
           display: "flex",
@@ -948,8 +965,9 @@ export default function SubwaySeatMap({
         </span>
         <span style={{ fontSize: 14, color: lineColor, fontWeight: 800 }}>우측 →</span>
       </div>
+      ) : null}
 
-      {!doorPickerMode ? (
+      {!seekEmbedMode && !doorPickerMode ? (
         <p
           style={{
             margin: "0 0 8px",
@@ -961,7 +979,7 @@ export default function SubwaySeatMap({
         >
           맨 위부터 노약자 → 출입문 출1-1~출1-3 구역 · 좌·우 각 6석(A~F)
         </p>
-      ) : (
+      ) : !seekEmbedMode ? (
         <p
           style={{
             margin: "0 0 8px",
@@ -973,17 +991,17 @@ export default function SubwaySeatMap({
         >
           좌측「문」을 눌러 지금 서 있는 출입문을 선택하세요
         </p>
-      )}
+      ) : null}
       <div
         style={{
           background: "#FFFFFF",
-          border: `2px solid ${lineColor}`,
-          borderRadius: 14,
-          padding: "10px 8px",
+          border: seekEmbedMode ? "none" : `2px solid ${lineColor}`,
+          borderRadius: seekEmbedMode ? 0 : 14,
+          padding: seekEmbedMode ? "4px 0" : "10px 8px",
           display: "flex",
           justifyContent: "flex-start",
-          maxHeight: "min(62vh, 520px)",
-          overflowY: "auto",
+          maxHeight: seekEmbedMode ? "none" : "min(62vh, 520px)",
+          overflowY: seekEmbedMode ? "visible" : "auto",
           overflowX: "hidden",
           WebkitOverflowScrolling: "touch",
           position: "relative",
@@ -993,7 +1011,7 @@ export default function SubwaySeatMap({
         {renderCarBody()}
       </div>
 
-      {selectedSeat && !doorPickerMode ? (
+      {selectedSeat && !doorPickerMode && !seekEmbedMode ? (
         <div
           style={{
             marginTop: 12,
@@ -1018,7 +1036,7 @@ export default function SubwaySeatMap({
         </div>
       ) : null}
 
-      {!doorPickerMode ? (
+      {!doorPickerMode && !seekEmbedMode ? (
       <div
         style={{
           display: "flex",

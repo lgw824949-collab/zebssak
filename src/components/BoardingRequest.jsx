@@ -256,12 +256,6 @@ function mapSeekSelectionToSubmission({ car, door, doorLabel, side, seatLetter, 
   };
 }
 
-function buildSeekSeatMapDirectionHeading(station) {
-  const dest = formatStationDisplayName(station);
-  if (dest) return `${dest} 방향 ↑`;
-  return "진행 방향 ↑";
-}
-
 /** SubwaySeatMap 안내·중복 UI 숨김 + 이중 스크롤 제거 */
 function applySeekSeatMapShellLayout(container) {
   const root = container?.firstElementChild;
@@ -293,6 +287,8 @@ function applySeekSeatMapShellLayout(container) {
       text.includes("곧 하차") ||
       text.includes("선택한 자리") ||
       text.includes("탭)") ||
+      text.includes("좌측「문」") ||
+      text.includes("방향 ↑") ||
       (text.includes("방면") && style.includes("background") && !style.includes("border-radius: 14"));
 
     if (shouldHide) {
@@ -2520,7 +2516,6 @@ function StepSeekDoor({
   const [selectedSeat, setSelectedSeat] = useState(null);
   const mapShellRef = useRef(null);
   const lineColor = LINE_OLIVE;
-  const directionHeading = buildSeekSeatMapDirectionHeading(station);
 
   const pickPreview = selectedSeat
     ? buildSeekPickFromSeatInfo(selectedSeat, station, activeCar)
@@ -2595,18 +2590,6 @@ function StepSeekDoor({
           }}
         >
           지금 서 있는 위치를 눌러 주세요
-        </p>
-        <p
-          style={{
-            margin: "0 0 10px",
-            fontSize: 17,
-            fontWeight: 800,
-            color: lineColor,
-            textAlign: "center",
-            lineHeight: 1.35,
-          }}
-        >
-          {directionHeading}
         </p>
 
         <div
@@ -2722,7 +2705,7 @@ function StepSeekDoor({
           </p>
         ) : (
           <p style={{ margin: "0 0 10px", fontSize: 13, color: C.muted, textAlign: "center" }}>
-            맵에서 위치를 탭하면 아래에 표시됩니다
+            지금 서 있는 칸을 눌러 주세요
           </p>
         )}
         <button
