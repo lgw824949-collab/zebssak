@@ -749,22 +749,18 @@ export default function SubwaySeatMap({
       </div>
     );
 
-    if (!seekEmbedMode) {
-      rows.push(
-        sideLabelsRow,
-        <div key="row-prio-top" style={carRowStyle}>
-          <div style={sideColumnStyle()}>
-            <PriorityBlock side="left" placement="top" />
-          </div>
-          {renderFlexAisleSpacer()}
-          <div style={sideColumnStyle()}>
-            <PriorityBlock side="right" placement="top" />
-          </div>
+    rows.push(
+      sideLabelsRow,
+      <div key="row-prio-top" style={carRowStyle}>
+        <div style={sideColumnStyle()}>
+          <PriorityBlock side="left" placement="top" />
         </div>
-      );
-    } else {
-      rows.push(sideLabelsRow);
-    }
+        {renderFlexAisleSpacer()}
+        <div style={sideColumnStyle()}>
+          <PriorityBlock side="right" placement="top" />
+        </div>
+      </div>
+    );
 
     if (doorPickerMode) {
       rows.push(renderSideDoorRow(1));
@@ -784,19 +780,17 @@ export default function SubwaySeatMap({
       rows.push(renderDoorFourRow());
     }
 
-    if (!seekEmbedMode) {
-      rows.push(
-        <div key="row-prio-bottom" style={carRowStyle}>
-          <div style={sideColumnStyle()}>
-            <PriorityBlock side="left" placement="bottom" />
-          </div>
-          {renderFlexAisleSpacer()}
-          <div style={sideColumnStyle()}>
-            <PriorityBlock side="right" placement="bottom" />
-          </div>
+    rows.push(
+      <div key="row-prio-bottom" style={carRowStyle}>
+        <div style={sideColumnStyle()}>
+          <PriorityBlock side="left" placement="bottom" />
         </div>
-      );
-    }
+        {renderFlexAisleSpacer()}
+        <div style={sideColumnStyle()}>
+          <PriorityBlock side="right" placement="bottom" />
+        </div>
+      </div>
+    );
 
     return (
       <div
