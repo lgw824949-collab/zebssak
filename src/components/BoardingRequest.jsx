@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
-import SubwaySeatMap, { formatExitDoorDisplayLabel, mapSeatIdToApi } from "@/components/SubwaySeatMap";
+import SubwaySeatMap, { mapSeatIdToApi } from "@/components/SubwaySeatMap";
 import { handleUnauthorizedResponse } from "@/lib/auth-client";
 import { normalizeDirectionForStorage } from "@/lib/match-direction";
 
@@ -206,7 +206,7 @@ function buildSeekPickResultLine({ station, side, car, door, seatLetter }) {
   const parts = [
     station ? `${formatStationDisplayName(station)} 방향` : null,
     resolveSeekSideLabel(side),
-    car && door ? formatExitDoorDisplayLabel(car, door) : null,
+    car && door ? `${car}-${door}` : null,
     seatLetter ? `${seatLetter}열` : null,
   ].filter(Boolean);
   return parts.join(" · ");
