@@ -560,15 +560,6 @@ export default function SubwaySeatMap({
       ? quickExitHint.door
       : null;
 
-  const aisleSpacerStyle = useMemo(
-    () => ({
-      width: AISLE_GAP,
-      flexShrink: 0,
-      pointerEvents: "none",
-    }),
-    []
-  );
-
   const carRowStyle = useMemo(
     () => ({
       display: "flex",
@@ -580,8 +571,6 @@ export default function SubwaySeatMap({
     }),
     []
   );
-
-  const renderAisleSpacer = () => <div style={aisleSpacerStyle} aria-hidden />;
 
   /** 좌·우 열 사이 — 늘어나 우측 열을 컨테이너 오른쪽 끝에 붙임 */
   const renderFlexAisleSpacer = () => (
