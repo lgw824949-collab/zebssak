@@ -262,10 +262,13 @@ function buildSeekSeatMapDirectionHeading(station) {
   return "진행 방향 ↑";
 }
 
-/** SubwaySeatMap 안내 문구만 숨김 — 객실 본문(테두리 박스)은 절대 숨기지 않음 */
-function hideSubwaySeatMapIntroChrome(container) {
+/** SubwaySeatMap 안내·중복 UI 숨김 + 이중 스크롤 제거 */
+function applySeekSeatMapShellLayout(container) {
   const root = container?.firstElementChild;
   if (!root) return;
+
+  root.style.padding = "0";
+  root.style.maxWidth = "100%";
 
   for (const child of root.children) {
     const style = (child.getAttribute("style") || "").toLowerCase();
@@ -277,6 +280,8 @@ function hideSubwaySeatMapIntroChrome(container) {
 
     if (isCarBody) {
       child.style.removeProperty("display");
+      child.style.maxHeight = "none";
+      child.style.overflow = "visible";
       continue;
     }
 
@@ -287,7 +292,9 @@ function hideSubwaySeatMapIntroChrome(container) {
       text.includes("빈 자리") ||
       text.includes("곧 하차") ||
       text.includes("선택한 자리") ||
-      (text.includes("방면") && style.includes("background") && !style.includes("border-radius: 14"));
+      text.includes("탭)") ||
+      (text.includes("방면") && style.includes("background") && !style.includes("border-radius: 14")) ||
+      (text.includes("좌측") && text.includes("우측") && text.length < 40);
 
     if (shouldHide) {
       child.style.display = "none";
@@ -2514,7 +2521,6 @@ function StepSeekDoor({
   const [selectedSeat, setSelectedSeat] = useState(null);
   const mapShellRef = useRef(null);
   const lineColor = LINE_OLIVE;
-  const lineColorLight = LINE_OLIVE_LIGHT;
   const directionHeading = buildSeekSeatMapDirectionHeading(station);
 
   const pickPreview = selectedSeat
@@ -2523,7 +2529,7 @@ function StepSeekDoor({
 
   useLayoutEffect(() => {
     if (!mapShellRef.current) return;
-    hideSubwaySeatMapIntroChrome(mapShellRef.current);
+    applySeekSeatMapShellLayout(mapShellRef.current);
   }, [activeCar, selectedSeat, trainId, station, direction, drtnInfo, lineNumber]);
 
   function handleSeatClick(seat) {
@@ -2566,52 +2572,52 @@ function StepSeekDoor({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
-      <Header step={3} onBack={onBack} title="내 위치 선택" line={line} />
+      <Header step={3} onBack={onBack} title="앉은 자리" line={line} />
 
       <div
         style={{
           flex: 1,
-          overflow: "auto",
-          padding: `4px ${MOBILE.pageX}px 0`,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          padding: `0 ${MOBILE.pageX}px`,
           position: "relative",
         }}
       >
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
 
-        <div
+        <p
           style={{
-            display: "grid",
-            gridTemplateColumns: "1fr auto 1fr",
-            alignItems: "center",
-            gap: 8,
-            margin: "8px 0 10px",
+            margin: "8px 0 4px",
+            fontSize: 15,
+            fontWeight: 600,
+            color: C.text,
+            textAlign: "center",
           }}
         >
-          <span style={{ fontSize: 17, fontWeight: 800, color: C.text }}>← 좌측</span>
-          <span
-            style={{
-              fontSize: 17,
-              fontWeight: 800,
-              color: lineColor,
-              textAlign: "center",
-              lineHeight: 1.35,
-              wordBreak: "keep-all",
-            }}
-          >
-            {directionHeading}
-          </span>
-          <span style={{ fontSize: 17, fontWeight: 800, color: C.text, textAlign: "right" }}>
-            우측 →
-          </span>
-        </div>
+          지금 앉은 자리를 눌러 주세요
+        </p>
+        <p
+          style={{
+            margin: "0 0 10px",
+            fontSize: 17,
+            fontWeight: 800,
+            color: lineColor,
+            textAlign: "center",
+            lineHeight: 1.35,
+          }}
+        >
+          {directionHeading}
+        </p>
 
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 8,
-            maxWidth: 240,
-            marginBottom: 10,
+            display: "flex",
+            gap: 6,
+            overflowX: "auto",
+            paddingBottom: 4,
+            marginBottom: 8,
+            WebkitOverflowScrolling: "touch",
           }}
         >
           {carNumbers.map((carNum) => {
@@ -2626,19 +2632,24 @@ function StepSeekDoor({
                   setActiveCar(carNum);
                   setSelectedSeat(null);
                 }}
+                aria-label={`${carNum}호차`}
+                aria-pressed={isActive}
                 style={{
+                  flex: "0 0 auto",
+                  minWidth: 44,
                   minHeight: 44,
+                  padding: "0 12px",
                   borderRadius: 10,
                   border: `1.5px solid ${isActive ? lineColor : C.border}`,
                   background: isActive ? lineColor : C.card,
                   color: isActive ? "#fff" : C.text,
-                  fontSize: MOBILE.inputFontSize,
+                  fontSize: 15,
                   fontWeight: 700,
                   cursor: isSubmitting ? "default" : "pointer",
                   opacity: isSubmitting ? 0.55 : 1,
                 }}
               >
-                {carNum}호차
+                {carNum}
               </button>
             );
           })}
@@ -2648,12 +2659,11 @@ function StepSeekDoor({
           ref={mapShellRef}
           className="zeb-seek-seat-map-shell"
           style={{
-            minHeight: 320,
-            maxHeight: "min(58vh, 520px)",
+            flex: 1,
+            minHeight: 0,
             overflowY: "auto",
             overflowX: "hidden",
             WebkitOverflowScrolling: "touch",
-            marginBottom: 8,
             background: C.card,
             borderRadius: 12,
             border: `1px solid ${C.border}`,
@@ -2662,96 +2672,60 @@ function StepSeekDoor({
           {!trainId ? (
             <p
               style={{
-                padding: "24px 16px",
+                padding: "32px 16px",
                 textAlign: "center",
                 fontSize: 14,
                 color: C.muted,
                 lineHeight: 1.5,
               }}
             >
-              열차 정보를 불러오지 못했습니다.
-              <br />
-              이전 단계에서 열차를 다시 선택해 주세요.
+              이전 단계에서 열차를 선택한 뒤 다시 시도해 주세요.
             </p>
           ) : (
-          <SubwaySeatMap
-            key={`seek-seat-${trainId}-${activeCar}-${line}`}
-            line={line}
-            station={station || currentStation || ""}
-            trainNo={trainId}
-            lineNumber={lineNumber}
-            direction={direction}
-            drtnInfo={drtnInfo}
-            car={activeCar}
-            interactionMode="seek"
-            selectedSeatId={selectedSeat?.id}
-            onSeatClick={handleSeatClick}
-          />
+            <SubwaySeatMap
+              key={`seek-seat-${trainId}-${activeCar}-${line}`}
+              line={line}
+              station={station || currentStation || ""}
+              trainNo={trainId}
+              lineNumber={lineNumber}
+              direction={direction}
+              drtnInfo={drtnInfo}
+              car={activeCar}
+              interactionMode="seek"
+              selectedSeatId={selectedSeat?.id}
+              onSeatClick={handleSeatClick}
+            />
           )}
         </div>
-
-        {pickPreview?.pickResultLine ? (
-          <div
-            style={{
-              margin: "0 0 12px",
-              padding: "14px 16px",
-              borderRadius: 12,
-              background: lineColorLight,
-              border: `1.5px solid ${lineColor}`,
-              textAlign: "center",
-            }}
-          >
-            <p style={{ margin: 0, fontSize: 12, color: C.muted, fontWeight: 600 }}>선택하신 위치</p>
-            <p
-              style={{
-                margin: "8px 0 0",
-                fontSize: 18,
-                fontWeight: 800,
-                color: lineColor,
-                lineHeight: 1.45,
-              }}
-            >
-              {pickPreview.pickResultLine}
-            </p>
-            <p style={{ margin: "10px 0 0", fontSize: 13, color: C.text, fontWeight: 600 }}>
-              여기 맞나요?
-            </p>
-          </div>
-        ) : null}
       </div>
 
       <div
         style={{
-          padding: `12px ${MOBILE.pageX}px max(24px, env(safe-area-inset-bottom))`,
+          flexShrink: 0,
+          padding: `12px ${MOBILE.pageX}px max(20px, env(safe-area-inset-bottom))`,
           background: C.card,
           borderTop: `1px solid ${C.border}`,
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
+          boxShadow: "0 -4px 16px rgba(0,0,0,0.06)",
         }}
       >
         {pickPreview?.pickResultLine ? (
-          <button
-            type="button"
-            className="zeb-touch-target"
-            disabled={isSubmitting}
-            onClick={() => setSelectedSeat(null)}
+          <p
             style={{
-              width: "100%",
-              minHeight: 44,
-              padding: "10px 0",
-              background: C.card,
-              color: C.muted,
-              border: `1px solid ${C.border}`,
-              borderRadius: 12,
-              fontSize: 15,
-              fontWeight: 600,
-              cursor: isSubmitting ? "default" : "pointer",
+              margin: "0 0 10px",
+              fontSize: 16,
+              fontWeight: 800,
+              color: lineColor,
+              textAlign: "center",
+              lineHeight: 1.45,
             }}
           >
-            아니요, 다시 고를게요
-          </button>
-        ) : null}
+            {pickPreview.pickResultLine}
+          </p>
+        ) : (
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: C.muted, textAlign: "center" }}>
+            좌석을 탭하면 아래에 위치가 표시됩니다
+          </p>
+        )}
         <button
           type="button"
           className="zeb-touch-target"
@@ -2766,7 +2740,7 @@ function StepSeekDoor({
             color: "#fff",
             border: "none",
             borderRadius: 12,
-            fontSize: 16,
+            fontSize: 17,
             fontWeight: 700,
             cursor: pickPreview?.pickResultLine && !isSubmitting ? "pointer" : "default",
             display: "flex",
@@ -2776,8 +2750,30 @@ function StepSeekDoor({
           }}
         >
           {isSubmitting ? <LoadingSpinner /> : null}
-          {pickPreview?.pickResultLine ? "네, 맞아요" : "좌석을 눌러 주세요"}
+          {pickPreview?.pickResultLine ? "네, 맞아요" : "자리를 눌러 주세요"}
         </button>
+        {pickPreview?.pickResultLine ? (
+          <button
+            type="button"
+            className="zeb-touch-target"
+            disabled={isSubmitting}
+            onClick={() => setSelectedSeat(null)}
+            style={{
+              width: "100%",
+              marginTop: 8,
+              padding: "8px 0",
+              background: "none",
+              border: "none",
+              color: C.muted,
+              fontSize: 14,
+              fontWeight: 600,
+              textDecoration: "underline",
+              cursor: isSubmitting ? "default" : "pointer",
+            }}
+          >
+            다시 고르기
+          </button>
+        ) : null}
       </div>
     </div>
   );
