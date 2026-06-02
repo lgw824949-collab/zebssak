@@ -293,8 +293,7 @@ function applySeekSeatMapShellLayout(container) {
       text.includes("곧 하차") ||
       text.includes("선택한 자리") ||
       text.includes("탭)") ||
-      (text.includes("방면") && style.includes("background") && !style.includes("border-radius: 14")) ||
-      (text.includes("좌측") && text.includes("우측") && text.length < 40);
+      (text.includes("방면") && style.includes("background") && !style.includes("border-radius: 14"));
 
     if (shouldHide) {
       child.style.display = "none";

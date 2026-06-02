@@ -21,6 +21,9 @@ const LINE_COLOR_FALLBACK = "#747F00";
 const ELDERLY_COLOR = "#FF8F00";
 const AISLE_BG_ALPHA = "1A";
 const ALIGHTING_BG_ALPHA = "26";
+/** 통로 열·구역 배지(5-1 등) 공통 크기 */
+const AISLE_COLUMN_WIDTH = 56;
+const AISLE_SECTION_BADGE_FONT_SIZE = 18;
 
 const PRIORITY = 3;
 /** 좌석 구역 수 · 출입문 1-1 ~ 1-3 · 일반석 3구역 */
@@ -309,21 +312,24 @@ function AisleSectionBadge({ label, lineColor, highlighted }) {
   return (
     <span
       style={{
-        fontSize: 11,
-        fontWeight: 700,
+        fontSize: AISLE_SECTION_BADGE_FONT_SIZE,
+        fontWeight: 800,
         fontFamily: "'JetBrains Mono', ui-monospace, monospace",
         fontVariantNumeric: "tabular-nums",
         color: highlighted ? "#FFFFFF" : lineColor,
         background: highlighted ? "#F59E0B" : "#FFFFFF",
-        padding: "6px 11px",
+        padding: "8px 14px",
         borderRadius: 999,
         border: `2px solid ${highlighted ? "#F59E0B" : lineColor}`,
-        lineHeight: 1,
+        lineHeight: 1.1,
         letterSpacing: 0,
-        boxShadow: "0 1px 4px rgba(15, 23, 42, 0.1)",
+        boxShadow: "0 1px 4px rgba(15, 23, 42, 0.12)",
         pointerEvents: "none",
         userSelect: "none",
         whiteSpace: "nowrap",
+        minWidth: 52,
+        textAlign: "center",
+        display: "inline-block",
       }}
     >
       {label}
@@ -345,7 +351,7 @@ function AisleDoorDivider({ label, lineColor }) {
       <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
       <div
         style={{
-          width: 48,
+          width: AISLE_COLUMN_WIDTH,
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
@@ -357,13 +363,12 @@ function AisleDoorDivider({ label, lineColor }) {
       >
         <span
           style={{
-            fontSize: 9,
-            fontWeight: 600,
+            fontSize: AISLE_SECTION_BADGE_FONT_SIZE,
+            fontWeight: 800,
             fontFamily: "'JetBrains Mono', ui-monospace, monospace",
             fontVariantNumeric: "tabular-nums",
             color: lineColor,
-            opacity: 0.75,
-            lineHeight: 1.2,
+            lineHeight: 1.1,
             userSelect: "none",
             pointerEvents: "none",
           }}
@@ -589,7 +594,7 @@ export default function SubwaySeatMap({
 
   const aisleColumnStyle = useMemo(
     () => ({
-      width: 48,
+      width: AISLE_COLUMN_WIDTH,
       flexShrink: 0,
       display: "flex",
       flexDirection: "column",
@@ -748,7 +753,7 @@ export default function SubwaySeatMap({
             문
           </button>
         </div>
-        <div style={{ width: 48, flexShrink: 0 }} aria-hidden />
+        <div style={{ width: AISLE_COLUMN_WIDTH, flexShrink: 0 }} aria-hidden />
         <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
       </div>
     );
@@ -756,7 +761,27 @@ export default function SubwaySeatMap({
 
   /** 노약자 → 출입문1-1 → A~F → … → 출입문1-4 → 노약자 */
   const renderCarBody = () => {
+    const sideLabelStyle = {
+      flex: 1,
+      minWidth: 0,
+      fontSize: 14,
+      fontWeight: 800,
+      color: lineColor,
+      textAlign: "center",
+      lineHeight: 1.2,
+      userSelect: "none",
+    };
+
     const rows = [
+      <div
+        key="row-side-labels"
+        style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", marginBottom: 2 }}
+        aria-hidden
+      >
+        <span style={sideLabelStyle}>← 좌측</span>
+        <div style={{ width: AISLE_COLUMN_WIDTH, flexShrink: 0 }} />
+        <span style={sideLabelStyle}>우측 →</span>
+      </div>,
       <div
         key="row-prio-top"
         style={{ display: "flex", alignItems: "stretch", gap: 4, width: "100%" }}
@@ -871,7 +896,7 @@ export default function SubwaySeatMap({
             left: "50%",
             top: 0,
             bottom: 0,
-            width: 48,
+            width: AISLE_COLUMN_WIDTH,
             transform: "translateX(-50%)",
             background: `${lineColor}${AISLE_BG_ALPHA}`,
             pointerEvents: "none",
@@ -1050,7 +1075,7 @@ export default function SubwaySeatMap({
           padding: "0 2px",
         }}
       >
-        <span style={{ fontSize: 11, color: "#78909C", fontWeight: 700 }}>← 좌측</span>
+        <span style={{ fontSize: 14, color: lineColor, fontWeight: 800 }}>← 좌측</span>
         <span
           style={{
             fontSize: 11,
@@ -1062,7 +1087,7 @@ export default function SubwaySeatMap({
         >
           A(위) ↓ F(아래)
         </span>
-        <span style={{ fontSize: 11, color: "#78909C", fontWeight: 700 }}>우측 →</span>
+        <span style={{ fontSize: 14, color: lineColor, fontWeight: 800 }}>우측 →</span>
       </div>
 
       {!doorPickerMode ? (
