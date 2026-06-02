@@ -23,6 +23,8 @@ const ALIGHTING_BG_ALPHA = "26";
 /** 통로 열·좌석 열 고정 폭 */
 const SEAT_CELL = 40;
 const AISLE_GAP = 20;
+/** 입구 배지 열 — A~F 좌석 열과 분리해 1열 정렬 유지 */
+const ENTRANCE_COL = 44;
 const AISLE_SECTION_BADGE_FONT_SIZE = 13;
 
 const PRIORITY = 3;
@@ -636,44 +638,6 @@ export default function SubwaySeatMap({
     );
   };
 
-  /** 구역별 A~F — A열(첫 줄)에만 입구 번호를 좌·우 바깥에 나란히 */
-  const renderSectionRows = (sectionIndex, leftSeats, rightSeats) => {
-    const doorNo = sectionIndex + 1;
-    const rows = [];
-
-    for (let visualRank = 0; visualRank < REGULAR_SEATS_PER_SIDE; visualRank += 1) {
-      const seatInSection = regularSeatIndexOrder[visualRank];
-      const isEntranceRow = visualRank === 0;
-
-      rows.push(
-        <div
-          key={`sec-${sectionIndex}-rank-${visualRank}`}
-          style={{ ...carRowStyle, marginBottom: 4 }}
-        >
-          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {isEntranceRow ? renderEntranceBadge(doorNo) : null}
-            {renderSeatAt("left", sectionIndex, leftSeats, doorNo, visualRank, seatInSection)}
-          </div>
-          {renderAisleSpacer()}
-          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {renderSeatAt("right", sectionIndex, rightSeats, doorNo, visualRank, seatInSection)}
-            {isEntranceRow ? renderEntranceBadge(doorNo) : null}
-          </div>
-        </div>
-      );
-    }
-
-    return rows;
-  };
-
-  const renderDoorFourRow = () => (
-    <div key="entrance-4" style={{ ...carRowStyle, margin: "6px 0 4px" }}>
-      {renderEntranceBadge(4)}
-      <div style={{ flex: 1, minWidth: AISLE_GAP }} aria-hidden />
-      {renderEntranceBadge(4)}
-    </div>
-  );
-
   const sideColumnStyle = useCallback(
     (side) => ({
       width: SEAT_CELL,
@@ -686,6 +650,63 @@ export default function SubwaySeatMap({
     }),
     []
   );
+
+  const entranceColumnStyle = useCallback(
+    (side) => ({
+      width: ENTRANCE_COL,
+      flexShrink: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: side === "left" ? "flex-start" : "flex-end",
+      boxSizing: "border-box",
+    }),
+    []
+  );
+
+  /** 입구 배지 열 | 좌석 | 통로 | 좌석 | 입구 배지 열 — 모든 행 동일 폭 */
+  const renderBenchRow = ({ key, leftEntrance = null, leftSeat = null, rightSeat = null, rightEntrance = null, marginBottom = 4 }) => (
+    <div key={key} style={{ ...carRowStyle, marginBottom }}>
+      <div style={entranceColumnStyle("left")}>{leftEntrance}</div>
+      <div style={sideColumnStyle("left")}>{leftSeat}</div>
+      {renderAisleSpacer()}
+      <div style={sideColumnStyle("right")}>{rightSeat}</div>
+      <div style={entranceColumnStyle("right")}>{rightEntrance}</div>
+    </div>
+  );
+
+  /** 구역별 입구 행 → A~F (입구 번호는 A열과 별도 행) */
+  const renderSectionRows = (sectionIndex, leftSeats, rightSeats) => {
+    const doorNo = sectionIndex + 1;
+    const rows = [
+      renderBenchRow({
+        key: `sec-${sectionIndex}-entrance`,
+        leftEntrance: renderEntranceBadge(doorNo),
+        rightEntrance: renderEntranceBadge(doorNo),
+        marginBottom: 6,
+      }),
+    ];
+
+    for (let visualRank = 0; visualRank < REGULAR_SEATS_PER_SIDE; visualRank += 1) {
+      const seatInSection = regularSeatIndexOrder[visualRank];
+      rows.push(
+        renderBenchRow({
+          key: `sec-${sectionIndex}-rank-${visualRank}`,
+          leftSeat: renderSeatAt("left", sectionIndex, leftSeats, doorNo, visualRank, seatInSection),
+          rightSeat: renderSeatAt("right", sectionIndex, rightSeats, doorNo, visualRank, seatInSection),
+        })
+      );
+    }
+
+    return rows;
+  };
+
+  const renderDoorFourRow = () =>
+    renderBenchRow({
+      key: "entrance-4",
+      leftEntrance: renderEntranceBadge(4),
+      rightEntrance: renderEntranceBadge(4),
+      marginBottom: 4,
+    });
 
   const renderSideDoorRow = (doorNo) => {
     const label = `${carNum}-${doorNo}`;
@@ -737,13 +758,19 @@ export default function SubwaySeatMap({
 
     const rows = [];
 
+    const sideLabelsRow = (
+      <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: seekEmbedMode ? 6 : 4 }} aria-hidden>
+        <div style={entranceColumnStyle("left")} />
+        <span style={sideLabelStyle}>← 좌측</span>
+        {renderAisleSpacer()}
+        <span style={{ ...sideLabelStyle, textAlign: "center" }}>우측 →</span>
+        <div style={entranceColumnStyle("right")} />
+      </div>
+    );
+
     if (!seekEmbedMode) {
       rows.push(
-        <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: 4, gap: 6 }} aria-hidden>
-          <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>← 좌측</span>
-          {renderAisleSpacer()}
-          <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>우측 →</span>
-        </div>,
+        sideLabelsRow,
         <div key="row-prio-top" style={carRowStyle}>
           <div style={sideColumnStyle("left")}>
             <PriorityBlock side="left" placement="top" />
@@ -755,13 +782,7 @@ export default function SubwaySeatMap({
         </div>
       );
     } else {
-      rows.push(
-        <div key="row-side-labels" style={{ ...carRowStyle, marginBottom: 6, gap: 6 }} aria-hidden>
-          <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>← 좌측</span>
-          {renderAisleSpacer()}
-          <span style={{ ...sideLabelStyle, width: "auto", minWidth: SEAT_CELL + 48 }}>우측 →</span>
-        </div>
-      );
+      rows.push(sideLabelsRow);
     }
 
     if (doorPickerMode) {
