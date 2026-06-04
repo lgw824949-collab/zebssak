@@ -1,4 +1,4 @@
-const SW_VERSION = '2026-06-04-mobile-refresh-v27'
+const SW_VERSION = '2026-06-04-mobile-refresh-v28'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting())

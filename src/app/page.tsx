@@ -22,7 +22,7 @@ interface StoredUser {
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
 const GPS_MAX_RADIUS_KM = 1
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
-const HOME_UI_VERSION = '2026-06-04-mobile-refresh-v27'
+const HOME_UI_VERSION = '2026-06-04-mobile-refresh-v28'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {
@@ -302,7 +302,8 @@ export default function Home() {
         // 캐시 정리 실패 시에도 화면은 계속 표시합니다.
       }
 
-      if (previous || hadServiceWorker) {
+      const versionChanged = previous != null && previous !== HOME_UI_VERSION
+      if (versionChanged || hadServiceWorker) {
         sessionStorage.setItem(reloadOnceKey, '1')
         window.location.reload()
       }
@@ -315,7 +316,7 @@ export default function Home() {
     }
 
     void navigator.serviceWorker
-      .register('/sw.js')
+      .register(`/sw.js?v=${HOME_UI_VERSION}`)
       .then((registration) => registration.update())
       .catch(() => {
         // SW 갱신 실패 시에도 화면은 계속 표시합니다.

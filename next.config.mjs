@@ -4,6 +4,14 @@ const nextConfig = {
   async headers() {
     return [
       {
+        source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' }],
+      },
+      {
+        source: '/images/subway-hero.png',
+        headers: [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }],
+      },
+      {
         source: '/boarding',
         headers: [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }],
       },
