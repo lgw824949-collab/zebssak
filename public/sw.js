@@ -1,4 +1,4 @@
-const SW_VERSION = '2026-06-01-seek-flow-v26'
+const SW_VERSION = '2026-06-04-mobile-refresh-v27'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting())
@@ -17,13 +17,6 @@ self.addEventListener('activate', (event) => {
     })()
   )
 })
-
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    fetch(event.request)
-      .catch(() => caches.match(event.request))
-  );
-});
 
 self.addEventListener('fetch', (event) => {
   event.respondWith(

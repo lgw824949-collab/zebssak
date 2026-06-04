@@ -22,7 +22,7 @@ interface StoredUser {
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
 const GPS_MAX_RADIUS_KM = 1
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
-const HOME_UI_VERSION = '2026-06-01-seek-flow-v14'
+const HOME_UI_VERSION = '2026-06-04-mobile-refresh-v27'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {
@@ -183,6 +183,7 @@ function mapLineLabelToApiLine(lineLabel: string): string | null {
 export default function Home() {
   const router = useRouter()
   const transferScrollRef = useRef<HTMLDivElement>(null)
+  const mainScrollRef = useRef<HTMLElement>(null)
   const [user, setUser] = useState<StoredUser | null>(null)
   const [isAuthChecked, setIsAuthChecked] = useState(false)
   const [isLoadingData, setIsLoadingData] = useState(true)
@@ -306,6 +307,19 @@ export default function Home() {
         window.location.reload()
       }
     })()
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+      return
+    }
+
+    void navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => registration.update())
+      .catch(() => {
+        // SW 갱신 실패 시에도 화면은 계속 표시합니다.
+      })
   }, [])
 
   useEffect(() => {
@@ -669,18 +683,6 @@ export default function Home() {
     <div
       className="mx-auto flex h-dvh max-h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-[#f5f5f0]"
       style={{ zoom: homeZoomScale }}
-      onTouchStart={(e) => setPullStartY(e.touches[0].clientY)}
-      onTouchEnd={(e) => {
-        const diff = e.changedTouches[0].clientY - pullStartY
-        if (diff > 80) {
-          window.location.reload()
-        }
-        setPulling(false)
-      }}
-      onTouchMove={(e) => {
-        const diff = e.touches[0].clientY - pullStartY
-        if (diff > 30) setPulling(true)
-      }}
     >
       {pulling ? (
         <div className="text-center py-2 text-sm text-[#6b9e3f] font-medium">
@@ -803,10 +805,29 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
+      <main
+        ref={mainScrollRef}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain"
+        onTouchStart={(e) => setPullStartY(e.touches[0].clientY)}
+        onTouchEnd={(e) => {
+          const diff = e.changedTouches[0].clientY - pullStartY
+          if (diff > 80 && (mainScrollRef.current?.scrollTop ?? 0) <= 0) {
+            window.location.reload()
+          }
+          setPulling(false)
+        }}
+        onTouchMove={(e) => {
+          if ((mainScrollRef.current?.scrollTop ?? 0) > 0) {
+            setPulling(false)
+            return
+          }
+          const diff = e.touches[0].clientY - pullStartY
+          if (diff > 30) setPulling(true)
+        }}
+      >
         <div className="w-full">
           <img
-            src="/images/subway-hero.png"
+            src={`/images/subway-hero.png?v=${HOME_UI_VERSION}`}
             alt="지하철 7호선 실내"
             className="max-h-[160px] w-full object-contain"
             onError={(e) => {
