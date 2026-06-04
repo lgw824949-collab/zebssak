@@ -77,7 +77,7 @@ const DEFAULT_TRANSFER_STATIONS = [
   '도봉산역',
 ] as const
 
-const VOICE_PARSE_PENDING_KEY = 'voiceParsePending'
+// const VOICE_PARSE_PENDING_KEY = 'voiceParsePending'
 /** 홈 화면 확대 단계 — localStorage에 저장 */
 const HOME_ZOOM_STORAGE_KEY = 'zeb_home_zoom_scale'
 const HOME_ZOOM_STEPS = [1, 1.1, 1.25] as const

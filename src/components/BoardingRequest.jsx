@@ -1474,51 +1474,23 @@ function StepStation({
         ) : null}
 
         {results.length > 0 && (
-          <div
-            style={{
-              marginTop: 8,
-              background: C.card,
-              border: `1px solid ${C.border}`,
-              borderRadius: 12,
-              overflow: "hidden",
-            }}
-          >
-            {results.map((station, i) => (
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+            {results.map((station) => (
               <button
                 key={station}
                 type="button"
-                className="zeb-touch-target"
+                className="zeb-touch-target bg-[#6b9e3f] rounded-xl p-4 w-full text-left"
                 onClick={() => {
                   setSelected(station);
                   setQuery(station);
                 }}
-                style={{
-                  width: "100%",
-                  padding: "12px 14px",
-                  minHeight: MOBILE.touchMin,
-                  background: selected === station ? lineColorLight : C.card,
-                  border: "none",
-                  borderTop: i > 0 ? `1px solid ${C.border}` : "none",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  fontSize: 15,
-                  color: selected === station ? lineColor : C.text,
-                  fontWeight: selected === station ? 600 : 400,
-                }}
               >
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: lineColor,
-                    flexShrink: 0,
-                  }}
-                />
-                {formatStationDisplayName(station)}
+                <p className="text-sm text-white opacity-70 m-0">
+                  {mode === "leave" ? "하차역" : "목적지"}
+                </p>
+                <p className="text-xl font-bold text-white m-0 mt-1">
+                  {formatStationDisplayName(station)}
+                </p>
               </button>
             ))}
           </div>
