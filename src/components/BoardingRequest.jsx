@@ -2910,64 +2910,113 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
     return primary || "서울 7호선";
   })();
 
+  const stationDisplayName = formatStationDisplayName(station);
+
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center",
-      justifyContent: "center", height: "100%", padding: 32, textAlign: "center",
-      background: C.bg,
-    }}>
-      <div style={{
-        width: 72, height: 72, borderRadius: 36,
-        background: lineColor, display: "flex",
-        alignItems: "center", justifyContent: "center",
-        fontSize: 36, marginBottom: 20, color: "#fff",
-      }}>✓</div>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "100%",
+        padding: "32px 24px",
+        textAlign: "center",
+        background: C.card,
+      }}
+    >
+      <div
+        style={{
+          width: 72,
+          height: 72,
+          borderRadius: 36,
+          background: lineColor,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 36,
+          marginBottom: 16,
+          color: "#fff",
+          fontWeight: 700,
+        }}
+      >
+        ✓
+      </div>
       <span
         style={{
           display: "inline-block",
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: 700,
           color: "#fff",
           background: lineColor,
           borderRadius: 999,
-          padding: "3px 10px",
-          marginBottom: 10,
+          padding: "4px 12px",
+          marginBottom: 12,
         }}
       >
         {lineDisplayName}
       </span>
-      <div style={{ fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>
+      <h2
+        style={{
+          margin: "0 0 20px",
+          fontSize: 22,
+          fontWeight: 800,
+          color: C.text,
+          lineHeight: 1.3,
+        }}
+      >
         {isLeaveMode ? "하차 등록 완료!" : "등록 완료!"}
+      </h2>
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          marginBottom: 20,
+          fontSize: 14,
+          color: C.muted,
+          lineHeight: 1.6,
+        }}
+      >
+        <p style={{ margin: 0, color: C.muted }}>{lineDisplayName}</p>
+        <p style={{ margin: 0 }}>
+          열차: <strong style={{ color: C.text, fontWeight: 700 }}>{trainId || "-"}</strong>
+        </p>
+        <p style={{ margin: 0 }}>
+          출입문: <strong style={{ color: C.text, fontWeight: 700 }}>{doneDoorLabel}</strong>
+        </p>
+        <p style={{ margin: 0 }}>
+          좌석: <strong style={{ color: C.text, fontWeight: 700 }}>{doneSeatLabel}</strong>
+        </p>
+        <p style={{ margin: 0 }}>
+          방향: <strong style={{ color: C.text, fontWeight: 700 }}>{doneDirectionLabel}</strong>
+        </p>
       </div>
-      <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.7, marginBottom: 32 }}>
-        {line}
-        <br />
-        열차: <strong style={{ color: C.text }}>{trainId || "-"}</strong>
-        <br />
-        출입문: <strong style={{ color: C.text }}>{doneDoorLabel}</strong>
-        <br />
-        좌석: <strong style={{ color: C.text }}>{doneSeatLabel}</strong>
-        <br />
-        방향: <strong style={{ color: C.text }}>{doneDirectionLabel}</strong>
-        <br />
+
+      <p style={{ margin: "0 0 28px", fontSize: 14, color: C.muted, lineHeight: 1.6 }}>
         {isLeaveMode ? (
           <>
-            <strong style={{ color: C.text }}>{formatStationDisplayName(station)}</strong>
+            <strong style={{ color: C.text, fontWeight: 700 }}>{stationDisplayName}</strong>
             에서 하차 예정으로 등록했습니다.
             {matchedOnRegister ? (
               <>
                 <br />
-                <span style={{ fontSize: 13, color: C.muted }}>
+                <span style={{ fontSize: 13 }}>
                   착석 희망자와 매칭되었습니다. 상대방이 수락하면 완료됩니다.
                 </span>
               </>
             ) : null}
           </>
         ) : (
-          <><strong style={{ color: C.text }}>{station}역</strong> 하차 전 알림을 드릴게요</>
+          <>
+            <strong style={{ color: C.text, fontWeight: 700 }}>{stationDisplayName}</strong> 하차 전
+            알림을 드릴게요
+          </>
         )}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 280 }}>
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 300 }}>
         {!isLeaveMode && onGoWaiting ? (
           <button
             type="button"

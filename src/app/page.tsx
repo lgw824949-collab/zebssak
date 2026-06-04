@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import CongestionHaltModal from '@/components/CongestionHaltModal'
 import {
   fetchCongestionStatus,
@@ -21,7 +21,6 @@ interface StoredUser {
 
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
 const GPS_MAX_RADIUS_KM = 1
-const LINE7_OLIVE = '#747F00'
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
 const HOME_UI_VERSION = '2026-06-01-seek-flow-v14'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
@@ -71,71 +70,30 @@ type HomeTab = 'seek' | 'leave'
 
 /** 환승 많은 역 — fetch 실패·데이터 없음 시 기본값 */
 const DEFAULT_TRANSFER_STATIONS = [
-  '온수역',
-  '가산디지털단지역',
   '건대입구역',
   '노원역',
+  '가산디지털단지역',
+  '고속터미널역',
   '도봉산역',
 ] as const
 
-const BRAND_GREEN = '#6b9e3f'
+const VOICE_PARSE_PENDING_KEY = 'voiceParsePending'
 
-interface RecentMatchItem {
-  id: string
-  createdAt: string
-  routeLabel: string
+type TransferStationRow = {
+  destination_station?:
+    | { station_name?: string | null }
+    | Array<{ station_name?: string | null }>
+    | null
 }
 
-/** Supabase 중첩 join 결과 단일 객체로 정리 */
-function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
-  if (!value) {
-    return null
-  }
-  return Array.isArray(value) ? (value[0] ?? null) : value
-}
-
-/** 경과 시간을 "N분 전" 형식으로 표시 */
-function formatMinutesAgo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime()
-  const minutes = Math.floor(diffMs / 60000)
-  if (minutes < 1) {
-    return '방금 전'
-  }
-  return `${minutes}분 전`
-}
-
-/** 오늘 00:00 (로컬) ISO 문자열 */
-function getTodayStartIso(): string {
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-  return todayStart.toISOString()
-}
-
-/** 통계 숫자 표시 — 로딩/에러 처리 */
-function formatLiveStatValue(
-  value: number | null,
-  isLoading: boolean,
-  hasError: boolean,
-  suffix = ''
-): string {
-  if (isLoading) {
-    return '...'
-  }
-  if (hasError || value === null) {
-    return '-'
-  }
-  return `${value}${suffix}`
-}
-
-/** station_name 빈도 상위 N개 역명 추출 */
-function pickTopStationNames(
-  rows: Array<{ station_name?: string | null }>,
-  limit = 5
-): string[] {
+/** 목적지 역명 빈도 상위 N개 추출 */
+function pickTopStationNames(rows: TransferStationRow[], limit = 5): string[] {
   const counts = new Map<string, number>()
 
   for (const row of rows) {
-    const raw = row.station_name?.trim()
+    const destination = row.destination_station
+    const station = Array.isArray(destination) ? destination[0] : destination
+    const raw = station?.station_name?.trim()
     if (!raw) {
       continue
     }
@@ -183,6 +141,7 @@ function mapLineLabelToApiLine(lineLabel: string): string | null {
  */
 export default function Home() {
   const router = useRouter()
+  const transferScrollRef = useRef<HTMLDivElement>(null)
   const [user, setUser] = useState<StoredUser | null>(null)
   const [isAuthChecked, setIsAuthChecked] = useState(false)
   const [isLoadingData, setIsLoadingData] = useState(true)
@@ -192,14 +151,10 @@ export default function Home() {
   const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 7호선')
   const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
   const [activeTab, setActiveTab] = useState<HomeTab>('seek')
-  const [liveStatsLoading, setLiveStatsLoading] = useState(true)
-  const [liveStatsError, setLiveStatsError] = useState(false)
-  const [pendingCount, setPendingCount] = useState<number | null>(null)
-  const [todayMatchedCount, setTodayMatchedCount] = useState<number | null>(null)
-  const [successRate, setSuccessRate] = useState<number | null>(null)
-  const [recentMatches, setRecentMatches] = useState<RecentMatchItem[]>([])
+  const [menuOpen, setMenuOpen] = useState(false)
   const [transferStationsLoading, setTransferStationsLoading] = useState(true)
   const [transferStations, setTransferStations] = useState<string[]>([...DEFAULT_TRANSFER_STATIONS])
+  const [selectedTransferStation, setSelectedTransferStation] = useState<string | null>(null)
   const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
 
@@ -268,145 +223,6 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false
 
-    async function loadLiveMatchingStats() {
-      setLiveStatsLoading(true)
-      setLiveStatsError(false)
-
-      try {
-        const supabase = getSupabase()
-        const todayIso = getTodayStartIso()
-
-        const [
-          pendingResult,
-          todayCompletedResult,
-          completedAllResult,
-          failedAllResult,
-          recentResult,
-        ] = await Promise.all([
-          supabase
-            .from('match_requests')
-            .select('id', { count: 'exact', head: true })
-            .eq('status', 'waiting'),
-          supabase
-            .from('matches')
-            .select('id', { count: 'exact', head: true })
-            .eq('status', 'completed')
-            .gte('created_at', todayIso),
-          supabase
-            .from('matches')
-            .select('id', { count: 'exact', head: true })
-            .eq('status', 'completed'),
-          supabase
-            .from('matches')
-            .select('id', { count: 'exact', head: true })
-            .in('status', ['expired', 'cancelled']),
-          supabase
-            .from('matches')
-            .select(
-              `
-              id,
-              created_at,
-              seat_seek_request:match_requests!seat_seek_request_id(
-                origin_station:stations!origin_station_id(station_name),
-                destination_station:stations!destination_station_id(station_name)
-              )
-            `
-            )
-            .eq('status', 'completed')
-            .order('created_at', { ascending: false })
-            .limit(5),
-        ])
-
-        if (cancelled) {
-          return
-        }
-
-        const hasError =
-          pendingResult.error != null ||
-          todayCompletedResult.error != null ||
-          completedAllResult.error != null ||
-          failedAllResult.error != null ||
-          recentResult.error != null
-
-        if (hasError) {
-          setLiveStatsError(true)
-          setPendingCount(null)
-          setTodayMatchedCount(null)
-          setSuccessRate(null)
-          setRecentMatches([])
-          return
-        }
-
-        const completedTotal = completedAllResult.count ?? 0
-        const failedTotal = failedAllResult.count ?? 0
-        const decisionTotal = completedTotal + failedTotal
-        const calculatedRate =
-          decisionTotal > 0 ? Math.round((completedTotal / decisionTotal) * 100) : 0
-
-        setPendingCount(pendingResult.count ?? 0)
-        setTodayMatchedCount(todayCompletedResult.count ?? 0)
-        setSuccessRate(calculatedRate)
-
-        const parsedRecent: RecentMatchItem[] = (recentResult.data ?? []).flatMap((row) => {
-          const record = row as {
-            id?: string
-            created_at?: string
-            seat_seek_request?:
-              | {
-                  origin_station?: { station_name?: string } | Array<{ station_name?: string }>
-                  destination_station?: { station_name?: string } | Array<{ station_name?: string }>
-                }
-              | Array<{
-                  origin_station?: { station_name?: string } | Array<{ station_name?: string }>
-                  destination_station?: { station_name?: string } | Array<{ station_name?: string }>
-                }>
-          }
-
-          if (!record.id || !record.created_at) {
-            return []
-          }
-
-          const seekRequest = unwrapRelation(record.seat_seek_request)
-          const origin = unwrapRelation(seekRequest?.origin_station)
-          const destination = unwrapRelation(seekRequest?.destination_station)
-          const originName = formatStationDisplayName(origin?.station_name)
-          const destinationName = formatStationDisplayName(destination?.station_name)
-
-          return [
-            {
-              id: record.id,
-              createdAt: record.created_at,
-              routeLabel: `${originName} → ${destinationName}`,
-            },
-          ]
-        })
-
-        setRecentMatches(parsedRecent)
-      } catch {
-        if (!cancelled) {
-          setLiveStatsError(true)
-          setPendingCount(null)
-          setTodayMatchedCount(null)
-          setSuccessRate(null)
-          setRecentMatches([])
-        }
-      } finally {
-        if (!cancelled) {
-          setLiveStatsLoading(false)
-        }
-      }
-    }
-
-    void loadLiveMatchingStats()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-
     async function loadTransferStations() {
       setTransferStationsLoading(true)
 
@@ -414,7 +230,7 @@ export default function Home() {
         const supabase = getSupabase()
         const { data, error } = await supabase
           .from('match_requests')
-          .select('station_name')
+          .select('destination_station:stations!destination_station_id(station_name)')
           .order('created_at', { ascending: false })
           .limit(100)
 
@@ -427,9 +243,7 @@ export default function Home() {
           return
         }
 
-        const topStations = pickTopStationNames(
-          data as Array<{ station_name?: string | null }>
-        )
+        const topStations = pickTopStationNames(data as TransferStationRow[])
         setTransferStations(
           topStations.length > 0 ? topStations : [...DEFAULT_TRANSFER_STATIONS]
         )
@@ -451,6 +265,21 @@ export default function Home() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!menuOpen) {
+      return
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [menuOpen])
+
   const displayName = user?.username ?? null
   const isLoggedIn = Boolean(displayName)
 
@@ -471,6 +300,43 @@ export default function Home() {
     // 단독 노선(서울 7호선) — 노선 선택 단계 생략
     // setHomeStep('line')
     handleLinePick(DEFAULT_HOME_LINE_LABEL, mode)
+  }
+
+  function handleTransferStationClick(stationName: string) {
+    if (isMatchingPaused) {
+      return
+    }
+
+    const mode: HomeFlowMode = activeTab === 'leave' ? 'leave' : 'seek'
+    setSelectedTransferStation(stationName)
+
+    try {
+      sessionStorage.setItem(
+        VOICE_PARSE_PENDING_KEY,
+        JSON.stringify({ destination: stationName.replace(/역$/u, '') })
+      )
+    } catch {
+      // sessionStorage 실패 시 탑승 화면 이동만 진행합니다.
+    }
+
+    setHomeMode(mode)
+    handleLinePick(DEFAULT_HOME_LINE_LABEL, mode)
+  }
+
+  function scrollTransferStations(direction: 'prev' | 'next') {
+    const container = transferScrollRef.current
+    if (!container) {
+      return
+    }
+
+    container.scrollBy({
+      left: direction === 'next' ? 120 : -120,
+      behavior: 'smooth',
+    })
+  }
+
+  function closeMenu() {
+    setMenuOpen(false)
   }
 
   // function handleBackToModeStep() {
@@ -627,28 +493,6 @@ export default function Home() {
     )
   }
 
-  function handleSearchClick() {
-    const params = new URLSearchParams({
-      type: 'seek',
-      lineLabel: DEFAULT_HOME_LINE_LABEL,
-    })
-    router.push(`/boarding?${params.toString()}`)
-  }
-
-  function handleExploreSeats() {
-    if (isMatchingPaused) return
-    const token = localStorage.getItem('token')
-    const params = new URLSearchParams({
-      type: 'seek',
-      lineLabel: DEFAULT_HOME_LINE_LABEL,
-    })
-    if (!token) {
-      router.push(`/register?${params.toString()}`)
-      return
-    }
-    router.push(`/boarding?${params.toString()}`)
-  }
-
   if (!isAuthChecked) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-[#f5f5f0] text-[#888888]">
@@ -665,11 +509,48 @@ export default function Home() {
         congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(selectedLineLabel)]}
       />
 
+      {menuOpen ? (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-black/30"
+            aria-label="메뉴 닫기"
+            onClick={closeMenu}
+          />
+          <nav
+            className="fixed left-0 top-0 z-50 flex h-full w-64 flex-col bg-white pt-[max(3.5rem,env(safe-area-inset-top))] shadow-xl"
+            aria-label="메인 메뉴"
+          >
+            <div className="border-b border-[#EBEBEB] px-4 pb-4">
+              <p className="text-[17px] font-bold text-[#1A1A1A]">메뉴</p>
+            </div>
+            <div className="flex flex-col px-2 py-3">
+              <Link
+                href={isLoggedIn ? '/profile' : '/login'}
+                onClick={closeMenu}
+                className="rounded-lg px-3 py-3 text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
+              >
+                {isLoggedIn ? '프로필' : '로그인'}
+              </Link>
+              <Link
+                href="/points"
+                onClick={closeMenu}
+                className="rounded-lg px-3 py-3 text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
+              >
+                포인트
+              </Link>
+            </div>
+          </nav>
+        </>
+      ) : null}
+
       <header className="flex shrink-0 items-center justify-between border-b border-[#EBEBEB] bg-white px-4 py-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
         <button
           type="button"
           className="flex h-9 w-9 items-center justify-center text-[#1A1A1A]"
           aria-label="메뉴"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen(true)}
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
             <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -687,60 +568,20 @@ export default function Home() {
         </Link>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pb-[max(2.75rem,env(safe-area-inset-bottom))]">
-        {/* 검색 카드 */}
-        <section className="mx-4 mt-4 overflow-hidden rounded-2xl bg-white shadow-sm">
-          <button
-            type="button"
-            onClick={handleSearchClick}
-            className="flex w-full items-center gap-3 px-4 py-3.5 text-left"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0 text-[#888888]" aria-hidden>
-              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-              <path d="M16 16l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <span className="text-[15px] text-[#AAAAAA]">어디로 갈까요?</span>
-          </button>
-
-          <div className="mx-4 border-t border-[#F0F0F0]" />
-
-          <div className="flex items-center gap-3 px-4 py-3">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="shrink-0 text-[#AAAAAA]" aria-hidden>
-              <path
-                d="M12 21s-6-5.2-6-10a6 6 0 1112 0c0 4.8-6 10-6 10z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-              <circle cx="12" cy="11" r="2" fill="currentColor" />
-            </svg>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-medium text-[#AAAAAA]">출발역</p>
-              <p className="text-[15px] font-semibold text-[#1A1A1A]">7호선 온수역</p>
-            </div>
-          </div>
-
-          <div className="mx-4 border-t border-[#F0F0F0]" />
-
-          <div className="flex items-center gap-3 px-4 py-3">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="shrink-0" style={{ color: BRAND_GREEN }} aria-hidden>
-              <path
-                d="M12 21s-6-5.2-6-10a6 6 0 1112 0c0 4.8-6 10-6 10z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-              <circle cx="12" cy="11" r="2" fill="currentColor" />
-            </svg>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-medium text-[#AAAAAA]">도착역</p>
-              <p className="text-[15px] font-semibold text-[#1A1A1A]">가산디지털단지역</p>
-            </div>
-          </div>
-        </section>
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
+        <div className="w-full">
+          <img
+            src="/images/subway-hero.png"
+            alt="지하철 7호선 실내"
+            className="max-h-[160px] w-full object-contain"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none'
+            }}
+          />
+        </div>
 
         {/* 탭 */}
-        <section className="mx-4 mt-4 flex border-b border-[#E8E8E8]">
+        <section className="mx-4 mt-2 flex border-b border-[#E8E8E8]">
           <button
             type="button"
             onClick={() => setActiveTab('seek')}
@@ -766,26 +607,16 @@ export default function Home() {
         </section>
 
         {/* 액션 버튼 */}
-        <section className="mx-4 mt-3">
+        <section className="mx-4 mt-2">
           {activeTab === 'seek' ? (
-            <div className="flex gap-3">
-              <button
-                type="button"
-                disabled={isMatchingPaused}
-                onClick={() => handleModeSelect('seek')}
-                className="zeb-touch-target flex flex-1 items-center justify-center rounded-xl bg-[#6b9e3f] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                바로 앉기
-              </button>
-              <button
-                type="button"
-                disabled={isMatchingPaused}
-                onClick={handleExploreSeats}
-                className="zeb-touch-target flex flex-1 items-center justify-center rounded-xl border border-[#6b9e3f] py-4 text-[16px] font-bold text-[#6b9e3f] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                자리 탐색
-              </button>
-            </div>
+            <button
+              type="button"
+              disabled={isMatchingPaused}
+              onClick={() => handleModeSelect('seek')}
+              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#6b9e3f] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              바로 앉기 등록
+            </button>
           ) : (
             <button
               type="button"
@@ -807,37 +638,39 @@ export default function Home() {
           ) : null}
         </section>
 
-        {/* 실시간 통계 바 */}
-        <section className="mx-4 mt-3 flex items-center justify-between rounded-xl bg-white px-4 py-3">
-          <div>
-            <p className="text-[13px] font-medium text-[#888888]">실시간 대기</p>
-            <p className="mt-0.5 text-[18px] font-extrabold text-[#6b9e3f]">3개</p>
-          </div>
-          <div className="text-right">
-            <p className="text-[13px] font-medium text-[#888888]">매칭 성공률</p>
-            <p className="mt-0.5 text-[18px] font-extrabold text-[#6b9e3f]">98%</p>
-          </div>
-        </section>
-
         {/* 환승 많은 역 */}
         <section className="mx-4 mt-4" aria-label="환승 많은 역">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-1 flex items-center justify-between">
             <h2 className="text-[16px] font-bold text-[#1A1A1A]">환승 많은 역</h2>
             <div className="flex items-center gap-2">
-              <button type="button" className="text-[#AAAAAA]" aria-label="이전">
+              <button
+                type="button"
+                className="text-[#AAAAAA]"
+                aria-label="이전"
+                onClick={() => scrollTransferStations('prev')}
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
-              <button type="button" className="text-[#AAAAAA]" aria-label="다음">
+              <button
+                type="button"
+                className="text-[#AAAAAA]"
+                aria-label="다음"
+                onClick={() => scrollTransferStations('next')}
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
             </div>
           </div>
+          <p className="mb-3 text-[12px] text-[#888888]">역을 누르면 해당 역으로 등록 화면으로 이동합니다</p>
 
-          <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={transferScrollRef}
+            className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {transferStationsLoading ? (
               <>
                 <span
@@ -854,84 +687,49 @@ export default function Home() {
                 />
               </>
             ) : (
-              transferStations.map((station, index) => (
-                <button
-                  key={`${station}-${index}`}
-                  type="button"
-                  className={`shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold ${
-                    index === 0
-                      ? 'bg-[#6b9e3f] text-white'
-                      : 'border border-gray-200 bg-white text-gray-600'
-                  }`}
-                >
-                  {station}
-                </button>
-              ))
+              transferStations.map((station, index) => {
+                const isSelected =
+                  selectedTransferStation === station ||
+                  (selectedTransferStation === null && index === 0)
+
+                return (
+                  <button
+                    key={`${station}-${index}`}
+                    type="button"
+                    disabled={isMatchingPaused}
+                    onClick={() => handleTransferStationClick(station)}
+                    className={`shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                      isSelected
+                        ? 'bg-[#6b9e3f] text-white'
+                        : 'border border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    {station}
+                  </button>
+                )
+              })
             )}
           </div>
         </section>
 
-        {/* 실시간 매칭 현황 */}
-        <section aria-label="실시간 매칭 현황" className="pb-6">
-          <div className="mx-4 mt-6 flex items-center justify-between">
-            <h2 className="text-base font-bold text-[#1A1A1A]">실시간 매칭 현황</h2>
-            <span className="flex items-center gap-1.5">
-              <span
-                className="h-2 w-2 animate-pulse rounded-full bg-[#6b9e3f]"
-                aria-hidden
-              />
-              <span className="text-xs text-[#6b9e3f]">LIVE</span>
-            </span>
-          </div>
-
-          <div className="mx-4 mt-2 grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-white p-3 text-center">
-              <p className="text-2xl font-bold text-[#6b9e3f]">
-                {formatLiveStatValue(pendingCount, liveStatsLoading, liveStatsError)}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">대기중</p>
+        <div className="mx-4 mt-4 mb-6 bg-white rounded-2xl px-4 py-4">
+          <p className="text-sm font-bold text-gray-800 mb-1">🚇 왜 7호선인가?</p>
+          <p className="mb-3 text-[12px] font-medium text-[#888888]">서울 7호선 단독 운영</p>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-start gap-2">
+              <span className="text-[#6b9e3f] mt-0.5">•</span>
+              <p className="text-sm text-gray-600">서울교통공사 혼잡도 데이터 분석 결과</p>
             </div>
-            <div className="rounded-xl bg-white p-3 text-center">
-              <p className="text-2xl font-bold text-[#6b9e3f]">
-                {formatLiveStatValue(todayMatchedCount, liveStatsLoading, liveStatsError)}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">오늘 매칭</p>
+            <div className="flex items-start gap-2">
+              <span className="text-[#6b9e3f] mt-0.5">•</span>
+              <p className="text-sm text-gray-600">착석 수요·장거리 이용 최적 노선</p>
             </div>
-            <div className="rounded-xl bg-white p-3 text-center">
-              <p className="text-2xl font-bold text-[#6b9e3f]">
-                {formatLiveStatValue(successRate, liveStatsLoading, liveStatsError, '%')}
-              </p>
-              <p className="mt-1 text-xs text-gray-400">성공률</p>
+            <div className="flex items-start gap-2">
+              <span className="text-[#6b9e3f] mt-0.5">•</span>
+              <p className="text-sm text-gray-600">환승역 66개, 평균 착석 시간 30분</p>
             </div>
           </div>
-
-          <div className="mx-4 mt-2 divide-y overflow-hidden rounded-2xl bg-white">
-            <p className="px-4 pt-3 text-sm font-medium text-[#1A1A1A]">최근 매칭</p>
-
-            {liveStatsLoading ? (
-              <p className="py-6 text-center text-sm text-gray-400">...</p>
-            ) : liveStatsError ? (
-              <p className="py-6 text-center text-sm text-gray-400">-</p>
-            ) : recentMatches.length === 0 ? (
-              <p className="py-6 text-center text-sm text-gray-400">아직 매칭 기록이 없어요</p>
-            ) : (
-              recentMatches.map((match) => (
-                <div
-                  key={match.id}
-                  className="flex items-center justify-between px-4 py-3"
-                >
-                  <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-[#1A1A1A]">
-                    <span aria-hidden>🚇</span>
-                    <span className="truncate">{match.routeLabel}</span>
-                  </span>
-                  <span className="shrink-0 text-xs text-gray-400">
-                    {formatMinutesAgo(match.createdAt)}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
+        </div>
 
         {/* 단독 노선 — 노선 선택 UI (복원 시 homeStep === 'line' 분기로 되돌리기)
         ) : (
