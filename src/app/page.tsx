@@ -801,10 +801,10 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setActiveTab('seek')}
-            className={`flex-1 pb-2.5 text-center text-[15px] transition ${
+            className={`flex-1 pb-2.5 text-center text-base font-bold transition ${
               activeTab === 'seek'
-                ? 'border-b-2 border-[#747F00] font-bold text-[#1A1A1A]'
-                : 'font-medium text-[#888888]'
+                ? 'border-b-2 border-[#747F00] text-[#1A1A1A]'
+                : 'text-[#888888]'
             }`}
           >
             자리 찾기
@@ -812,10 +812,10 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setActiveTab('leave')}
-            className={`flex-1 pb-2.5 text-center text-[15px] transition ${
+            className={`flex-1 pb-2.5 text-center text-base font-bold transition ${
               activeTab === 'leave'
-                ? 'border-b-2 border-[#747F00] font-bold text-[#1A1A1A]'
-                : 'font-medium text-[#888888]'
+                ? 'border-b-2 border-[#747F00] text-[#1A1A1A]'
+                : 'text-[#888888]'
             }`}
           >
             내릴게요
@@ -829,7 +829,7 @@ export default function Home() {
               type="button"
               disabled={isMatchingPaused}
               onClick={() => handleModeSelect('seek')}
-              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-xl font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
             >
               바로 앉기 등록
             </button>
@@ -838,7 +838,7 @@ export default function Home() {
               type="button"
               disabled={isMatchingPaused}
               onClick={() => handleModeSelect('leave')}
-              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-xl font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
             >
               내릴게요 등록
             </button>
@@ -857,7 +857,7 @@ export default function Home() {
         {/* 환승 많은 역 */}
         <section className="mx-4 mt-4" aria-label="환승 많은 역">
           <div className="mb-1 flex items-center justify-between">
-            <h2 className="text-[16px] font-bold text-[#1A1A1A]">환승 많은 역</h2>
+            <h2 className="text-base font-bold text-[#1A1A1A]">환승 많은 역</h2>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -912,7 +912,7 @@ export default function Home() {
                     type="button"
                     disabled={isMatchingPaused}
                     onClick={() => handleTransferStationClick(station)}
-                    className={`shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                    className={`shrink-0 rounded-full px-3 py-1 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${
                       isSelected
                         ? 'bg-[#747F00] text-white'
                         : 'border border-gray-200 bg-white text-gray-600'
@@ -927,20 +927,20 @@ export default function Home() {
         </section>
 
         <div className="mx-4 mt-4 mb-6 bg-white rounded-2xl px-4 py-4">
-          <p className="text-sm font-bold text-gray-800 mb-1">🚇 왜 7호선인가?</p>
+          <p className="text-base font-bold text-gray-800 mb-1">🚇 왜 7호선인가?</p>
           <p className="mb-3 text-[12px] font-medium text-[#888888]">서울 7호선 단독 운영</p>
           <div className="flex flex-col gap-2">
             <div className="flex items-start gap-2">
               <span className="text-[#747F00] mt-0.5">•</span>
-              <p className="text-sm text-gray-600">서울교통공사 혼잡도 데이터 분석 결과</p>
+              <p className="text-base text-gray-600">서울교통공사 혼잡도 데이터 분석 결과</p>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-[#747F00] mt-0.5">•</span>
-              <p className="text-sm text-gray-600">착석 수요·장거리 이용 최적 노선</p>
+              <p className="text-base text-gray-600">착석 수요·장거리 이용 최적 노선</p>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-[#747F00] mt-0.5">•</span>
-              <p className="text-sm text-gray-600">환승역 66개, 평균 착석 시간 30분</p>
+              <p className="text-base text-gray-600">환승역 66개, 평균 착석 시간 30분</p>
             </div>
           </div>
         </div>
