@@ -2553,17 +2553,6 @@ function StepSeekDoor({
 
         <p
           style={{
-            margin: "8px 0 4px",
-            fontSize: 15,
-            fontWeight: 600,
-            color: C.text,
-            textAlign: "center",
-          }}
-        >
-          지금 서 있는 위치를 눌러 주세요
-        </p>
-        <p
-          style={{
             margin: "0 0 6px",
             fontSize: 12,
             fontWeight: 700,

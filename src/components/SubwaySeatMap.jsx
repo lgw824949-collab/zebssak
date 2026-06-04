@@ -637,7 +637,8 @@ export default function SubwaySeatMap({
    * 해당 구역 C열을 자동 선택해 하단 선택 텍스트와 연결
    */
   const handleCenterSectionPick = (doorNo) => {
-    if (interactionMode !== "leave" || doorPickerMode) return;
+    if (doorPickerMode) return;
+    if (interactionMode !== "leave" && interactionMode !== "seek") return;
     const sectionIndex = Math.max(0, doorNo - 1);
     const preferredSide = selectedSeat?.side === "right" ? "right" : "left";
     const sideOrder = preferredSide === "right" ? ["right", "left"] : ["left", "right"];
@@ -699,9 +700,10 @@ export default function SubwaySeatMap({
         textAlign: "center",
         display: "inline-block",
         boxSizing: "border-box",
-        cursor: interactionMode === "leave" ? "pointer" : "default",
+        cursor:
+          interactionMode === "leave" || interactionMode === "seek" ? "pointer" : "default",
       }}
-      disabled={interactionMode !== "leave"}
+      disabled={interactionMode !== "leave" && interactionMode !== "seek"}
     >
       {`${carNum}-${doorNo}`}
     </button>
@@ -767,7 +769,8 @@ export default function SubwaySeatMap({
 
     for (let visualRank = 0; visualRank < REGULAR_SEATS_PER_SIDE; visualRank += 1) {
       const seatInSection = regularSeatIndexOrder[visualRank];
-      const isCenterMarkerRow = interactionMode === "leave" && visualRank === 2;
+      const isCenterMarkerRow =
+        visualRank === 2 && (interactionMode === "leave" || interactionMode === "seek");
       rows.push(
         renderBenchRow({
           key: `sec-${sectionIndex}-rank-${visualRank}`,
