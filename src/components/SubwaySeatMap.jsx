@@ -639,23 +639,34 @@ export default function SubwaySeatMap({
   const handleCenterSectionPick = (doorNo) => {
     if (interactionMode !== "leave" || doorPickerMode) return;
     const sectionIndex = Math.max(0, doorNo - 1);
-    const visualRank = 2; // C열
-    const seatInSection = regularSeatIndexOrder[visualRank];
-    const side = selectedSeat?.side === "right" ? "right" : "left";
-    const seats = side === "right" ? rightSeats : leftSeats;
-    const idx = sectionIndex * seatsPerSection + seatInSection;
-    const status = seats[idx] || "empty";
-    if (!canSelectSeatStatus(status, interactionMode)) return;
+    const preferredSide = selectedSeat?.side === "right" ? "right" : "left";
+    const sideOrder = preferredSide === "right" ? ["right", "left"] : ["left", "right"];
+    const visualRankOrder = [2, 1, 3, 0, 4, 5]; // C 우선, 주변 열 순으로 선택
 
-    const seatId = `${side}-d${doorNo}-s${seatInSection}`;
-    const columnLetter = getSeatColumnLetter(visualRank);
+    let picked = null;
+    for (const side of sideOrder) {
+      const seats = side === "right" ? rightSeats : leftSeats;
+      for (const visualRank of visualRankOrder) {
+        const seatInSection = regularSeatIndexOrder[visualRank];
+        const idx = sectionIndex * seatsPerSection + seatInSection;
+        const status = seats[idx] || "empty";
+        if (!canSelectSeatStatus(status, interactionMode)) continue;
+        picked = { side, visualRank, seatInSection, status };
+        break;
+      }
+      if (picked) break;
+    }
+    if (!picked) return;
+
+    const seatId = `${picked.side}-d${doorNo}-s${picked.seatInSection}`;
+    const columnLetter = getSeatColumnLetter(picked.visualRank);
     const api = mapSeatIdToApi(seatId, seatsPerSection);
     const info = {
       id: seatId,
       car: carNum,
       door: doorNo,
-      side,
-      status,
+      side: picked.side,
+      status: picked.status,
       seatSide: api?.seatSide,
       seatNumber: api?.seatNumber,
       seatColumn: columnLetter,

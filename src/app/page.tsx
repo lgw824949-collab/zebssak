@@ -10,6 +10,8 @@ import {
   resolveLineNumberFromLabel,
   type CongestionStatus,
 } from '@/lib/congestion'
+import { formatStationDisplayName } from '@/lib/match-display'
+import { getSupabase } from '@/lib/supabase'
 
 interface StoredUser {
   username: string
@@ -65,6 +67,88 @@ const HOME_LINE_OPTIONS = [
 const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
 
 type HomeFlowMode = 'seek' | 'leave'
+type HomeTab = 'seek' | 'leave'
+
+/** 환승 많은 역 — fetch 실패·데이터 없음 시 기본값 */
+const DEFAULT_TRANSFER_STATIONS = [
+  '온수역',
+  '가산디지털단지역',
+  '건대입구역',
+  '노원역',
+  '도봉산역',
+] as const
+
+const BRAND_GREEN = '#6b9e3f'
+
+interface RecentMatchItem {
+  id: string
+  createdAt: string
+  routeLabel: string
+}
+
+/** Supabase 중첩 join 결과 단일 객체로 정리 */
+function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) {
+    return null
+  }
+  return Array.isArray(value) ? (value[0] ?? null) : value
+}
+
+/** 경과 시간을 "N분 전" 형식으로 표시 */
+function formatMinutesAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const minutes = Math.floor(diffMs / 60000)
+  if (minutes < 1) {
+    return '방금 전'
+  }
+  return `${minutes}분 전`
+}
+
+/** 오늘 00:00 (로컬) ISO 문자열 */
+function getTodayStartIso(): string {
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  return todayStart.toISOString()
+}
+
+/** 통계 숫자 표시 — 로딩/에러 처리 */
+function formatLiveStatValue(
+  value: number | null,
+  isLoading: boolean,
+  hasError: boolean,
+  suffix = ''
+): string {
+  if (isLoading) {
+    return '...'
+  }
+  if (hasError || value === null) {
+    return '-'
+  }
+  return `${value}${suffix}`
+}
+
+/** station_name 빈도 상위 N개 역명 추출 */
+function pickTopStationNames(
+  rows: Array<{ station_name?: string | null }>,
+  limit = 5
+): string[] {
+  const counts = new Map<string, number>()
+
+  for (const row of rows) {
+    const raw = row.station_name?.trim()
+    if (!raw) {
+      continue
+    }
+    const displayName = formatStationDisplayName(raw)
+    counts.set(displayName, (counts.get(displayName) ?? 0) + 1)
+  }
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name]) => name)
+}
+
 // type HomeStep = 'mode' | 'line'
 
 // function ChevronRightIcon() {
@@ -107,6 +191,15 @@ export default function Home() {
   const [showCongestionModal, setShowCongestionModal] = useState(false)
   const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 7호선')
   const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
+  const [activeTab, setActiveTab] = useState<HomeTab>('seek')
+  const [liveStatsLoading, setLiveStatsLoading] = useState(true)
+  const [liveStatsError, setLiveStatsError] = useState(false)
+  const [pendingCount, setPendingCount] = useState<number | null>(null)
+  const [todayMatchedCount, setTodayMatchedCount] = useState<number | null>(null)
+  const [successRate, setSuccessRate] = useState<number | null>(null)
+  const [recentMatches, setRecentMatches] = useState<RecentMatchItem[]>([])
+  const [transferStationsLoading, setTransferStationsLoading] = useState(true)
+  const [transferStations, setTransferStations] = useState<string[]>([...DEFAULT_TRANSFER_STATIONS])
   const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
 
@@ -171,6 +264,192 @@ export default function Home() {
       void loadHomeData(null)
     }
   }, [loadHomeData])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadLiveMatchingStats() {
+      setLiveStatsLoading(true)
+      setLiveStatsError(false)
+
+      try {
+        const supabase = getSupabase()
+        const todayIso = getTodayStartIso()
+
+        const [
+          pendingResult,
+          todayCompletedResult,
+          completedAllResult,
+          failedAllResult,
+          recentResult,
+        ] = await Promise.all([
+          supabase
+            .from('match_requests')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'waiting'),
+          supabase
+            .from('matches')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'completed')
+            .gte('created_at', todayIso),
+          supabase
+            .from('matches')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'completed'),
+          supabase
+            .from('matches')
+            .select('id', { count: 'exact', head: true })
+            .in('status', ['expired', 'cancelled']),
+          supabase
+            .from('matches')
+            .select(
+              `
+              id,
+              created_at,
+              seat_seek_request:match_requests!seat_seek_request_id(
+                origin_station:stations!origin_station_id(station_name),
+                destination_station:stations!destination_station_id(station_name)
+              )
+            `
+            )
+            .eq('status', 'completed')
+            .order('created_at', { ascending: false })
+            .limit(5),
+        ])
+
+        if (cancelled) {
+          return
+        }
+
+        const hasError =
+          pendingResult.error != null ||
+          todayCompletedResult.error != null ||
+          completedAllResult.error != null ||
+          failedAllResult.error != null ||
+          recentResult.error != null
+
+        if (hasError) {
+          setLiveStatsError(true)
+          setPendingCount(null)
+          setTodayMatchedCount(null)
+          setSuccessRate(null)
+          setRecentMatches([])
+          return
+        }
+
+        const completedTotal = completedAllResult.count ?? 0
+        const failedTotal = failedAllResult.count ?? 0
+        const decisionTotal = completedTotal + failedTotal
+        const calculatedRate =
+          decisionTotal > 0 ? Math.round((completedTotal / decisionTotal) * 100) : 0
+
+        setPendingCount(pendingResult.count ?? 0)
+        setTodayMatchedCount(todayCompletedResult.count ?? 0)
+        setSuccessRate(calculatedRate)
+
+        const parsedRecent: RecentMatchItem[] = (recentResult.data ?? []).flatMap((row) => {
+          const record = row as {
+            id?: string
+            created_at?: string
+            seat_seek_request?:
+              | {
+                  origin_station?: { station_name?: string } | Array<{ station_name?: string }>
+                  destination_station?: { station_name?: string } | Array<{ station_name?: string }>
+                }
+              | Array<{
+                  origin_station?: { station_name?: string } | Array<{ station_name?: string }>
+                  destination_station?: { station_name?: string } | Array<{ station_name?: string }>
+                }>
+          }
+
+          if (!record.id || !record.created_at) {
+            return []
+          }
+
+          const seekRequest = unwrapRelation(record.seat_seek_request)
+          const origin = unwrapRelation(seekRequest?.origin_station)
+          const destination = unwrapRelation(seekRequest?.destination_station)
+          const originName = formatStationDisplayName(origin?.station_name)
+          const destinationName = formatStationDisplayName(destination?.station_name)
+
+          return [
+            {
+              id: record.id,
+              createdAt: record.created_at,
+              routeLabel: `${originName} → ${destinationName}`,
+            },
+          ]
+        })
+
+        setRecentMatches(parsedRecent)
+      } catch {
+        if (!cancelled) {
+          setLiveStatsError(true)
+          setPendingCount(null)
+          setTodayMatchedCount(null)
+          setSuccessRate(null)
+          setRecentMatches([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLiveStatsLoading(false)
+        }
+      }
+    }
+
+    void loadLiveMatchingStats()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadTransferStations() {
+      setTransferStationsLoading(true)
+
+      try {
+        const supabase = getSupabase()
+        const { data, error } = await supabase
+          .from('match_requests')
+          .select('station_name')
+          .order('created_at', { ascending: false })
+          .limit(100)
+
+        if (cancelled) {
+          return
+        }
+
+        if (error || !data?.length) {
+          setTransferStations([...DEFAULT_TRANSFER_STATIONS])
+          return
+        }
+
+        const topStations = pickTopStationNames(
+          data as Array<{ station_name?: string | null }>
+        )
+        setTransferStations(
+          topStations.length > 0 ? topStations : [...DEFAULT_TRANSFER_STATIONS]
+        )
+      } catch {
+        if (!cancelled) {
+          setTransferStations([...DEFAULT_TRANSFER_STATIONS])
+        }
+      } finally {
+        if (!cancelled) {
+          setTransferStationsLoading(false)
+        }
+      }
+    }
+
+    void loadTransferStations()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const displayName = user?.username ?? null
   const isLoggedIn = Boolean(displayName)
@@ -348,165 +627,311 @@ export default function Home() {
     )
   }
 
+  function handleSearchClick() {
+    const params = new URLSearchParams({
+      type: 'seek',
+      lineLabel: DEFAULT_HOME_LINE_LABEL,
+    })
+    router.push(`/boarding?${params.toString()}`)
+  }
+
+  function handleExploreSeats() {
+    if (isMatchingPaused) return
+    const token = localStorage.getItem('token')
+    const params = new URLSearchParams({
+      type: 'seek',
+      lineLabel: DEFAULT_HOME_LINE_LABEL,
+    })
+    if (!token) {
+      router.push(`/register?${params.toString()}`)
+      return
+    }
+    router.push(`/boarding?${params.toString()}`)
+  }
+
   if (!isAuthChecked) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-[#F7F8FA] text-[#888888]">
+      <div className="flex min-h-dvh items-center justify-center bg-[#f5f5f0] text-[#888888]">
         <p className="text-sm font-semibold">로딩 중...</p>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto flex h-dvh max-h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-[#F7F8FA]">
+    <div className="mx-auto flex h-dvh max-h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-[#f5f5f0]">
       <CongestionHaltModal
         open={showCongestionModal}
         onClose={() => setShowCongestionModal(false)}
         congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(selectedLineLabel)]}
       />
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pb-[max(2.75rem,env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] pt-5">
-        <header className="mb-2 flex shrink-0 items-center justify-end">
-            <Link
-              href={isLoggedIn ? '/profile' : '/login'}
-              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-[#EBEBEB] bg-white text-sm font-bold text-[#888888]"
-              aria-label={isLoggedIn ? '프로필' : '로그인'}
-            >
-              {isLoggedIn ? displayName!.slice(0, 1).toUpperCase() : '👤'}
-            </Link>
-          </header>
 
-        <div className="flex flex-col gap-5 pb-6 pt-1">
-            <section>
-              <span
-                className="inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-[14px] font-bold"
-                style={{
-                  borderColor: `${LINE7_OLIVE}33`,
-                  backgroundColor: `${LINE7_OLIVE}14`,
-                  color: LINE7_OLIVE,
-                }}
-              >
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: LINE7_OLIVE }}
-                  aria-hidden
-                />
-                7호선 실증 운영중
-              </span>
+      <header className="flex shrink-0 items-center justify-between border-b border-[#EBEBEB] bg-white px-4 py-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+        <button
+          type="button"
+          className="flex h-9 w-9 items-center justify-center text-[#1A1A1A]"
+          aria-label="메뉴"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
 
-              <h1 className="mt-5 whitespace-pre-line text-[42px] font-extrabold leading-[1.08] tracking-tight text-[#1A1A1A]">
-                {'빈자리,\n잽싸게'}
-              </h1>
-              <p className="mt-3 text-[17px] font-medium leading-relaxed text-[#5C6570]">
-                지하철 착석 공유 플랫폼
-              </p>
+        <p className="text-[17px] font-bold text-[#1A1A1A]">빈자리, 잽싸게</p>
 
-              <ol className="mt-5 flex gap-2">
-                {[
-                  { step: 1, label: '7호선 데이터 확보', active: true },
-                  { step: 2, label: '서울 전 노선 적용', active: false },
-                  { step: 3, label: '수도권 확대', active: false },
-                ].map((item) => (
-                  <li
-                    key={item.step}
-                    className="flex min-w-0 flex-1 flex-col rounded-xl border px-3 py-3"
-                    style={
-                      item.active
-                        ? {
-                            borderColor: LINE7_OLIVE,
-                            backgroundColor: `${LINE7_OLIVE}12`,
-                          }
-                        : { borderColor: '#EBEBEB', backgroundColor: '#FFFFFF' }
-                    }
-                  >
-                    <span
-                      className="text-[14px] font-bold uppercase tracking-wide"
-                      style={{ color: item.active ? LINE7_OLIVE : '#B0B5BD' }}
-                    >
-                      {item.step}단계
-                    </span>
-                    <span
-                      className="mt-1 truncate text-[15px] font-extrabold"
-                      style={{ color: item.active ? '#1A1A1A' : '#888888' }}
-                    >
-                      {item.label}
-                    </span>
-                    <span
-                      className="mt-0.5 text-[14px] font-semibold"
-                      style={{ color: item.active ? LINE7_OLIVE : '#B0B5BD' }}
-                    >
-                      {item.active ? '운영 중' : '예정'}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </section>
+        <Link
+          href={isLoggedIn ? '/profile' : '/login'}
+          className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-[#EBEBEB] bg-[#f5f5f0] text-sm font-bold text-[#1A1A1A]"
+          aria-label={isLoggedIn ? '프로필' : '로그인'}
+        >
+          {isLoggedIn ? displayName!.slice(0, 1).toUpperCase() : 'L'}
+        </Link>
+      </header>
 
-            <section className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
-                <p className="text-[14px] font-semibold text-[#888888]">환승역 수</p>
-                <p className="zeb-mono mt-1.5 text-[30px] font-extrabold leading-none" style={{ color: LINE7_OLIVE }}>
-                  66개
-                </p>
-              </div>
-              <div className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
-                <p className="text-[14px] font-semibold text-[#888888]">평균착석 시간</p>
-                <p className="zeb-mono mt-1.5 text-[30px] font-extrabold leading-none" style={{ color: LINE7_OLIVE }}>
-                  30분
-                </p>
-              </div>
-            </section>
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain pb-[max(2.75rem,env(safe-area-inset-bottom))]">
+        {/* 검색 카드 */}
+        <section className="mx-4 mt-4 overflow-hidden rounded-2xl bg-white shadow-sm">
+          <button
+            type="button"
+            onClick={handleSearchClick}
+            className="flex w-full items-center gap-3 px-4 py-3.5 text-left"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0 text-[#888888]" aria-hidden>
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+              <path d="M16 16l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <span className="text-[15px] text-[#AAAAAA]">어디로 갈까요?</span>
+          </button>
 
-            <section className="rounded-xl border border-[#EBEBEB] bg-white p-4 shadow-[0_2px_12px_rgba(26,26,26,0.04)]">
-              <h2 className="text-[17px] font-extrabold text-[#1A1A1A]">왜 7호선인가?</h2>
-              <ul className="mt-3 space-y-3">
-                {[
-                  '서울교통공사 혼잡도 데이터 분석 결과',
-                  '착석 수요·장거리 이용 최적 노선',
-                ].map((text) => (
-                  <li key={text} className="flex items-start gap-2.5 text-[16px] font-medium leading-snug text-[#5C6570]">
-                    <span
-                      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: LINE7_OLIVE }}
-                      aria-hidden
-                    />
-                    {text}
-                  </li>
-                ))}
-              </ul>
-            </section>
+          <div className="mx-4 border-t border-[#F0F0F0]" />
 
-            <section className="flex shrink-0 flex-col gap-3 pt-1">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="shrink-0 text-[#AAAAAA]" aria-hidden>
+              <path
+                d="M12 21s-6-5.2-6-10a6 6 0 1112 0c0 4.8-6 10-6 10z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="11" r="2" fill="currentColor" />
+            </svg>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-medium text-[#AAAAAA]">출발역</p>
+              <p className="text-[15px] font-semibold text-[#1A1A1A]">7호선 온수역</p>
+            </div>
+          </div>
+
+          <div className="mx-4 border-t border-[#F0F0F0]" />
+
+          <div className="flex items-center gap-3 px-4 py-3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="shrink-0" style={{ color: BRAND_GREEN }} aria-hidden>
+              <path
+                d="M12 21s-6-5.2-6-10a6 6 0 1112 0c0 4.8-6 10-6 10z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="11" r="2" fill="currentColor" />
+            </svg>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-medium text-[#AAAAAA]">도착역</p>
+              <p className="text-[15px] font-semibold text-[#1A1A1A]">가산디지털단지역</p>
+            </div>
+          </div>
+        </section>
+
+        {/* 탭 */}
+        <section className="mx-4 mt-4 flex border-b border-[#E8E8E8]">
+          <button
+            type="button"
+            onClick={() => setActiveTab('seek')}
+            className={`flex-1 pb-2.5 text-center text-[15px] transition ${
+              activeTab === 'seek'
+                ? 'border-b-2 border-[#6b9e3f] font-bold text-[#1A1A1A]'
+                : 'font-medium text-[#888888]'
+            }`}
+          >
+            자리 찾기
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('leave')}
+            className={`flex-1 pb-2.5 text-center text-[15px] transition ${
+              activeTab === 'leave'
+                ? 'border-b-2 border-[#6b9e3f] font-bold text-[#1A1A1A]'
+                : 'font-medium text-[#888888]'
+            }`}
+          >
+            내릴게요
+          </button>
+        </section>
+
+        {/* 액션 버튼 */}
+        <section className="mx-4 mt-3">
+          {activeTab === 'seek' ? (
+            <div className="flex gap-3">
               <button
                 type="button"
                 disabled={isMatchingPaused}
                 onClick={() => handleModeSelect('seek')}
-                className="zeb-touch-target flex h-[3.25rem] w-full items-center justify-center rounded-xl text-[19px] font-extrabold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-                style={{
-                  backgroundColor: LINE7_OLIVE,
-                  boxShadow: `0 6px 18px ${LINE7_OLIVE}40`,
-                }}
+                className="zeb-touch-target flex flex-1 items-center justify-center rounded-xl bg-[#6b9e3f] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                앉고 싶어요
+                바로 앉기
               </button>
-
               <button
                 type="button"
                 disabled={isMatchingPaused}
-                onClick={() => handleModeSelect('leave')}
-                className="zeb-touch-target flex h-[3rem] w-full items-center justify-center rounded-xl border border-[#EBEBEB] bg-white text-[18px] font-semibold text-[#1A1A1A] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+                onClick={handleExploreSeats}
+                className="zeb-touch-target flex flex-1 items-center justify-center rounded-xl border border-[#6b9e3f] py-4 text-[16px] font-bold text-[#6b9e3f] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                내릴게요
+                자리 탐색
               </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={isMatchingPaused}
+              onClick={() => handleModeSelect('leave')}
+              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#6b9e3f] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              내릴게요 등록
+            </button>
+          )}
 
-              {isMatchingPaused ? (
-                <p
-                  className="rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
-                  role="alert"
-                >
-                  현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
-                </p>
-              ) : null}
-            </section>
+          {isMatchingPaused ? (
+            <p
+              className="mt-3 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
+              role="alert"
+            >
+              현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
+            </p>
+          ) : null}
+        </section>
+
+        {/* 실시간 통계 바 */}
+        <section className="mx-4 mt-3 flex items-center justify-between rounded-xl bg-white px-4 py-3">
+          <div>
+            <p className="text-[13px] font-medium text-[#888888]">실시간 대기</p>
+            <p className="mt-0.5 text-[18px] font-extrabold text-[#6b9e3f]">3개</p>
           </div>
+          <div className="text-right">
+            <p className="text-[13px] font-medium text-[#888888]">매칭 성공률</p>
+            <p className="mt-0.5 text-[18px] font-extrabold text-[#6b9e3f]">98%</p>
+          </div>
+        </section>
+
+        {/* 환승 많은 역 */}
+        <section className="mx-4 mt-4" aria-label="환승 많은 역">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-[16px] font-bold text-[#1A1A1A]">환승 많은 역</h2>
+            <div className="flex items-center gap-2">
+              <button type="button" className="text-[#AAAAAA]" aria-label="이전">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <button type="button" className="text-[#AAAAAA]" aria-label="다음">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {transferStationsLoading ? (
+              <>
+                <span
+                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
+                  aria-hidden
+                />
+                <span
+                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
+                  aria-hidden
+                />
+                <span
+                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
+                  aria-hidden
+                />
+              </>
+            ) : (
+              transferStations.map((station, index) => (
+                <button
+                  key={`${station}-${index}`}
+                  type="button"
+                  className={`shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold ${
+                    index === 0
+                      ? 'bg-[#6b9e3f] text-white'
+                      : 'border border-gray-200 bg-white text-gray-600'
+                  }`}
+                >
+                  {station}
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* 실시간 매칭 현황 */}
+        <section aria-label="실시간 매칭 현황" className="pb-6">
+          <div className="mx-4 mt-6 flex items-center justify-between">
+            <h2 className="text-base font-bold text-[#1A1A1A]">실시간 매칭 현황</h2>
+            <span className="flex items-center gap-1.5">
+              <span
+                className="h-2 w-2 animate-pulse rounded-full bg-[#6b9e3f]"
+                aria-hidden
+              />
+              <span className="text-xs text-[#6b9e3f]">LIVE</span>
+            </span>
+          </div>
+
+          <div className="mx-4 mt-2 grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-white p-3 text-center">
+              <p className="text-2xl font-bold text-[#6b9e3f]">
+                {formatLiveStatValue(pendingCount, liveStatsLoading, liveStatsError)}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">대기중</p>
+            </div>
+            <div className="rounded-xl bg-white p-3 text-center">
+              <p className="text-2xl font-bold text-[#6b9e3f]">
+                {formatLiveStatValue(todayMatchedCount, liveStatsLoading, liveStatsError)}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">오늘 매칭</p>
+            </div>
+            <div className="rounded-xl bg-white p-3 text-center">
+              <p className="text-2xl font-bold text-[#6b9e3f]">
+                {formatLiveStatValue(successRate, liveStatsLoading, liveStatsError, '%')}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">성공률</p>
+            </div>
+          </div>
+
+          <div className="mx-4 mt-2 divide-y overflow-hidden rounded-2xl bg-white">
+            <p className="px-4 pt-3 text-sm font-medium text-[#1A1A1A]">최근 매칭</p>
+
+            {liveStatsLoading ? (
+              <p className="py-6 text-center text-sm text-gray-400">...</p>
+            ) : liveStatsError ? (
+              <p className="py-6 text-center text-sm text-gray-400">-</p>
+            ) : recentMatches.length === 0 ? (
+              <p className="py-6 text-center text-sm text-gray-400">아직 매칭 기록이 없어요</p>
+            ) : (
+              recentMatches.map((match) => (
+                <div
+                  key={match.id}
+                  className="flex items-center justify-between px-4 py-3"
+                >
+                  <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-[#1A1A1A]">
+                    <span aria-hidden>🚇</span>
+                    <span className="truncate">{match.routeLabel}</span>
+                  </span>
+                  <span className="shrink-0 text-xs text-gray-400">
+                    {formatMinutesAgo(match.createdAt)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
 
         {/* 단독 노선 — 노선 선택 UI (복원 시 homeStep === 'line' 분기로 되돌리기)
         ) : (
