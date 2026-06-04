@@ -206,9 +206,19 @@ function applyAlightingToSeats(baseSeats, alightingKeys) {
   return next;
 }
 
-function Seat({ side, status, lineColor, selected, recommended, onClick, seatLetter }) {
+function Seat({
+  side,
+  status,
+  lineColor,
+  selected,
+  recommended,
+  onClick,
+  seatLetter,
+  interactionMode = "seek",
+}) {
   const isAlighting = status === "alighting";
   const isElderly = status === "elderly";
+  const selectable = canSelectSeatStatus(status, interactionMode);
 
   const fill = isElderly
     ? "rgba(255, 143, 0, 0.14)"
@@ -231,7 +241,7 @@ function Seat({ side, status, lineColor, selected, recommended, onClick, seatLet
     <button
       type="button"
       className="zeb-seat-btn"
-      onClick={onClick}
+      onClick={selectable ? onClick : undefined}
       style={{
         width: SEAT_CELL,
         height: SEAT_CELL,
@@ -243,12 +253,7 @@ function Seat({ side, status, lineColor, selected, recommended, onClick, seatLet
         ...aisleEdgeBorder,
         outline: selected ? `2px solid ${lineColor}` : "none",
         outlineOffset: 0,
-        cursor:
-          status === "elderly"
-            ? "default"
-            : status === "alighting" || status === "empty"
-              ? "pointer"
-              : "default",
+        cursor: selectable ? "pointer" : "default",
         padding: 0,
         margin: 0,
         flexShrink: 0,
@@ -270,7 +275,6 @@ function Seat({ side, status, lineColor, selected, recommended, onClick, seatLet
             color: "#475569",
             lineHeight: 1,
             letterSpacing: 0,
-            pointerEvents: "none",
             userSelect: "none",
           }}
         >
@@ -608,6 +612,7 @@ export default function SubwaySeatMap({
         selected={selectedSeatId === seatId}
         recommended={isRecommended}
         seatLetter={columnLetter}
+        interactionMode={interactionMode}
         onClick={() => {
           if (doorPickerMode) return;
           if (!canSelectSeatStatus(status, interactionMode)) return;
@@ -1094,6 +1099,7 @@ export default function SubwaySeatMap({
         </p>
       ) : null}
       <div
+        className="zeb-no-scrollbar"
         style={{
           background: "#FFFFFF",
           border: seekEmbedMode ? "none" : `2px solid ${lineColor}`,
@@ -1105,6 +1111,8 @@ export default function SubwaySeatMap({
           overflowY: seekEmbedMode ? "visible" : "auto",
           overflowX: "hidden",
           WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
           position: "relative",
           zIndex: 0,
         }}

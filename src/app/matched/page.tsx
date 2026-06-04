@@ -1,35 +1,17 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 
-const PENDING_POINTS_PROVIDER = 100
-
-/** 테스트·API 영문 역명 → 한글 (매칭 완료 화면 전용) */
-const STATION_NAME_EN_TO_KO: Record<string, string> = {
-  gangnam: '강남',
-  seoul: '서울',
-  gangbyeon: '강변',
-  jamsil: '잠실',
-  sadang: '사당',
-  hongdae: '홍대입구',
-  sinchon: '신촌',
-  edae: '이대',
-  cityhall: '시청',
-  euljiro: '을지로',
-  dongdaemun: '동대문',
-  wangsimni: '왕십리',
-  yeongdeungpo: '영등포',
-  sindorim: '신도림',
-  guro: '구로',
-  bupyeong: '부평',
-  incheon: '인천',
-}
+const COUNTDOWN_SECONDS = 180
+const MATCH_GREEN = '#4a7c3f'
+const SIDE_SEAT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
 interface RequestSummary {
   car_number: number | null
   car_door_short: string | null
   seat_side: 'A' | 'B' | null
+  seat_number: number | null
   seat_position_label: string | null
   train_no: string | null
   line_label: string | null
@@ -47,137 +29,61 @@ interface MatchDetail {
   seat_confirmation?: { seated: boolean; created_at: string } | null
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      className="flex items-start justify-between gap-3 py-2"
-      style={{ borderBottom: '1px solid var(--border)' }}
-    >
-      <span className="zeb-caption shrink-0" style={{ fontWeight: 600 }}>
-        {label}
-      </span>
-      <span
-        className="text-right font-semibold"
-        style={{ fontSize: 'var(--font-size-base)', color: 'var(--foreground)' }}
-      >
-        {value}
-      </span>
-    </div>
-  )
-}
-
-function SectionCard({
-  title,
-  children,
-}: {
-  title: string
-  children: ReactNode
-}) {
-  return (
-    <div
-      className="mt-4 rounded-[var(--radius-button)] border-2 px-4 py-4 text-left"
-      style={{
-        background: 'var(--surface)',
-        borderColor: 'var(--line-1)',
-      }}
-    >
-      <p
-        className="font-semibold zeb-text-line1 mb-3"
-        style={{ fontSize: 'var(--font-size-base)' }}
-      >
-        {title}
-      </p>
-      {children}
-    </div>
-  )
-}
-
 function MatchedLoading() {
   return (
-    <div className="zeb-page flex flex-col items-center justify-center gap-4">
+    <div className="min-h-dvh flex flex-col items-center justify-center gap-4 bg-[#f7f8fa] px-4">
       <div className="w-full max-w-[12rem] space-y-2" aria-hidden>
-        <div className="zeb-track zeb-track--line1" />
-        <div className="zeb-track zeb-track--lines2" />
+        <div className="h-2 rounded-full bg-[#e8f0d8]" />
+        <div className="h-2 rounded-full bg-[#d8e4c8]" />
       </div>
-      <p className="zeb-caption" style={{ fontSize: 'var(--font-size-lg)' }}>
-        로딩 중...
-      </p>
+      <p className="text-sm text-gray-500">로딩 중...</p>
     </div>
   )
 }
 
-/** 역명 한글 표기 (역 접미사 포함) */
-function formatStationKorean(name: string | null | undefined): string {
-  const trimmed = (name ?? '').trim()
-  if (!trimmed) return '미확인'
-
-  if (/[가-힣]/.test(trimmed)) {
-    return trimmed.endsWith('역') ? trimmed : `${trimmed}역`
-  }
-
-  const normalizedKey = trimmed.toLowerCase().replace(/[^a-z]/g, '')
-  const mapped = STATION_NAME_EN_TO_KO[normalizedKey]
-  if (mapped) {
-    return `${mapped}역`
-  }
-
-  return `${trimmed}역`
-}
-
-/** sessionStorage draft에서 한글 하차역명 보조 조회 */
-function readKoreanDestinationFromSession(): string | null {
-  const keys = ['waitingDraft', 'boardingDraft'] as const
-  for (const key of keys) {
-    try {
-      const raw = sessionStorage.getItem(key)
-      if (!raw) continue
-      const parsed = JSON.parse(raw) as { destinationName?: string }
-      if (typeof parsed.destinationName === 'string' && /[가-힣]/.test(parsed.destinationName)) {
-        return parsed.destinationName.trim()
-      }
-    } catch {
-      continue
-    }
-  }
-  return null
-}
-
-/** seat_side(A/B) → 진행 방향 기준 좌측·우측 (좌석 맵과 동일) */
+/** seat_side(A/B) → 진행 방향 기준 좌측·우측 */
 function seatSideToTravelSideLabel(seatSide: 'A' | 'B' | null | undefined): string {
   if (seatSide === 'A') return '좌측'
   if (seatSide === 'B') return '우측'
-  return ''
+  return '-'
 }
 
-/** 문·좌석 위치 한글 안내 */
-function formatSeatPositionKorean(guide: RequestSummary): string {
-  const sideLabel = seatSideToTravelSideLabel(guide.seat_side)
-  const carNumber = guide.car_number
-  const doorMatch = guide.car_door_short?.match(/^출?(\d+)-(\d+)$/)
-  const doorPart = doorMatch?.[2] ?? null
-  const carFromShort = doorMatch?.[1] ? Number.parseInt(doorMatch[1], 10) : carNumber
-
-  if (carFromShort != null && doorPart && sideLabel) {
-    return `출${carFromShort}-${doorPart}번 문 옆 (${sideLabel})`
-  }
-
-  const fallback = (guide.seat_position_label ?? '').trim()
-  if (!fallback) return '좌석 정보 없음'
-
-  return fallback.replace(/A측/g, '좌측').replace(/B측/g, '우측')
+function seatsPerSectionFromStationCode(code: string | null | undefined): number {
+  const trimmed = (code ?? '').trim().toLowerCase()
+  if (trimmed.startsWith('s1')) return 8
+  return 7
 }
 
-/** 하차역 표시 (영문 API값 보정) — API partner 데이터 우선 */
-function resolveDestinationKorean(guide: RequestSummary): string {
-  const fromApi = (guide.destination_station_name ?? '').trim()
-  if (fromApi) {
-    return formatStationKorean(fromApi)
+function resolveSeatColumnLetter(
+  seatNumber: number | null | undefined,
+  seatsPerSection: number
+): string {
+  if (!Number.isInteger(seatNumber) || seatNumber! < 1) return '-'
+  const seatInSection = (seatNumber! - 1) % seatsPerSection
+  return SIDE_SEAT_LETTERS[seatInSection] ?? '-'
+}
+
+function parseDoorParts(
+  carNumber: number | null,
+  carDoorShort: string | null | undefined
+): { car: number; door: number } {
+  const match = (carDoorShort ?? '').match(/^출(\d+)-(\d+)$/)
+  if (match) {
+    return {
+      car: Number.parseInt(match[1], 10),
+      door: Number.parseInt(match[2], 10),
+    }
   }
-  const fromSession = readKoreanDestinationFromSession()
-  if (fromSession) {
-    return formatStationKorean(fromSession)
+  return {
+    car: carNumber ?? 1,
+    door: 1,
   }
-  return '미확인'
+}
+
+function formatCountdown(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 function resolveMatchId(): string | null {
@@ -191,8 +97,138 @@ function resolveMatchId(): string | null {
   }
 }
 
+function MatchSeatDiagram({
+  carNumber,
+  doorNumber,
+  travelSide,
+  columnLetter,
+}: {
+  carNumber: number
+  doorNumber: number
+  travelSide: string
+  columnLetter: string
+}) {
+  const isRightSide = travelSide === '우측'
+  const isLeftSide = travelSide === '좌측'
+  const doorLabel = `출${carNumber}-${doorNumber}`
+  const sectionKey = `${carNumber}-${doorNumber}`
+  const nextDoorLabel = `출${carNumber}-${Math.min(doorNumber + 1, 4)}`
+  const leftLetters = ['A', 'B', 'C']
+  const rightLetters = ['D', 'E', 'F']
+  const seatW = 34
+  const seatH = 40
+  const gap = 0
+  const leftX = 16
+  const centerX = 142
+  const rightX = 198
+
+  function seatFill(side: 'left' | 'right', letter: string): string {
+    const matched =
+      (side === 'left' && isLeftSide && letter === columnLetter) ||
+      (side === 'right' && isRightSide && letter === columnLetter)
+    return matched ? MATCH_GREEN : '#ffffff'
+  }
+
+  function seatTextFill(side: 'left' | 'right', letter: string): string {
+    const matched =
+      (side === 'left' && isLeftSide && letter === columnLetter) ||
+      (side === 'right' && isRightSide && letter === columnLetter)
+    return matched ? '#ffffff' : '#374151'
+  }
+
+  function entranceFill(side: 'left' | 'right'): string {
+    if (side === 'left' && isLeftSide) return MATCH_GREEN
+    if (side === 'right' && isRightSide) return MATCH_GREEN
+    return '#ffffff'
+  }
+
+  function entranceTextFill(side: 'left' | 'right'): string {
+    if ((side === 'left' && isLeftSide) || (side === 'right' && isRightSide)) {
+      return '#ffffff'
+    }
+    return MATCH_GREEN
+  }
+
+  return (
+    <svg viewBox="0 0 320 210" className="w-full" role="img" aria-label="좌석 배치도">
+      <rect x="0" y="0" width="320" height="210" rx="12" fill="#e8f0d8" />
+
+      {/* 출1-1 (상단) */}
+      <rect x="16" y="14" width="88" height="28" rx="6" fill={entranceFill('left')} stroke={MATCH_GREEN} strokeWidth="1.5" />
+      <text x="60" y="32" textAnchor="middle" fontSize="11" fontWeight="800" fill={entranceTextFill('left')}>
+        {doorLabel}
+      </text>
+      {isLeftSide ? (
+        <text x="60" y="44" textAnchor="middle" fontSize="9" fontWeight="700" fill="#ffffff">
+          ▼ 여기
+        </text>
+      ) : null}
+
+      <rect x="216" y="14" width="88" height="28" rx="6" fill={entranceFill('right')} stroke={MATCH_GREEN} strokeWidth="1.5" />
+      <text x="260" y="32" textAnchor="middle" fontSize="11" fontWeight="800" fill={entranceTextFill('right')}>
+        {doorLabel}
+      </text>
+      {isRightSide ? (
+        <text x="260" y="44" textAnchor="middle" fontSize="9" fontWeight="700" fill="#ffffff">
+          ▼ 여기
+        </text>
+      ) : null}
+
+      {/* A B C (좌측, 간격 없음) */}
+      {leftLetters.map((letter, index) => {
+        const x = leftX + index * (seatW + gap)
+        const y = 62
+        const matched = isLeftSide && letter === columnLetter
+        return (
+          <g key={`left-${letter}`}>
+            <rect x={x} y={y} width={seatW} height={seatH} fill={seatFill('left', letter)} stroke={MATCH_GREEN} strokeWidth="1.5" />
+            <text x={x + seatW / 2} y={y + 24} textAnchor="middle" fontSize="13" fontWeight="900" fill={seatTextFill('left', letter)}>
+              {letter}
+              {matched ? ' ★' : ''}
+            </text>
+          </g>
+        )
+      })}
+
+      {/* 가운데 호차-문 구간 */}
+      <rect x={centerX} y={62} width={44} height={seatH} rx="4" fill="#ffffff" stroke={MATCH_GREEN} strokeWidth="1.5" />
+      <text x={centerX + 22} y={88} textAnchor="middle" fontSize="12" fontWeight="900" fill={MATCH_GREEN}>
+        {sectionKey}
+      </text>
+
+      {/* D E F (우측, 간격 없음) */}
+      {rightLetters.map((letter, index) => {
+        const x = rightX + index * (seatW + gap)
+        const y = 62
+        const matched = isRightSide && letter === columnLetter
+        return (
+          <g key={`right-${letter}`}>
+            <rect x={x} y={y} width={seatW} height={seatH} fill={seatFill('right', letter)} stroke={MATCH_GREEN} strokeWidth="1.5" />
+            <text x={x + seatW / 2} y={y + 24} textAnchor="middle" fontSize="13" fontWeight="900" fill={seatTextFill('right', letter)}>
+              {letter}
+              {matched ? ' ★' : ''}
+            </text>
+          </g>
+        )
+      })}
+
+      {/* 출1-2 (하단, 흐리게) */}
+      <g opacity="0.35">
+        <rect x="16" y="128" width="88" height="28" rx="6" fill="#ffffff" stroke={MATCH_GREEN} strokeWidth="1.5" />
+        <text x="60" y="146" textAnchor="middle" fontSize="11" fontWeight="800" fill={MATCH_GREEN}>
+          {nextDoorLabel}
+        </text>
+        <rect x="216" y="128" width="88" height="28" rx="6" fill="#ffffff" stroke={MATCH_GREEN} strokeWidth="1.5" />
+        <text x="260" y="146" textAnchor="middle" fontSize="11" fontWeight="800" fill={MATCH_GREEN}>
+          {nextDoorLabel}
+        </text>
+      </g>
+    </svg>
+  )
+}
+
 /**
- * 매칭 완료 화면 — API 기준 상대방(하차 예정) 위치·노선 표시
+ * 매칭 완료 화면
  */
 export default function MatchedPage() {
   const router = useRouter()
@@ -201,6 +237,7 @@ export default function MatchedPage() {
   const [seatAnswer, setSeatAnswer] = useState<boolean | null>(null)
   const [isSubmittingSeat, setIsSubmittingSeat] = useState(false)
   const [seatSubmitError, setSeatSubmitError] = useState('')
+  const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS)
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -251,6 +288,13 @@ export default function MatchedPage() {
     return () => abortController.abort()
   }, [router])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   function clearMatchSession() {
     sessionStorage.removeItem('boardingDraft')
     sessionStorage.removeItem('waitingDraft')
@@ -265,12 +309,12 @@ export default function MatchedPage() {
     router.push('/')
   }
 
-  async function submitSeatConfirmation(seated: boolean) {
+  async function submitSeatConfirmation(seated: boolean): Promise<boolean> {
     const token = localStorage.getItem('token')
     const matchId = resolveMatchId()
     if (!token || !matchId) {
       setSeatSubmitError('매칭 정보를 찾을 수 없습니다.')
-      return
+      return false
     }
 
     setIsSubmittingSeat(true)
@@ -296,26 +340,34 @@ export default function MatchedPage() {
 
       if (!response.ok || !result.success) {
         setSeatSubmitError(result.error ?? '확인 저장에 실패했습니다.')
-        return
+        return false
       }
 
       setSeatAnswer(seated)
+      return true
     } catch {
       setSeatSubmitError('네트워크 오류가 발생했습니다.')
+      return false
     } finally {
       setIsSubmittingSeat(false)
     }
   }
 
+  async function handleSeatedComplete() {
+    if (detail?.viewer_role === 'seeker' && seatAnswer === null) {
+      const ok = await submitSeatConfirmation(true)
+      if (!ok) return
+    }
+    handleConfirm()
+  }
+
   if (error) {
     return (
-      <div className="zeb-page matched-theme flex flex-col items-center justify-center p-6">
-        <p className="zeb-caption text-center" style={{ color: 'var(--color-danger)' }}>
-          {error}
-        </p>
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-[#f7f8fa] p-6">
+        <p className="text-center text-sm font-semibold text-red-600">{error}</p>
         <button
           type="button"
-          className="zeb-btn zeb-btn--line1 mt-6"
+          className="mt-6 rounded-2xl bg-[#4a7c3f] px-6 py-3 text-sm font-bold text-white"
           onClick={() => router.push('/home')}
         >
           홈으로
@@ -330,229 +382,76 @@ export default function MatchedPage() {
 
   const isSeeker = detail.viewer_role === 'seeker'
   const guide = isSeeker ? detail.partner : detail.self
-  const lineLabel = guide.line_label ?? '노선 미확인'
-  const trainNo =
-    guide.train_no != null && String(guide.train_no).trim()
-      ? `${String(guide.train_no).trim()}번`
-      : '미확인'
-  const carLabel =
-    guide.car_number != null ? `${guide.car_number}호차` : '미확인'
-  const positionLabel = formatSeatPositionKorean(guide)
-  const carDoorShort = guide.car_door_short
-  const destinationLabel = resolveDestinationKorean(guide)
+  const seatsPerSection = seatsPerSectionFromStationCode(guide.destination_station_code)
   const travelSideLabel = seatSideToTravelSideLabel(guide.seat_side)
+  const columnLetter = resolveSeatColumnLetter(guide.seat_number, seatsPerSection)
+  const { car: diagramCar, door: diagramDoor } = parseDoorParts(guide.car_number, guide.car_door_short)
+  const carLabel = guide.car_number != null ? `${guide.car_number}호차` : '미확인'
+  const doorLabel = guide.car_door_short ?? '-'
+  const columnLabel = columnLetter !== '-' ? `${columnLetter}열` : '-'
+  const diagramTitle = `${carLabel} · ${doorLabel !== '-' ? doorLabel : `출${diagramCar}-${diagramDoor}`} 구간`
+
+  const infoItems = [
+    { label: '호차', value: carLabel },
+    { label: '방향', value: travelSideLabel || '-' },
+    { label: '출입문', value: doorLabel },
+    { label: '열', value: columnLabel },
+  ]
 
   return (
-    <div className="zeb-page matched-theme flex flex-col">
-      <header className="zeb-page-header" aria-hidden>
-        <div className="space-y-2">
-          <div className="zeb-track zeb-track--line1" />
-          <div className="zeb-track zeb-track--lines2" />
+    <div className="min-h-dvh flex flex-col bg-[#f7f8fa] px-4 py-6">
+      <main className="mx-auto flex w-full max-w-md flex-col gap-4">
+        {/* 1. 상단 배너 */}
+        <div className="rounded-2xl bg-[#4a7c3f] p-4 text-center">
+          <p className="text-xs text-white opacity-75">빈자리를 찾았어요!</p>
+          <h1 className="mt-1 text-2xl font-black text-white">매칭 완료 ✓</h1>
         </div>
-      </header>
 
-      <main className="flex flex-1 flex-col items-center justify-center py-4">
-        <div className="zeb-card w-full text-center zeb-bg-lines2-light">
-          <div
-            className="mx-auto mb-6 flex items-center justify-center rounded-full"
-            style={{
-              width: '5rem',
-              height: '5rem',
-              background: 'var(--line-1-light)',
-            }}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              width={40}
-              height={40}
-              aria-hidden
-              style={{ color: 'var(--line-1)' }}
-            >
-              <path d="M4.5 6.375a4.125 4.125 0 118.25 0 4.125 4.125 0 01-8.25 0zM14.25 8.625a3.375 3.375 0 116.75 0 3.375 3.375 0 01-6.75 0zM1.5 19.125a7.125 7.125 0 0114.25 0v.003a.75.75 0 01-.363.63 13.067 13.067 0 01-6.761 1.873c-2.472 0-4.786-.343-6.76-1.873a.75.75 0 01-.364-.63v-.003zM17.25 19.128l-.001.144a2.25 2.25 0 01-.233.96 10.088 10.088 0 005.06-1.01.75.75 0 00.42-.643 4.875 4.875 0 00-6.957-4.611 8.586 8.586 0 011.039 3.174.75.75 0 00.47.695 9.067 9.067 0 004.52 1.01h-.001z" />
-            </svg>
+        {/* 2. 좌석 정보 카드 */}
+        <div className="rounded-2xl bg-white p-4">
+          <div className="grid grid-cols-4 gap-3">
+            {infoItems.map((item) => (
+              <div key={item.label} className="text-center">
+                <p className="text-xs text-gray-400">{item.label}</p>
+                <p className="mt-1 text-base font-black text-[#4a7c3f]">{item.value}</p>
+              </div>
+            ))}
           </div>
+        </div>
 
-          <div className="zeb-alert zeb-alert--success mb-6" style={{ textAlign: 'center' }}>
-            <h1
-              className="font-bold"
-              style={{ fontSize: 'var(--font-size-2xl)', color: 'inherit' }}
-            >
-              매칭 완료!
-            </h1>
-          </div>
-
-          <p className="zeb-page-desc">
-            {isSeeker
-              ? '하차 예정 승객 옆으로 이동해 주세요.'
-              : '착석 희망 승객이 이동 중입니다.'}
-          </p>
-
-          <SectionCard title={isSeeker ? '하차 예정 승객' : '내 하차 등록'}>
-            <InfoRow label="노선" value={lineLabel} />
-            <InfoRow label="열차 번호" value={trainNo} />
-            <InfoRow
-              label={isSeeker ? '상대방 하차 역' : '내 하차 역'}
-              value={destinationLabel}
+        {/* 3. 좌석 배치도 카드 */}
+        <div className="rounded-2xl bg-white p-4">
+          <p className="text-sm font-bold text-gray-900">{diagramTitle}</p>
+          <div className="mt-3">
+            <MatchSeatDiagram
+              carNumber={diagramCar}
+              doorNumber={diagramDoor}
+              travelSide={travelSideLabel}
+              columnLetter={columnLetter}
             />
-            {guide.remaining_stations != null ? (
-              <InfoRow
-                label="남은 역 수"
-                value={`${guide.remaining_stations}역`}
-              />
-            ) : null}
-          </SectionCard>
-
-          <SectionCard title={isSeeker ? '이동 안내 (착석 위치)' : '내 좌석 위치'}>
-            <InfoRow label="칸" value={carLabel} />
-            <InfoRow label="문·좌석 위치" value={positionLabel} />
-          </SectionCard>
-
-          {isSeeker ? (
-            <div
-              className="mt-4 rounded-[var(--radius-card)] border-2 px-4 py-5"
-              style={{
-                background: '#0B1F4B',
-                borderColor: '#C6FF00',
-                color: '#ffffff',
-              }}
-            >
-              <p style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, opacity: 0.9 }}>
-                한 줄 안내
-              </p>
-              <p
-                style={{
-                  marginTop: '0.5rem',
-                  fontSize: 'var(--font-size-xl)',
-                  fontWeight: 900,
-                  lineHeight: 1.35,
-                  color: '#C6FF00',
-                }}
-              >
-                {carDoorShort
-                  ? `${carLabel} · ${carDoorShort}번 문 옆${travelSideLabel ? `(${travelSideLabel})` : ''}으로 이동하세요`
-                  : `${carLabel} · ${positionLabel}`}
-              </p>
-            </div>
-          ) : null}
-
-          {!isSeeker ? (
-            <div className="zeb-alert zeb-alert--warning mt-6 text-center">
-              <p style={{ fontSize: 'var(--font-size-base)', fontWeight: 700 }}>
-                적립 예정 포인트
-              </p>
-              <p
-                className="mt-2"
-                style={{
-                  fontSize: 'var(--font-size-2xl)',
-                  fontWeight: 800,
-                  color: '#8a5a00',
-                }}
-              >
-                +{PENDING_POINTS_PROVIDER.toLocaleString()}포인트
-              </p>
-              <p className="zeb-caption mt-2">하차 완료 후 자동 적립됩니다.</p>
-            </div>
-          ) : null}
-        </div>
-      </main>
-
-      <footer
-        className="mt-auto pt-6"
-        style={{ borderTop: '2px solid var(--border)' }}
-      >
-        {isSeeker ? (
-          <div className="space-y-4">
-            {seatAnswer === null ? (
-              <>
-                <p
-                  className="text-center font-bold"
-                  style={{ fontSize: 'var(--font-size-lg)', color: 'var(--foreground)' }}
-                >
-                  자리에 앉으셨나요?
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    disabled={isSubmittingSeat}
-                    onClick={() => void submitSeatConfirmation(true)}
-                    className="zeb-btn zeb-btn--line1"
-                  >
-                    네, 앉았습니다
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isSubmittingSeat}
-                    onClick={() => void submitSeatConfirmation(false)}
-                    className="zeb-btn zeb-btn--secondary"
-                  >
-                    아니요
-                  </button>
-                </div>
-                {seatSubmitError ? (
-                  <p
-                    className="text-center text-sm font-semibold"
-                    style={{ color: 'var(--color-danger)' }}
-                  >
-                    {seatSubmitError}
-                  </p>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <p className="zeb-caption text-center">
-                  {seatAnswer
-                    ? '확인해 주셔서 감사합니다. 편안한 이용 되세요.'
-                    : '불편을 드려 죄송합니다. 다음 이용 때 더 나은 매칭을 위해 반영하겠습니다.'}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleConfirm}
-                  className="zeb-btn zeb-btn--block zeb-btn--line1"
-                >
-                  홈으로
-                </button>
-              </>
-            )}
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={handleConfirm}
-            className="zeb-btn zeb-btn--block zeb-btn--line1"
-          >
-            확인
-          </button>
-        )}
-      </footer>
-      <style jsx global>{`
-        .matched-theme {
-          background: #f7f8fa !important;
-          color: #1a1a1a !important;
-        }
-        .matched-theme .zeb-card,
-        .matched-theme .zeb-alert {
-          border-radius: 16px !important;
-        }
-        .matched-theme .zeb-card {
-          background: #ffffff !important;
-          border: 0.5px solid #ebebeb !important;
-          box-shadow: 0 2px 10px rgba(26, 26, 26, 0.05) !important;
-        }
-        .matched-theme .zeb-text-line1 {
-          color: #747F00 !important;
-        }
-        .matched-theme .zeb-alert--warning {
-          border-color: #ff6b00 !important;
-          background: #fff4ea !important;
-          color: #ff6b00 !important;
-        }
-        .matched-theme .zeb-btn--line1 {
-          background: #747F00 !important;
-          color: #ffffff !important;
-        }
-      `}</style>
+        </div>
+
+        {/* 4. 타이머 */}
+        <div className="rounded-2xl bg-[#fff8e6] p-4 text-center">
+          <p className="text-xs text-[#8a6020]">착석까지 남은 시간</p>
+          <p className="mt-2 text-2xl font-black text-[#b45309]">{formatCountdown(secondsLeft)}</p>
+        </div>
+
+        {/* 5. 착석 완료 버튼 */}
+        <button
+          type="button"
+          disabled={isSubmittingSeat}
+          onClick={() => void handleSeatedComplete()}
+          className="w-full rounded-2xl bg-[#4a7c3f] py-4 text-lg font-black text-white disabled:opacity-60"
+        >
+          {isSubmittingSeat ? '처리 중...' : '착석 완료'}
+        </button>
+
+        {seatSubmitError ? (
+          <p className="text-center text-sm font-semibold text-red-600">{seatSubmitError}</p>
+        ) : null}
+      </main>
     </div>
   )
 }
