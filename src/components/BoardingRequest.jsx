@@ -1437,10 +1437,7 @@ function StepStation({
             overflow: "hidden",
           }}
         >
-          <p
-            className="text-base font-bold m-0"
-            style={{ color: "#6b9e3f" }}
-          >
+          <p className="text-base font-bold text-white m-0">
             어디까지 가세요?
           </p>
           <input
@@ -1491,7 +1488,7 @@ function StepStation({
                 }}
               >
                 <p className="text-sm text-white opacity-70 m-0">
-                  어디까지 가세요?
+                  하차역
                 </p>
                 <p className="text-xl font-bold text-white m-0 mt-1">
                   {formatStationDisplayName(station)}
@@ -2737,7 +2734,7 @@ function StepSeekDoor({
   );
 }
 
-// ─── Step 3 (leave): 호차 + 좌석 선택 ──────────────────────────────
+// ─── Step 3 (leave): 호차 + 좌석 선택 (seek Step 3 UI와 동일) ─────────
 function StepSeat({
   line,
   station,
@@ -2750,103 +2747,276 @@ function StepSeat({
   onBack,
   isSubmitting = false,
 }) {
+  const layout = resolveCarLayout(line);
   const isSeoulLine = isSeoulLineFromLineProp(line);
   const requireSeatOnLeave = isSeoulLine;
-  const carCount = resolveCarCountFromLineProp(line);
-  const carNumbers = Array.from({ length: carCount }, (_, index) => index + 1);
-  const [selectedCar, setSelectedCar] = useState(carNumbers[0] ?? 1);
+  const carNumbers = Array.from({ length: layout.carCount }, (_, index) => index + 1);
+  const [activeCar, setActiveCar] = useState(1);
   const [selectedSeat, setSelectedSeat] = useState(null);
+  const mapShellRef = useRef(null);
+  const lineColor = LINE_OLIVE;
 
-  useEffect(() => {
-    setSelectedCar((prev) => (prev != null && prev <= carCount ? prev : carNumbers[0] ?? 1));
-    setSelectedSeat(null);
-  }, [line, carCount, carNumbers]);
+  const pickPreview = selectedSeat
+    ? buildSeekPickFromSeatInfo(selectedSeat, station, activeCar)
+    : null;
+
+  const confirmEnabled = requireSeatOnLeave
+    ? Boolean(pickPreview?.pickResultLine) && !isSubmitting
+    : Boolean(activeCar) && !isSubmitting;
+
+  useLayoutEffect(() => {
+    if (!mapShellRef.current || !isSeoulLine) return;
+    applySeekSeatMapShellLayout(mapShellRef.current);
+  }, [activeCar, selectedSeat, trainId, station, direction, drtnInfo, lineNumber, isSeoulLine]);
+
+  function handleSeatClick(seat) {
+    if (isSubmitting) return;
+    setSelectedSeat(seat);
+  }
+
+  function handleConfirm() {
+    if (isSubmitting) return;
+    if (!requireSeatOnLeave) {
+      if (!activeCar) return;
+      onNext({ car: activeCar, seat: null });
+      return;
+    }
+    if (!selectedSeat || !pickPreview?.doorLabel) return;
+
+    const mapped = mapSeekSelectionToSubmission({
+      car: pickPreview.car,
+      door: pickPreview.door,
+      doorLabel: pickPreview.doorLabel,
+      side: pickPreview.side,
+      seatLetter: pickPreview.seatLetter,
+      lineLabel: line,
+    });
+
+    onNext({
+      car: pickPreview.car ?? activeCar,
+      seat: {
+        ...selectedSeat,
+        car: pickPreview.car,
+        door: pickPreview.door,
+        doorLabel: pickPreview.doorLabel,
+        side: pickPreview.side,
+        seatLetter: pickPreview.seatLetter,
+        pickResultLine: pickPreview.pickResultLine,
+        seatSide: mapped?.seatSide ?? selectedSeat?.seatSide,
+        seatNumber: mapped?.seatNumber ?? selectedSeat?.seatNumber,
+      },
+    });
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
-      <Header step={3} onBack={onBack} title="호차 · 좌석 선택" line={line} />
-      <div style={{ flex: 1, overflow: "auto", padding: "16px 16px 0", position: "relative" }}>
+      <Header step={3} onBack={onBack} title="현재 앉은 위치" line={line} />
+
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          padding: `0 ${MOBILE.pageX}px`,
+          position: "relative",
+        }}
+      >
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
 
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>호차 선택</div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-              gap: 8,
-            }}
-          >
-            {carNumbers.map((n) => (
+        <p
+          style={{
+            margin: "0 0 6px",
+            fontSize: 12,
+            fontWeight: 700,
+            color: lineColor,
+            textAlign: "center",
+          }}
+        >
+          먼저 호차를 선택해 주세요
+        </p>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: 8,
+            paddingBottom: 2,
+            marginBottom: 8,
+          }}
+        >
+          {carNumbers.map((carNum) => {
+            const isActive = activeCar === carNum;
+            return (
               <button
-                key={n}
+                key={carNum}
                 type="button"
                 className="zeb-touch-target"
                 disabled={isSubmitting}
                 onClick={() => {
-                  setSelectedCar(n);
+                  setActiveCar(carNum);
                   setSelectedSeat(null);
                 }}
+                aria-label={`${carNum}호차`}
+                aria-pressed={isActive}
                 style={{
                   width: "100%",
                   minHeight: 44,
                   padding: "0 8px",
                   borderRadius: 10,
-                  border: `1.5px solid ${selectedCar === n ? C.primary : C.border}`,
-                  background: selectedCar === n ? C.primary : C.card,
-                  color: selectedCar === n ? "#fff" : C.text,
+                  border: `1.5px solid ${isActive ? lineColor : C.border}`,
+                  background: isActive ? lineColor : C.card,
+                  color: isActive ? "#fff" : C.text,
                   fontSize: 14,
                   fontWeight: 700,
                   cursor: isSubmitting ? "default" : "pointer",
-                  transition: "all 0.15s",
                   opacity: isSubmitting ? 0.55 : 1,
                 }}
               >
-                {n}호차
+                {carNum}호차
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
-        {selectedCar && isSeoulLine ? (
-          <div style={{ marginTop: 20 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 8 }}>
-              {selectedCar}호차 좌석 · 지금 앉으신 자리를 골라주세요
-            </div>
+        <div
+          ref={mapShellRef}
+          className="zeb-seek-seat-map-shell zeb-no-scrollbar"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflow: "auto",
+            WebkitOverflowScrolling: "touch",
+            touchAction: "pan-x pan-y",
+            background: C.card,
+            borderRadius: 12,
+            border: `1px solid ${C.border}`,
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+          }}
+        >
+          {!trainId ? (
+            <p
+              style={{
+                padding: "32px 16px",
+                textAlign: "center",
+                fontSize: 14,
+                color: C.muted,
+                lineHeight: 1.5,
+              }}
+            >
+              이전 단계에서 열차를 선택한 뒤 다시 시도해 주세요.
+            </p>
+          ) : !isSeoulLine ? (
+            <p
+              style={{
+                padding: "32px 16px",
+                textAlign: "center",
+                fontSize: 14,
+                color: C.muted,
+                lineHeight: 1.5,
+              }}
+            >
+              인천 노선은 호차 번호만 선택하면 등록할 수 있어요
+            </p>
+          ) : (
             <SubwaySeatMap
-              key={`${trainId}-${selectedCar}-leave`}
+              key={`leave-seat-${trainId}-${activeCar}-${line}`}
               line={line}
               station={station || currentStation || ""}
               trainNo={trainId}
               lineNumber={lineNumber}
               direction={direction}
               drtnInfo={drtnInfo}
-              car={selectedCar}
-              interactionMode="leave"
+              car={activeCar}
+              interactionMode="seek"
               selectedSeatId={selectedSeat?.id}
-              onSeatClick={(seat) => setSelectedSeat((prev) => (prev?.id === seat.id ? null : seat))}
+              onSeatClick={handleSeatClick}
             />
-          </div>
-        ) : null}
+          )}
+        </div>
+      </div>
 
-        {!isSeoulLine ? (
-          <div style={{ textAlign: "center", padding: "24px 0 0", color: "#7B8794", fontSize: 13 }}>
-            인천 노선은 호차 번호만 선택하면 등록할 수 있어요
-          </div>
+      <div
+        style={{
+          flexShrink: 0,
+          padding: `12px ${MOBILE.pageX}px max(20px, env(safe-area-inset-bottom))`,
+          background: C.card,
+          borderTop: `1px solid ${C.border}`,
+          boxShadow: "0 -4px 16px rgba(0,0,0,0.06)",
+        }}
+      >
+        {pickPreview?.pickResultLine ? (
+          <p
+            style={{
+              margin: "0 0 10px",
+              fontSize: 16,
+              fontWeight: 800,
+              color: lineColor,
+              textAlign: "center",
+              lineHeight: 1.45,
+            }}
+          >
+            {pickPreview.pickResultLine}
+          </p>
+        ) : (
+          <p style={{ margin: "0 0 10px", fontSize: 13, color: C.muted, textAlign: "center" }}>
+            {requireSeatOnLeave ? "지금 앉으신 자리를 골라주세요" : "호차를 선택해 주세요"}
+          </p>
+        )}
+        <button
+          type="button"
+          className="zeb-touch-target"
+          onClick={handleConfirm}
+          disabled={!confirmEnabled}
+          aria-busy={isSubmitting || undefined}
+          style={{
+            width: "100%",
+            minHeight: MOBILE.touchMin,
+            padding: "12px 0",
+            background: confirmEnabled ? lineColor : "#D1D5DB",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            fontSize: 17,
+            fontWeight: 700,
+            cursor: confirmEnabled ? "pointer" : "default",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+        >
+          {isSubmitting ? <LoadingSpinner /> : null}
+          {pickPreview?.pickResultLine
+            ? "네, 맞아요"
+            : requireSeatOnLeave
+              ? "위치를 눌러 주세요"
+              : "하차 등록하기"}
+        </button>
+        {pickPreview?.pickResultLine ? (
+          <button
+            type="button"
+            className="zeb-touch-target"
+            disabled={isSubmitting}
+            onClick={() => setSelectedSeat(null)}
+            style={{
+              width: "100%",
+              marginTop: 8,
+              padding: "8px 0",
+              background: "none",
+              border: "none",
+              color: C.muted,
+              fontSize: 14,
+              fontWeight: 600,
+              textDecoration: "underline",
+              cursor: isSubmitting ? "default" : "pointer",
+            }}
+          >
+            다시 고르기
+          </button>
         ) : null}
       </div>
-      <BottomButton
-        label={
-          !selectedCar
-            ? "호차를 먼저 선택해주세요"
-            : requireSeatOnLeave && !selectedSeat
-              ? "앉은 자리를 선택해주세요"
-              : "하차 등록하기"
-        }
-        onClick={() => onNext({ car: selectedCar, seat: selectedSeat })}
-        disabled={!selectedCar || (requireSeatOnLeave && !selectedSeat)}
-        loading={isSubmitting}
-      />
     </div>
   );
 }
