@@ -199,6 +199,8 @@ export default function Home() {
   const [homeZoomScale, setHomeZoomScale] = useState<HomeZoomScale>(1)
   const [isHomeRefreshing, setIsHomeRefreshing] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [pullStartY, setPullStartY] = useState(0)
+  const [pulling, setPulling] = useState(false)
   const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
 
@@ -667,7 +669,24 @@ export default function Home() {
     <div
       className="mx-auto flex h-dvh max-h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-[#f5f5f0]"
       style={{ zoom: homeZoomScale }}
+      onTouchStart={(e) => setPullStartY(e.touches[0].clientY)}
+      onTouchEnd={(e) => {
+        const diff = e.changedTouches[0].clientY - pullStartY
+        if (diff > 80) {
+          window.location.reload()
+        }
+        setPulling(false)
+      }}
+      onTouchMove={(e) => {
+        const diff = e.touches[0].clientY - pullStartY
+        if (diff > 30) setPulling(true)
+      }}
     >
+      {pulling ? (
+        <div className="text-center py-2 text-sm text-[#6b9e3f] font-medium">
+          ↓ 당기면 새로고침
+        </div>
+      ) : null}
       <CongestionHaltModal
         open={showCongestionModal}
         onClose={() => setShowCongestionModal(false)}
