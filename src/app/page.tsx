@@ -78,6 +78,47 @@ const DEFAULT_TRANSFER_STATIONS = [
 ] as const
 
 const VOICE_PARSE_PENDING_KEY = 'voiceParsePending'
+/** 홈 화면 확대 단계 — localStorage에 저장 */
+const HOME_ZOOM_STORAGE_KEY = 'zeb_home_zoom_scale'
+const HOME_ZOOM_STEPS = [1, 1.1, 1.25] as const
+type HomeZoomScale = (typeof HOME_ZOOM_STEPS)[number]
+
+function parseStoredHomeZoom(raw: string | null): HomeZoomScale {
+  const parsed = Number(raw)
+  if (HOME_ZOOM_STEPS.includes(parsed as HomeZoomScale)) {
+    return parsed as HomeZoomScale
+  }
+  return 1
+}
+
+function getNextHomeZoomScale(current: HomeZoomScale): HomeZoomScale {
+  const index = HOME_ZOOM_STEPS.indexOf(current)
+  return HOME_ZOOM_STEPS[(index + 1) % HOME_ZOOM_STEPS.length]
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M20 12a8 8 0 10-2.34 5.66M20 12V7m0 5h-5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function ZoomInIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+      <path d="M16 16l4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M11 8v6M8 11h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 type TransferStationRow = {
   destination_station?:
@@ -155,12 +196,76 @@ export default function Home() {
   const [transferStationsLoading, setTransferStationsLoading] = useState(true)
   const [transferStations, setTransferStations] = useState<string[]>([...DEFAULT_TRANSFER_STATIONS])
   const [selectedTransferStation, setSelectedTransferStation] = useState<string | null>(null)
+  const [homeZoomScale, setHomeZoomScale] = useState<HomeZoomScale>(1)
+  const [isHomeRefreshing, setIsHomeRefreshing] = useState(false)
   const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
 
     const status = await fetchCongestionStatus(token)
     setCongestionStatus(status)
     setIsLoadingData(false)
+  }, [])
+
+  const loadTransferStations = useCallback(async () => {
+    setTransferStationsLoading(true)
+
+    try {
+      const supabase = getSupabase()
+      const { data, error } = await supabase
+        .from('match_requests')
+        .select('destination_station:stations!destination_station_id(station_name)')
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (error || !data?.length) {
+        setTransferStations([...DEFAULT_TRANSFER_STATIONS])
+        return
+      }
+
+      const topStations = pickTopStationNames(data as TransferStationRow[])
+      setTransferStations(
+        topStations.length > 0 ? topStations : [...DEFAULT_TRANSFER_STATIONS]
+      )
+    } catch {
+      setTransferStations([...DEFAULT_TRANSFER_STATIONS])
+    } finally {
+      setTransferStationsLoading(false)
+    }
+  }, [])
+
+  const handleHomeRefresh = useCallback(async () => {
+    if (isHomeRefreshing) {
+      return
+    }
+
+    setIsHomeRefreshing(true)
+
+    try {
+      let token: string | null = null
+      try {
+        token = localStorage.getItem('token')
+      } catch {
+        token = null
+      }
+
+      await Promise.all([loadHomeData(token), loadTransferStations()])
+    } catch {
+      // 새로고침 실패 시에도 화면은 유지합니다.
+    } finally {
+      setIsHomeRefreshing(false)
+    }
+  }, [isHomeRefreshing, loadHomeData, loadTransferStations])
+
+  const handleHomeZoomCycle = useCallback(() => {
+    setHomeZoomScale((current) => {
+      const next = getNextHomeZoomScale(current)
+      try {
+        localStorage.setItem(HOME_ZOOM_STORAGE_KEY, String(next))
+      } catch {
+        // 저장 실패 시에도 확대 단계는 적용합니다.
+      }
+      return next
+    })
   }, [])
 
   useEffect(() => {
@@ -221,47 +326,18 @@ export default function Home() {
   }, [loadHomeData])
 
   useEffect(() => {
-    let cancelled = false
+    void loadTransferStations()
+  }, [loadTransferStations])
 
-    async function loadTransferStations() {
-      setTransferStationsLoading(true)
-
-      try {
-        const supabase = getSupabase()
-        const { data, error } = await supabase
-          .from('match_requests')
-          .select('destination_station:stations!destination_station_id(station_name)')
-          .order('created_at', { ascending: false })
-          .limit(100)
-
-        if (cancelled) {
-          return
-        }
-
-        if (error || !data?.length) {
-          setTransferStations([...DEFAULT_TRANSFER_STATIONS])
-          return
-        }
-
-        const topStations = pickTopStationNames(data as TransferStationRow[])
-        setTransferStations(
-          topStations.length > 0 ? topStations : [...DEFAULT_TRANSFER_STATIONS]
-        )
-      } catch {
-        if (!cancelled) {
-          setTransferStations([...DEFAULT_TRANSFER_STATIONS])
-        }
-      } finally {
-        if (!cancelled) {
-          setTransferStationsLoading(false)
-        }
-      }
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
     }
 
-    void loadTransferStations()
-
-    return () => {
-      cancelled = true
+    try {
+      setHomeZoomScale(parseStoredHomeZoom(localStorage.getItem(HOME_ZOOM_STORAGE_KEY)))
+    } catch {
+      setHomeZoomScale(1)
     }
   }, [])
 
@@ -282,6 +358,7 @@ export default function Home() {
 
   const displayName = user?.username ?? null
   const isLoggedIn = Boolean(displayName)
+  const homeZoomPercentLabel = `${Math.round(homeZoomScale * 100)}%`
 
   async function pushBoardingPage(lineLabel: string, mode: HomeFlowMode) {
     const params = new URLSearchParams({
@@ -502,7 +579,10 @@ export default function Home() {
   }
 
   return (
-    <div className="mx-auto flex h-dvh max-h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-[#f5f5f0]">
+    <div
+      className="mx-auto flex h-dvh max-h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-[#f5f5f0]"
+      style={{ zoom: homeZoomScale }}
+    >
       <CongestionHaltModal
         open={showCongestionModal}
         onClose={() => setShowCongestionModal(false)}
@@ -539,6 +619,25 @@ export default function Home() {
               >
                 포인트
               </Link>
+              <button
+                type="button"
+                disabled={isHomeRefreshing}
+                onClick={() => {
+                  void handleHomeRefresh()
+                }}
+                className="rounded-lg px-3 py-3 text-left text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0] disabled:opacity-50"
+              >
+                {isHomeRefreshing ? '새로고침 중…' : '새로고침'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleHomeZoomCycle()
+                }}
+                className="rounded-lg px-3 py-3 text-left text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
+              >
+                화면 확대 ({homeZoomPercentLabel})
+              </button>
             </div>
           </nav>
         </>
@@ -557,15 +656,41 @@ export default function Home() {
           </svg>
         </button>
 
-        <p className="text-[17px] font-bold text-[#1A1A1A]">빈자리, 잽싸게</p>
+        <p className="min-w-0 flex-1 truncate px-1 text-center text-[17px] font-bold text-[#1A1A1A]">
+          빈자리, 잽싸게
+        </p>
 
-        <Link
-          href={isLoggedIn ? '/profile' : '/login'}
-          className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-[#EBEBEB] bg-[#f5f5f0] text-sm font-bold text-[#1A1A1A]"
-          aria-label={isLoggedIn ? '프로필' : '로그인'}
-        >
-          {isLoggedIn ? displayName!.slice(0, 1).toUpperCase() : 'L'}
-        </Link>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            disabled={isHomeRefreshing}
+            onClick={() => {
+              void handleHomeRefresh()
+            }}
+            className="flex h-9 w-9 items-center justify-center text-[#1A1A1A] transition active:scale-95 disabled:opacity-45"
+            aria-label={isHomeRefreshing ? '새로고침 중' : '새로고침'}
+            aria-busy={isHomeRefreshing}
+          >
+            <span className={isHomeRefreshing ? 'animate-spin' : undefined}>
+              <RefreshIcon />
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={handleHomeZoomCycle}
+            className="flex h-9 w-9 items-center justify-center text-[#1A1A1A] transition active:scale-95"
+            aria-label={`화면 확대, 현재 ${homeZoomPercentLabel}`}
+          >
+            <ZoomInIcon />
+          </button>
+          <Link
+            href={isLoggedIn ? '/profile' : '/login'}
+            className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-[#EBEBEB] bg-[#f5f5f0] text-sm font-bold text-[#1A1A1A]"
+            aria-label={isLoggedIn ? '프로필' : '로그인'}
+          >
+            {isLoggedIn ? displayName!.slice(0, 1).toUpperCase() : 'L'}
+          </Link>
+        </div>
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
