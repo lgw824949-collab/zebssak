@@ -198,6 +198,7 @@ export default function Home() {
   const [selectedTransferStation, setSelectedTransferStation] = useState<string | null>(null)
   const [homeZoomScale, setHomeZoomScale] = useState<HomeZoomScale>(1)
   const [isHomeRefreshing, setIsHomeRefreshing] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
   const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
 
@@ -360,23 +361,30 @@ export default function Home() {
   const isLoggedIn = Boolean(displayName)
   const homeZoomPercentLabel = `${Math.round(homeZoomScale * 100)}%`
 
-  async function pushBoardingPage(lineLabel: string, mode: HomeFlowMode) {
+  async function pushBoardingPage(
+    lineLabel: string,
+    mode: HomeFlowMode,
+    destination?: string
+  ) {
     const params = new URLSearchParams({
       type: mode,
       lineLabel,
     })
+    if (destination) {
+      params.set('destination', destination)
+    }
     router.push(`/boarding?${params.toString()}`)
   }
 
-  async function pushSeekPage(lineLabel: string) {
-    await pushBoardingPage(lineLabel, 'seek')
+  async function pushSeekPage(lineLabel: string, destination?: string) {
+    await pushBoardingPage(lineLabel, 'seek', destination)
   }
 
-  function handleModeSelect(mode: HomeFlowMode) {
+  function handleModeSelect(mode: HomeFlowMode, destination?: string) {
     setHomeMode(mode)
     // 단독 노선(서울 7호선) — 노선 선택 단계 생략
     // setHomeStep('line')
-    handleLinePick(DEFAULT_HOME_LINE_LABEL, mode)
+    handleLinePick(DEFAULT_HOME_LINE_LABEL, mode, destination)
   }
 
   function handleTransferStationClick(stationName: string) {
@@ -384,20 +392,86 @@ export default function Home() {
       return
     }
 
-    const mode: HomeFlowMode = activeTab === 'leave' ? 'leave' : 'seek'
     setSelectedTransferStation(stationName)
+    setActiveTab('seek')
+    setToastMessage(`${stationName}을 목적지로 설정했어요 📍`)
+    setTimeout(() => {
+      setToastMessage(null)
+    }, 1500)
 
-    try {
-      sessionStorage.setItem(
-        VOICE_PARSE_PENDING_KEY,
-        JSON.stringify({ destination: stationName.replace(/역$/u, '') })
+    if (typeof window !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          void (async () => {
+            try {
+              const apiLine = mapLineLabelToApiLine(DEFAULT_HOME_LINE_LABEL)
+
+              if (apiLine) {
+                const response = await fetch(`/api/stations?line=${encodeURIComponent(apiLine)}`, {
+                  method: 'GET',
+                  cache: 'default',
+                })
+                if (response.ok) {
+                  const payload = (await response.json()) as {
+                    success?: boolean
+                    stations?: Array<{
+                      name?: string
+                      lat?: number | null
+                      lng?: number | null
+                    }>
+                  }
+                  if (payload.success && Array.isArray(payload.stations)) {
+                    let nearestWithinRadius: { name: string; dist: number } | null = null
+                    for (const station of payload.stations) {
+                      if (
+                        !station?.name ||
+                        typeof station.lat !== 'number' ||
+                        typeof station.lng !== 'number'
+                      ) {
+                        continue
+                      }
+                      const dist = distanceKm(
+                        position.coords.latitude,
+                        position.coords.longitude,
+                        station.lat,
+                        station.lng
+                      )
+                      if (dist <= GPS_MAX_RADIUS_KM) {
+                        if (!nearestWithinRadius || dist < nearestWithinRadius.dist) {
+                          nearestWithinRadius = { name: station.name, dist }
+                        }
+                      }
+                    }
+                    if (nearestWithinRadius?.name) {
+                      await saveDetectedLocation(
+                        DEFAULT_HOME_LINE_LABEL,
+                        position.coords.latitude,
+                        position.coords.longitude,
+                        nearestWithinRadius.name,
+                        true,
+                        nearestWithinRadius.dist
+                      )
+                    }
+                  }
+                }
+              }
+            } catch {
+              // 백그라운드 위치 저장 실패는 무시합니다.
+            }
+          })()
+        },
+        () => {
+          // 위치 거부 시에도 바로 앉기 등록 흐름은 계속합니다.
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 3000,
+          maximumAge: 120000,
+        }
       )
-    } catch {
-      // sessionStorage 실패 시 탑승 화면 이동만 진행합니다.
     }
 
-    setHomeMode(mode)
-    handleLinePick(DEFAULT_HOME_LINE_LABEL, mode)
+    handleModeSelect('seek', stationName)
   }
 
   function scrollTransferStations(direction: 'prev' | 'next') {
@@ -421,7 +495,11 @@ export default function Home() {
   //   setHomeMode(null)
   // }
 
-  async function proceedToBoarding(lineLabel: string, modeOverride?: HomeFlowMode) {
+  async function proceedToBoarding(
+    lineLabel: string,
+    modeOverride?: HomeFlowMode,
+    destination?: string
+  ) {
     const mode = modeOverride ?? homeMode
     if (!mode) return
     if (isLineHalted(congestionStatus, lineLabel)) {
@@ -431,13 +509,17 @@ export default function Home() {
     }
     setSelectedLineLabel(lineLabel)
     if (mode === 'seek') {
-      void startSeekByLineSelection(lineLabel)
+      void startSeekByLineSelection(lineLabel, destination)
       return
     }
-    void pushBoardingPage(lineLabel, mode)
+    void pushBoardingPage(lineLabel, mode, destination)
   }
 
-  function handleLinePick(lineLabel: string, modeOverride?: HomeFlowMode) {
+  function handleLinePick(
+    lineLabel: string,
+    modeOverride?: HomeFlowMode,
+    destination?: string
+  ) {
     const mode = modeOverride ?? homeMode
     if (isMatchingPaused || !mode) return
 
@@ -453,11 +535,14 @@ export default function Home() {
         type: mode,
         lineLabel,
       })
+      if (destination) {
+        params.set('destination', destination)
+      }
       router.push(`/register?${params.toString()}`)
       return
     }
 
-    void proceedToBoarding(lineLabel, mode)
+    void proceedToBoarding(lineLabel, mode, destination)
   }
 
   async function saveDetectedLocation(
@@ -486,14 +571,14 @@ export default function Home() {
     }
   }
 
-  async function startSeekByLineSelection(lineLabel: string) {
+  async function startSeekByLineSelection(lineLabel: string, destination?: string) {
     if (isLineHalted(congestionStatus, lineLabel)) {
       setShowCongestionModal(true)
       return
     }
     setSelectedLineLabel(lineLabel)
     // GPS·역 목록 조회를 기다리지 않고 바로 탑승 화면으로 이동합니다.
-    void pushSeekPage(lineLabel)
+    void pushSeekPage(lineLabel, destination)
 
     if (typeof window === 'undefined' || !navigator.geolocation) {
       return
@@ -588,6 +673,12 @@ export default function Home() {
         onClose={() => setShowCongestionModal(false)}
         congestionLevel={congestionStatus?.levelsByLine[resolveLineNumberFromLabel(selectedLineLabel)]}
       />
+
+      {toastMessage ? (
+        <p className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-full">
+          {toastMessage}
+        </p>
+      ) : null}
 
       {menuOpen ? (
         <>
@@ -712,7 +803,7 @@ export default function Home() {
             onClick={() => setActiveTab('seek')}
             className={`flex-1 pb-2.5 text-center text-[15px] transition ${
               activeTab === 'seek'
-                ? 'border-b-2 border-[#6b9e3f] font-bold text-[#1A1A1A]'
+                ? 'border-b-2 border-[#747F00] font-bold text-[#1A1A1A]'
                 : 'font-medium text-[#888888]'
             }`}
           >
@@ -723,7 +814,7 @@ export default function Home() {
             onClick={() => setActiveTab('leave')}
             className={`flex-1 pb-2.5 text-center text-[15px] transition ${
               activeTab === 'leave'
-                ? 'border-b-2 border-[#6b9e3f] font-bold text-[#1A1A1A]'
+                ? 'border-b-2 border-[#747F00] font-bold text-[#1A1A1A]'
                 : 'font-medium text-[#888888]'
             }`}
           >
@@ -738,7 +829,7 @@ export default function Home() {
               type="button"
               disabled={isMatchingPaused}
               onClick={() => handleModeSelect('seek')}
-              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#6b9e3f] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
             >
               바로 앉기 등록
             </button>
@@ -747,7 +838,7 @@ export default function Home() {
               type="button"
               disabled={isMatchingPaused}
               onClick={() => handleModeSelect('leave')}
-              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#6b9e3f] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-[16px] font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
             >
               내릴게요 등록
             </button>
@@ -790,8 +881,6 @@ export default function Home() {
               </button>
             </div>
           </div>
-          <p className="mb-3 text-[12px] text-[#888888]">역을 누르면 해당 역으로 등록 화면으로 이동합니다</p>
-
           <div
             ref={transferScrollRef}
             className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -825,7 +914,7 @@ export default function Home() {
                     onClick={() => handleTransferStationClick(station)}
                     className={`shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
                       isSelected
-                        ? 'bg-[#6b9e3f] text-white'
+                        ? 'bg-[#747F00] text-white'
                         : 'border border-gray-200 bg-white text-gray-600'
                     }`}
                   >
@@ -842,15 +931,15 @@ export default function Home() {
           <p className="mb-3 text-[12px] font-medium text-[#888888]">서울 7호선 단독 운영</p>
           <div className="flex flex-col gap-2">
             <div className="flex items-start gap-2">
-              <span className="text-[#6b9e3f] mt-0.5">•</span>
+              <span className="text-[#747F00] mt-0.5">•</span>
               <p className="text-sm text-gray-600">서울교통공사 혼잡도 데이터 분석 결과</p>
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-[#6b9e3f] mt-0.5">•</span>
+              <span className="text-[#747F00] mt-0.5">•</span>
               <p className="text-sm text-gray-600">착석 수요·장거리 이용 최적 노선</p>
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-[#6b9e3f] mt-0.5">•</span>
+              <span className="text-[#747F00] mt-0.5">•</span>
               <p className="text-sm text-gray-600">환승역 66개, 평균 착석 시간 30분</p>
             </div>
           </div>
