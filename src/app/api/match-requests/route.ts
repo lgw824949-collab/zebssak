@@ -297,16 +297,6 @@ async function tryCreateMatch(
   const oppositeType: RequestType =
     newRequestType === 'seat_seek' ? 'leaving' : 'seat_seek'
 
-  const trainIds = await getTrainIdsForLineTrain(
-    supabase,
-    linePrefix,
-    trainNo,
-    lineNumber
-  )
-  if (!trainIds.length) {
-    return null
-  }
-
   const directionValues = equivalentDirectionsForMatch(direction)
 
   const { data: candidates, error } = await supabase
@@ -322,7 +312,6 @@ async function tryCreateMatch(
     .eq('status', 'waiting')
     .eq('request_type', oppositeType)
     .in('direction', directionValues)
-    .in('train_id', trainIds)
     .neq('id', newRequestId)
 
   if (error || !candidates?.length) {

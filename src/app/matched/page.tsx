@@ -113,116 +113,168 @@ function MatchSeatDiagram({
   const doorLabel = `출${carNumber}-${doorNumber}`
   const sectionKey = `${carNumber}-${doorNumber}`
   const nextDoorLabel = `출${carNumber}-${Math.min(doorNumber + 1, 4)}`
-  const leftLetters = ['A', 'B', 'C']
-  const rightLetters = ['D', 'E', 'F']
-  const seatW = 34
-  const seatH = 40
-  const gap = 0
-  const leftX = 16
-  const centerX = 142
-  const rightX = 198
 
-  function seatFill(side: 'left' | 'right', letter: string): string {
-    const matched =
-      (side === 'left' && isLeftSide && letter === columnLetter) ||
-      (side === 'right' && isRightSide && letter === columnLetter)
-    return matched ? MATCH_GREEN : '#ffffff'
+  const SEAT_FILL = '#ddeedd'
+  const CAP_FILL = '#c8dba8'
+  const BG_FILL = '#e8f0d8'
+  const STROKE = '#b8cca8'
+
+  const leftX = 8
+  const aisleX = 78
+  const rightX = 122
+  const seatW = 70
+  const aisleW = 44
+  const topCapH = 10
+  const doorH = 22
+  const rowH = 33
+  const bottomCapH = 28
+
+  const topDoorY = topCapH
+  const rowStartY = topDoorY + doorH
+  const bottomDoorY = rowStartY + rowH * 6
+  const bottomCapY = bottomDoorY + doorH
+
+  const rowLetters = ['A', 'B', 'C', 'D', 'E', 'F']
+
+  function isLeftColumn(letter: string): boolean {
+    return letter === 'A' || letter === 'B' || letter === 'C'
   }
 
-  function seatTextFill(side: 'left' | 'right', letter: string): string {
-    const matched =
-      (side === 'left' && isLeftSide && letter === columnLetter) ||
-      (side === 'right' && isRightSide && letter === columnLetter)
-    return matched ? '#ffffff' : '#374151'
+  function isMatchedSide(side: 'left' | 'right', letter: string): boolean {
+    if (letter !== columnLetter) return false
+    if (isLeftColumn(letter)) return side === 'left' && isLeftSide
+    return side === 'right' && isRightSide
   }
 
-  function entranceFill(side: 'left' | 'right'): string {
-    if (side === 'left' && isLeftSide) return MATCH_GREEN
-    if (side === 'right' && isRightSide) return MATCH_GREEN
-    return '#ffffff'
+  function seatSideFill(side: 'left' | 'right', letter: string): string {
+    return isMatchedSide(side, letter) ? MATCH_GREEN : SEAT_FILL
   }
 
-  function entranceTextFill(side: 'left' | 'right'): string {
-    if ((side === 'left' && isLeftSide) || (side === 'right' && isRightSide)) {
-      return '#ffffff'
+  function seatSideLabel(side: 'left' | 'right', letter: string): string {
+    if (isLeftColumn(letter)) {
+      if (side === 'left') {
+        return isMatchedSide('left', letter) ? `${letter} ★` : letter
+      }
+      return ''
     }
-    return MATCH_GREEN
+    if (side === 'right') {
+      return isMatchedSide('right', letter) ? `${letter} ★` : letter
+    }
+    return ''
+  }
+
+  function seatTextColor(side: 'left' | 'right', letter: string): string {
+    return isMatchedSide(side, letter) ? '#ffffff' : '#374151'
   }
 
   return (
-    <svg viewBox="0 0 320 210" className="w-full" role="img" aria-label="좌석 배치도">
-      <rect x="0" y="0" width="320" height="210" rx="12" fill="#e8f0d8" />
+    <svg viewBox="0 0 200 280" className="w-full" role="img" aria-label="좌석 배치도">
+      {/* 1. 객차 배경 */}
+      <rect x="0" y="0" width="200" height="280" fill={BG_FILL} stroke={STROKE} strokeWidth="1.5" />
 
-      {/* 출1-1 (상단) */}
-      <rect x="16" y="14" width="88" height="28" rx="6" fill={entranceFill('left')} stroke={MATCH_GREEN} strokeWidth="1.5" />
-      <text x="60" y="32" textAnchor="middle" fontSize="11" fontWeight="800" fill={entranceTextFill('left')}>
+      {/* 2. 상단 캡 */}
+      <rect x="0" y="0" width="200" height={topCapH} fill={CAP_FILL} />
+
+      {/* 3. 출입문 (상단) */}
+      <rect x={leftX} y={topDoorY} width={seatW} height={doorH} fill="#ffffff" stroke={STROKE} strokeWidth="1" />
+      <text x={leftX + seatW / 2} y={topDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={MATCH_GREEN}>
         {doorLabel}
       </text>
-      {isLeftSide ? (
-        <text x="60" y="44" textAnchor="middle" fontSize="9" fontWeight="700" fill="#ffffff">
-          ▼ 여기
-        </text>
-      ) : null}
-
-      <rect x="216" y="14" width="88" height="28" rx="6" fill={entranceFill('right')} stroke={MATCH_GREEN} strokeWidth="1.5" />
-      <text x="260" y="32" textAnchor="middle" fontSize="11" fontWeight="800" fill={entranceTextFill('right')}>
+      <rect x={rightX} y={topDoorY} width={seatW} height={doorH} fill={MATCH_GREEN} stroke={STROKE} strokeWidth="1" />
+      <text x={rightX + seatW / 2} y={topDoorY + 13} textAnchor="middle" fontSize="9" fontWeight="800" fill="#ffffff">
         {doorLabel}
       </text>
-      {isRightSide ? (
-        <text x="260" y="44" textAnchor="middle" fontSize="9" fontWeight="700" fill="#ffffff">
-          ▼ 여기
-        </text>
-      ) : null}
+      <text x={rightX + seatW / 2} y={topDoorY + 20} textAnchor="middle" fontSize="7" fontWeight="700" fill="#ffffff">
+        ▼ 여기
+      </text>
 
-      {/* A B C (좌측, 간격 없음) */}
-      {leftLetters.map((letter, index) => {
-        const x = leftX + index * (seatW + gap)
-        const y = 62
-        const matched = isLeftSide && letter === columnLetter
+      {/* 4~9. A~F열 (좌우 양쪽, 붙임) */}
+      {rowLetters.map((letter, index) => {
+        const y = rowStartY + index * rowH
+        const showSectionBox = letter === 'C'
         return (
-          <g key={`left-${letter}`}>
-            <rect x={x} y={y} width={seatW} height={seatH} fill={seatFill('left', letter)} stroke={MATCH_GREEN} strokeWidth="1.5" />
-            <text x={x + seatW / 2} y={y + 24} textAnchor="middle" fontSize="13" fontWeight="900" fill={seatTextFill('left', letter)}>
-              {letter}
-              {matched ? ' ★' : ''}
+          <g key={`row-${letter}`}>
+            <rect
+              x={leftX}
+              y={y}
+              width={seatW}
+              height={rowH}
+              fill={seatSideFill('left', letter)}
+              stroke={STROKE}
+              strokeWidth="1"
+            />
+            <text
+              x={leftX + seatW / 2}
+              y={y + rowH / 2 + 5}
+              textAnchor="middle"
+              fontSize="12"
+              fontWeight="900"
+              fill={seatTextColor('left', letter)}
+            >
+              {seatSideLabel('left', letter)}
+            </text>
+            {showSectionBox ? (
+              <>
+                <rect
+                  x={aisleX}
+                  y={y}
+                  width={aisleW}
+                  height={rowH}
+                  fill="#ffffff"
+                  stroke={STROKE}
+                  strokeWidth="1"
+                />
+                <text
+                  x={aisleX + aisleW / 2}
+                  y={y + rowH / 2 + 5}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fontWeight="900"
+                  fill={MATCH_GREEN}
+                >
+                  {sectionKey}
+                </text>
+              </>
+            ) : (
+              <rect x={aisleX} y={y} width={aisleW} height={rowH} fill={BG_FILL} />
+            )}
+            <rect
+              x={rightX}
+              y={y}
+              width={seatW}
+              height={rowH}
+              fill={seatSideFill('right', letter)}
+              stroke={STROKE}
+              strokeWidth="1"
+            />
+            <text
+              x={rightX + seatW / 2}
+              y={y + rowH / 2 + 5}
+              textAnchor="middle"
+              fontSize="12"
+              fontWeight="900"
+              fill={seatTextColor('right', letter)}
+            >
+              {seatSideLabel('right', letter)}
             </text>
           </g>
         )
       })}
 
-      {/* 가운데 호차-문 구간 */}
-      <rect x={centerX} y={62} width={44} height={seatH} rx="4" fill="#ffffff" stroke={MATCH_GREEN} strokeWidth="1.5" />
-      <text x={centerX + 22} y={88} textAnchor="middle" fontSize="12" fontWeight="900" fill={MATCH_GREEN}>
-        {sectionKey}
-      </text>
-
-      {/* D E F (우측, 간격 없음) */}
-      {rightLetters.map((letter, index) => {
-        const x = rightX + index * (seatW + gap)
-        const y = 62
-        const matched = isRightSide && letter === columnLetter
-        return (
-          <g key={`right-${letter}`}>
-            <rect x={x} y={y} width={seatW} height={seatH} fill={seatFill('right', letter)} stroke={MATCH_GREEN} strokeWidth="1.5" />
-            <text x={x + seatW / 2} y={y + 24} textAnchor="middle" fontSize="13" fontWeight="900" fill={seatTextFill('right', letter)}>
-              {letter}
-              {matched ? ' ★' : ''}
-            </text>
-          </g>
-        )
-      })}
-
-      {/* 출1-2 (하단, 흐리게) */}
+      {/* 10. 출입문 (하단, 흐리게) */}
       <g opacity="0.35">
-        <rect x="16" y="128" width="88" height="28" rx="6" fill="#ffffff" stroke={MATCH_GREEN} strokeWidth="1.5" />
-        <text x="60" y="146" textAnchor="middle" fontSize="11" fontWeight="800" fill={MATCH_GREEN}>
+        <rect x={leftX} y={bottomDoorY} width={seatW} height={doorH} fill="#ffffff" stroke={STROKE} strokeWidth="1" />
+        <text x={leftX + seatW / 2} y={bottomDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={MATCH_GREEN}>
           {nextDoorLabel}
         </text>
-        <rect x="216" y="128" width="88" height="28" rx="6" fill="#ffffff" stroke={MATCH_GREEN} strokeWidth="1.5" />
-        <text x="260" y="146" textAnchor="middle" fontSize="11" fontWeight="800" fill={MATCH_GREEN}>
+        <rect x={rightX} y={bottomDoorY} width={seatW} height={doorH} fill="#ffffff" stroke={STROKE} strokeWidth="1" />
+        <text x={rightX + seatW / 2} y={bottomDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={MATCH_GREEN}>
           {nextDoorLabel}
         </text>
       </g>
+
+      {/* 11. 하단 캡 */}
+      <rect x="0" y={bottomCapY} width="200" height={bottomCapH} fill={CAP_FILL} />
     </svg>
   )
 }
