@@ -1378,46 +1378,17 @@ export default function Home() {
               >
                 {isLoggedIn ? '프로필' : '로그인'}
               </Link>
-              <Link
-                href="/points"
-                onClick={closeMenu}
-                className="rounded-lg px-3 py-3 text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
-              >
-                포인트
-              </Link>
-              <Link
-                href="/notice"
-                onClick={closeMenu}
-                className="rounded-lg px-3 py-3 text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
-              >
-                공지사항
-              </Link>
-              <a
-                href="https://zebssak.vercel.app"
-                onClick={closeMenu}
-                className="rounded-lg px-3 py-3 text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
-              >
-                서비스 소개
-              </a>
-              <button
-                type="button"
-                disabled={isHomeRefreshing}
-                onClick={() => {
-                  void handleHomeRefresh()
-                }}
-                className="rounded-lg px-3 py-3 text-left text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0] disabled:opacity-50"
-              >
-                {isHomeRefreshing ? '새로고침 중…' : '새로고침'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void handleLogout()
-                }}
-                className="rounded-lg px-3 py-3 text-left text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
-              >
-                로그아웃
-              </button>
+              {isLoggedIn ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleLogout()
+                  }}
+                  className="rounded-lg px-3 py-3 text-left text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
+                >
+                  로그아웃
+                </button>
+              ) : null}
             </div>
           </nav>
         </>

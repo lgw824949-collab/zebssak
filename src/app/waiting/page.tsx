@@ -332,40 +332,25 @@ async function subscribeMatchAcceptSse(
   }
 }
 
-const MOBILE_SHELL_MAX_WIDTH = 390
 const MOBILE_PAGE_X = 16
 
-/** PC 뷰포트에서도 휴대폰 폭(390px)으로 중앙 정렬 */
-function WaitingMobileShell({ children }: { children: ReactNode }) {
+/** 대기 화면 레이아웃 — 전역 MobileAppShell 안에서 콘텐츠만 담당 */
+function WaitingPageLayout({ children }: { children: ReactNode }) {
   return (
     <div
+      className="wait-page-layout"
       style={{
         minHeight: '100dvh',
-        background: '#E8EAED',
         display: 'flex',
-        justifyContent: 'center',
+        flexDirection: 'column',
+        background: '#F7F8FA',
+        color: '#1A1A1A',
+        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
+        paddingLeft: `max(${MOBILE_PAGE_X}px, env(safe-area-inset-left))`,
+        paddingRight: `max(${MOBILE_PAGE_X}px, env(safe-area-inset-right))`,
       }}
     >
-      <div
-        className="wait-mobile-shell"
-        style={{
-          width: '100%',
-          maxWidth: MOBILE_SHELL_MAX_WIDTH,
-          minHeight: '100dvh',
-          display: 'flex',
-          flexDirection: 'column',
-          background: '#F7F8FA',
-          color: '#1A1A1A',
-          fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
-          borderLeft: '1px solid #EBEBEB',
-          borderRight: '1px solid #EBEBEB',
-          paddingLeft: `max(${MOBILE_PAGE_X}px, env(safe-area-inset-left))`,
-          paddingRight: `max(${MOBILE_PAGE_X}px, env(safe-area-inset-right))`,
-        }}
-      >
-        {children}
-      </div>
+      {children}
     </div>
   )
 }
@@ -396,7 +381,7 @@ function resolveRemainingStations(draft: BoardingDraft): number | null {
 
 function WaitingLoading() {
   return (
-    <WaitingMobileShell>
+    <WaitingPageLayout>
       <div className="flex flex-1 flex-col items-center justify-center gap-4">
         <div className="w-full max-w-[12rem] space-y-2" aria-hidden>
           <div className="zeb-track zeb-track--line1" />
@@ -406,7 +391,7 @@ function WaitingLoading() {
           로딩 중...
         </p>
       </div>
-    </WaitingMobileShell>
+    </WaitingPageLayout>
   )
 }
 
@@ -886,7 +871,7 @@ export default function WaitingPage() {
 
   if (!draft && !error) {
     return (
-      <WaitingMobileShell>
+      <WaitingPageLayout>
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4">
           <p className="text-center text-sm font-medium text-[#475569]">
             대기 정보를 불러오지 못했습니다.
@@ -899,7 +884,7 @@ export default function WaitingPage() {
             홈으로
           </button>
         </div>
-      </WaitingMobileShell>
+      </WaitingPageLayout>
     )
   }
 
@@ -914,7 +899,7 @@ export default function WaitingPage() {
   const pageTitle = isProviderDraft ? '하차 예정 대기' : '착석 희망 대기'
 
   return (
-    <WaitingMobileShell>
+    <WaitingPageLayout>
       <header
         style={{
           display: 'grid',
@@ -1255,6 +1240,6 @@ export default function WaitingPage() {
           animation: wait-live-pulse 1.4s ease-in-out infinite;
         }
       `}</style>
-    </WaitingMobileShell>
+    </WaitingPageLayout>
   )
 }

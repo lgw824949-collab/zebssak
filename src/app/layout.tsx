@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import AppInstallTracker from '@/components/AppInstallTracker'
 import DevServiceWorkerCleanup from '@/components/DevServiceWorkerCleanup'
+import MobileAppShell from '@/components/MobileAppShell'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -52,7 +53,7 @@ export default function RootLayout({
           gtag('js', new Date());
           gtag('config', 'G-6SD2XF6RH5');
         `}</Script>
-        {children}
+        <MobileAppShell>{children}</MobileAppShell>
       </body>
     </html>
   )

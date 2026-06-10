@@ -228,6 +228,29 @@
     width: 0;
     height: 0;
   }
+
+  /* PC 등 넓은 화면 — 휴대폰 폭(480px) 프레임으로 중앙 표시 */
+  .mobile-app-frame {
+    min-height: 100dvh;
+    display: flex;
+    justify-content: center;
+    background: #e8eaed;
+  }
+
+  .mobile-app-shell {
+    width: 100%;
+    max-width: 480px;
+    min-height: 100dvh;
+    background-color: var(--background);
+  }
+
+  @media (min-width: 481px) {
+    .mobile-app-shell {
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+    }
+  }
 }
 
 /* ── v0.dev 홈 디자인 시스템 (레거시 주석) ── */
