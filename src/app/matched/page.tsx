@@ -5,7 +5,13 @@ import { useEffect, useState } from 'react'
 
 const COUNTDOWN_SECONDS = 180
 const HOME_MATCH_COMPLETED_HINT_KEY = 'homeMatchCompletedHint'
-const MATCH_GREEN = '#4a7c3f'
+/** 서울 7호선 브랜드 컬러 (홈·좌석맵과 동일) */
+const LINE7_PRIMARY = '#747F00'
+const LINE7_DARK = '#5F6B2E'
+const LINE7_LIGHT = '#F7F8F2'
+const LINE7_SEAT_FILL = '#E4E9D0'
+const LINE7_CAP_FILL = '#D5DDB8'
+const LINE7_STROKE = '#B8C28A'
 const SIDE_SEAT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
 interface RequestSummary {
@@ -32,12 +38,12 @@ interface MatchDetail {
 
 function MatchedLoading() {
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center gap-4 bg-[#f7f8fa] px-4">
+    <div className="min-h-dvh flex flex-col items-center justify-center gap-4 bg-[#f5f5f0] px-4">
       <div className="w-full max-w-[12rem] space-y-2" aria-hidden>
-        <div className="h-2 rounded-full bg-[#e8f0d8]" />
-        <div className="h-2 rounded-full bg-[#d8e4c8]" />
+        <div className="h-2 rounded-full bg-[#E4E9D0]" />
+        <div className="h-2 rounded-full bg-[#D5DDB8]" />
       </div>
-      <p className="text-sm text-gray-500">로딩 중...</p>
+      <p className="text-sm font-semibold text-[#888888]">로딩 중...</p>
     </div>
   )
 }
@@ -115,10 +121,10 @@ function MatchSeatDiagram({
   const sectionKey = `${carNumber}-${doorNumber}`
   const nextDoorLabel = `출${carNumber}-${Math.min(doorNumber + 1, 4)}`
 
-  const SEAT_FILL = '#ddeedd'
-  const CAP_FILL = '#c8dba8'
-  const BG_FILL = '#e8f0d8'
-  const STROKE = '#b8cca8'
+  const SEAT_FILL = LINE7_SEAT_FILL
+  const CAP_FILL = LINE7_CAP_FILL
+  const BG_FILL = LINE7_LIGHT
+  const STROKE = LINE7_STROKE
 
   const leftX = 8
   const aisleX = 78
@@ -148,7 +154,7 @@ function MatchSeatDiagram({
   }
 
   function seatSideFill(side: 'left' | 'right', letter: string): string {
-    return isMatchedSide(side, letter) ? MATCH_GREEN : SEAT_FILL
+    return isMatchedSide(side, letter) ? LINE7_PRIMARY : SEAT_FILL
   }
 
   function seatSideLabel(side: 'left' | 'right', letter: string): string {
@@ -165,7 +171,7 @@ function MatchSeatDiagram({
   }
 
   function seatTextColor(side: 'left' | 'right', letter: string): string {
-    return isMatchedSide(side, letter) ? '#ffffff' : '#374151'
+    return isMatchedSide(side, letter) ? '#ffffff' : LINE7_DARK
   }
 
   return (
@@ -178,10 +184,10 @@ function MatchSeatDiagram({
 
       {/* 3. 출입문 (상단) */}
       <rect x={leftX} y={topDoorY} width={seatW} height={doorH} fill="#ffffff" stroke={STROKE} strokeWidth="1" />
-      <text x={leftX + seatW / 2} y={topDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={MATCH_GREEN}>
+      <text x={leftX + seatW / 2} y={topDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={LINE7_PRIMARY}>
         {doorLabel}
       </text>
-      <rect x={rightX} y={topDoorY} width={seatW} height={doorH} fill={MATCH_GREEN} stroke={STROKE} strokeWidth="1" />
+      <rect x={rightX} y={topDoorY} width={seatW} height={doorH} fill={LINE7_PRIMARY} stroke={STROKE} strokeWidth="1" />
       <text x={rightX + seatW / 2} y={topDoorY + 13} textAnchor="middle" fontSize="9" fontWeight="800" fill="#ffffff">
         {doorLabel}
       </text>
@@ -231,7 +237,7 @@ function MatchSeatDiagram({
                   textAnchor="middle"
                   fontSize="11"
                   fontWeight="900"
-                  fill={MATCH_GREEN}
+                  fill={LINE7_PRIMARY}
                 >
                   {sectionKey}
                 </text>
@@ -265,11 +271,11 @@ function MatchSeatDiagram({
       {/* 10. 출입문 (하단, 흐리게) */}
       <g opacity="0.35">
         <rect x={leftX} y={bottomDoorY} width={seatW} height={doorH} fill="#ffffff" stroke={STROKE} strokeWidth="1" />
-        <text x={leftX + seatW / 2} y={bottomDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={MATCH_GREEN}>
+        <text x={leftX + seatW / 2} y={bottomDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={LINE7_PRIMARY}>
           {nextDoorLabel}
         </text>
         <rect x={rightX} y={bottomDoorY} width={seatW} height={doorH} fill="#ffffff" stroke={STROKE} strokeWidth="1" />
-        <text x={rightX + seatW / 2} y={bottomDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={MATCH_GREEN}>
+        <text x={rightX + seatW / 2} y={bottomDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={LINE7_PRIMARY}>
           {nextDoorLabel}
         </text>
       </g>
@@ -440,11 +446,11 @@ export default function MatchedPage() {
 
   if (error) {
     return (
-      <div className="min-h-dvh flex flex-col items-center justify-center bg-[#f7f8fa] p-6">
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-[#f5f5f0] p-6">
         <p className="text-center text-sm font-semibold text-red-600">{error}</p>
         <button
           type="button"
-          className="mt-6 rounded-2xl bg-[#4a7c3f] px-6 py-3 text-sm font-bold text-white"
+          className="mt-6 rounded-2xl bg-[#747F00] px-6 py-3 text-sm font-bold text-white"
           onClick={() => router.push('/home')}
         >
           홈으로
@@ -476,30 +482,36 @@ export default function MatchedPage() {
   ]
 
   return (
-    <div className="min-h-dvh flex flex-col bg-[#f7f8fa] px-4 py-6">
+    <div className="min-h-dvh flex flex-col bg-[#f5f5f0] px-4 py-6">
       <main className="mx-auto flex w-full max-w-md flex-col gap-4">
         {/* 1. 상단 배너 */}
-        <div className="rounded-2xl bg-[#4a7c3f] p-4 text-center">
-          <p className="text-xs text-white opacity-75">빈자리를 찾았어요!</p>
+        <div className="relative overflow-hidden rounded-2xl bg-[#747F00] px-4 py-5 text-center">
+          <span
+            className="absolute left-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-white/15 text-[15px] font-extrabold text-white"
+            aria-hidden
+          >
+            7
+          </span>
+          <p className="text-xs font-semibold text-white/85">서울 7호선 · 빈자리를 찾았어요!</p>
           <h1 className="mt-1 text-2xl font-black text-white">매칭 완료 ✓</h1>
         </div>
 
         {/* 2. 좌석 정보 카드 */}
-        <div className="rounded-2xl bg-white p-4">
+        <div className="rounded-2xl border border-[#D5DDB8] bg-white p-4">
           <div className="grid grid-cols-4 gap-3">
             {infoItems.map((item) => (
               <div key={item.label} className="text-center">
-                <p className="text-xs text-gray-400">{item.label}</p>
-                <p className="mt-1 text-base font-black text-[#4a7c3f]">{item.value}</p>
+                <p className="text-xs font-medium text-[#888888]">{item.label}</p>
+                <p className="mt-1 text-base font-black text-[#747F00]">{item.value}</p>
               </div>
             ))}
           </div>
         </div>
 
         {/* 3. 좌석 배치도 카드 */}
-        <div className="rounded-2xl bg-white p-4">
-          <p className="text-sm font-bold text-gray-900">{diagramTitle}</p>
-          <div className="mt-3">
+        <div className="rounded-2xl border border-[#D5DDB8] bg-white p-4">
+          <p className="text-sm font-bold text-[#1A1A1A]">{diagramTitle}</p>
+          <div className="mt-3 overflow-hidden rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] p-2">
             <MatchSeatDiagram
               carNumber={diagramCar}
               doorNumber={diagramDoor}
@@ -510,9 +522,9 @@ export default function MatchedPage() {
         </div>
 
         {/* 4. 타이머 */}
-        <div className="rounded-2xl bg-[#fff8e6] p-4 text-center">
-          <p className="text-xs text-[#8a6020]">착석까지 남은 시간</p>
-          <p className="mt-2 text-2xl font-black text-[#b45309]">{formatCountdown(secondsLeft)}</p>
+        <div className="rounded-2xl border border-[#D5DDB8] bg-[#F7F8F2] p-4 text-center">
+          <p className="text-xs font-semibold text-[#5F6B2E]">착석까지 남은 시간</p>
+          <p className="mt-2 text-2xl font-black text-[#747F00]">{formatCountdown(secondsLeft)}</p>
         </div>
 
         {/* 5. 착석 완료 버튼 */}
@@ -520,7 +532,7 @@ export default function MatchedPage() {
           type="button"
           disabled={isSubmittingSeat}
           onClick={() => void handleSeatedComplete()}
-          className="w-full rounded-2xl bg-[#4a7c3f] py-4 text-lg font-black text-white disabled:opacity-60"
+          className="w-full rounded-2xl bg-[#747F00] py-4 text-lg font-black text-white transition active:scale-[0.98] disabled:opacity-60"
         >
           {isSubmittingSeat ? '처리 중...' : '착석 완료'}
         </button>

@@ -254,6 +254,83 @@ const MATCH_TYPE_LABEL_BY_ROLE = {
 } as const
 
 const ACCEPT_STATUS_POLL_MS = 3000
+const PENDING_MATCH_POLL_MS = 3000
+
+/** 수락 완료 SSE 구독 — type: accepted 수신 시 콜백 호출 */
+async function subscribeMatchAcceptSse(
+  matchId: string,
+  token: string,
+  onAccepted: (matchId: string) => void,
+  onError: (message: string) => void,
+  signal: AbortSignal
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `/api/matches/${encodeURIComponent(matchId)}?sse=accept`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+      }
+    )
+
+    if (signal.aborted) {
+      return
+    }
+
+    if (!response.ok || !response.body) {
+      onError('수락 알림 연결에 실패했습니다.')
+      return
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+
+      buffer += decoder.decode(value, { stream: true })
+      const chunks = buffer.split('\n\n')
+      buffer = chunks.pop() ?? ''
+
+      for (const chunk of chunks) {
+        const line = chunk.split('\n').find((entry) => entry.startsWith('data: '))
+        if (!line) continue
+
+        try {
+          const payload = JSON.parse(line.slice(6)) as {
+            type?: string
+            match_id?: string
+            message?: string
+          }
+
+          if (payload.type === 'accepted' && payload.match_id) {
+            onAccepted(payload.match_id)
+            return
+          }
+          if (payload.type === 'error' && payload.message) {
+            onError(payload.message)
+            return
+          }
+        } catch {
+          onError('수락 알림 메시지 처리에 실패했습니다.')
+          return
+        }
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return
+    }
+    if (signal.aborted) {
+      return
+    }
+    onError('수락 알림 연결에 실패했습니다.')
+  }
+}
 
 const MOBILE_SHELL_MAX_WIDTH = 390
 const MOBILE_PAGE_X = 16
@@ -344,6 +421,8 @@ export default function WaitingPage() {
   const [isSeekerWaiting, setIsSeekerWaiting] = useState(false)
   const [error, setError] = useState('')
   const [isReady, setIsReady] = useState(false)
+  const [partnerAcceptedNotice, setPartnerAcceptedNotice] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
 
   useEffect(() => {
     const tokenFromStorage = localStorage.getItem('token')
@@ -382,6 +461,12 @@ export default function WaitingPage() {
         }
 
         let requestId = existingRequestId
+
+        const storedMatchId = sessionStorage.getItem('activeMatchId')?.trim()
+        if (storedMatchId) {
+          router.replace(`/matching?matchId=${encodeURIComponent(storedMatchId)}`)
+          return
+        }
 
         if (!isRegistered || !requestId) {
           if (!parsedDraft) {
@@ -632,7 +717,160 @@ export default function WaitingPage() {
     }
   }, [isReady, router])
 
-  function handleCancel() {
+  // 매칭 성공(pending) 감지 — Realtime 보조 폴링으로 /matching 이동
+  useEffect(() => {
+    if (!isReady) {
+      return
+    }
+
+    const token = localStorage.getItem('token')
+    const requestId = sessionStorage.getItem(ACTIVE_REQUEST_KEY)
+    if (!token || !requestId) {
+      return
+    }
+
+    let cancelled = false
+
+    async function pollPendingMatch() {
+      try {
+        const statusResponse = await fetch(
+          `/api/match-requests/status?request_id=${encodeURIComponent(requestId as string)}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }
+        )
+
+        if (cancelled) return
+
+        if (handleUnauthorizedResponse(statusResponse)) {
+          return
+        }
+
+        const statusResult = (await statusResponse.json()) as {
+          success?: boolean
+          data?: {
+            match?: { id?: string; status?: string } | null
+          }
+        }
+
+        if (!statusResponse.ok || !statusResult.success) {
+          return
+        }
+
+        const match = statusResult.data?.match
+        if (!match?.id) {
+          return
+        }
+
+        sessionStorage.setItem('activeMatchId', match.id)
+
+        if (match.status === 'accepted') {
+          router.replace('/matched')
+          return
+        }
+
+        if (match.status === 'pending') {
+          router.replace(`/matching?matchId=${encodeURIComponent(match.id)}`)
+        }
+      } catch {
+        // 폴링 실패 시 다음 주기에 재시도합니다.
+      }
+    }
+
+    void pollPendingMatch()
+    const timerId = window.setInterval(() => {
+      void pollPendingMatch()
+    }, PENDING_MATCH_POLL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timerId)
+    }
+  }, [isReady, router])
+
+  // 수락 SSE — /waiting 에서도 수락 알림 수신 후 /matched 이동
+  useEffect(() => {
+    if (!isReady || partnerAcceptedNotice) {
+      return
+    }
+
+    const token = localStorage.getItem('token')
+    const matchId = sessionStorage.getItem('activeMatchId')?.trim()
+    if (!token || !matchId) {
+      return
+    }
+
+    const abortController = new AbortController()
+
+    void subscribeMatchAcceptSse(
+      matchId,
+      token,
+      (acceptedMatchId) => {
+        setPartnerAcceptedNotice(true)
+        sessionStorage.setItem('activeMatchId', acceptedMatchId)
+        window.setTimeout(() => {
+          router.replace('/matched')
+        }, 1500)
+      },
+      (message) => {
+        setError(message)
+      },
+      abortController.signal
+    ).catch(() => {
+      // Strict Mode cleanup abort — 무시
+    })
+
+    return () => {
+      abortController.abort()
+    }
+  }, [isReady, partnerAcceptedNotice, router])
+
+  async function handleCancel() {
+    if (isCancelling) {
+      return
+    }
+
+    if (!window.confirm('요청을 취소하시겠습니까?')) {
+      return
+    }
+
+    setIsCancelling(true)
+
+    const token = localStorage.getItem('token')
+    const requestId = sessionStorage.getItem(ACTIVE_REQUEST_KEY)
+
+    try {
+      if (token && requestId) {
+        const response = await fetch('/api/match-requests/status', {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            request_id: requestId,
+            status: 'cancelled',
+          }),
+        })
+
+        const result = (await response.json()) as {
+          success?: boolean
+          error?: string
+        }
+
+        if (!response.ok || !result.success) {
+          setError(result.error ?? '요청 취소에 실패했습니다.')
+          return
+        }
+      }
+    } catch {
+      setError('요청 취소 중 오류가 발생했습니다.')
+      return
+    } finally {
+      setIsCancelling(false)
+    }
+
     sessionStorage.removeItem('boardingDraft')
     sessionStorage.removeItem(WAITING_DRAFT_KEY)
     sessionStorage.removeItem(ACTIVE_REQUEST_KEY)
@@ -797,6 +1035,23 @@ export default function WaitingPage() {
           </div>
         )}
 
+        {partnerAcceptedNotice ? (
+          <div
+            style={{
+              background: '#F7F8F2',
+              border: '1px solid #D5DDB8',
+              borderRadius: 12,
+              padding: '12px 14px',
+              fontSize: 14,
+              color: '#5F6B2E',
+              fontWeight: 600,
+            }}
+            role="status"
+          >
+            상대방이 수락했습니다. 잠시 후 완료 화면으로 이동합니다.
+          </div>
+        ) : null}
+
         {isWaitingPanelVisible && (
           <>
             <section
@@ -957,7 +1212,10 @@ export default function WaitingPage() {
       >
         <button
           type="button"
-          onClick={handleCancel}
+          disabled={isCancelling}
+          onClick={() => {
+            void handleCancel()
+          }}
           style={{
             width: '100%',
             minHeight: 48,
@@ -968,10 +1226,11 @@ export default function WaitingPage() {
             fontSize: 15,
             fontWeight: 700,
             color: '#374151',
-            cursor: 'pointer',
+            cursor: isCancelling ? 'not-allowed' : 'pointer',
+            opacity: isCancelling ? 0.6 : 1,
           }}
         >
-          요청 취소
+          {isCancelling ? '취소 중...' : '요청 취소'}
         </button>
       </footer>
 

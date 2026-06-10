@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 const MATCH_TIMEOUT_SECONDS = 30
 const PARTNER_ACCEPT_REDIRECT_MS = 1500
+const PENDING_MATCH_POLL_MS = 2000
 
 interface MatchGuideState {
   carNumber: number | null
@@ -234,6 +235,88 @@ function MatchingForm() {
 
     void loadPartnerGuide()
   }, [goToMatched, router, searchParams])
+
+  // sessionStorage에 matchId만 있을 때 URL을 맞춥니다.
+  useEffect(() => {
+    const matchId = resolveMatchId(searchParams.get('matchId'))
+    if (!matchId || searchParams.get('matchId')) {
+      return
+    }
+
+    router.replace(`/matching?matchId=${encodeURIComponent(matchId)}`)
+  }, [router, searchParams])
+
+  // 매칭 대기 중 pending 매칭이 생기면 /matching으로 이동합니다.
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      return
+    }
+
+    let cancelled = false
+
+    async function pollPendingMatch() {
+      if (cancelled) {
+        return
+      }
+
+      const currentMatchId = resolveMatchId(searchParams.get('matchId'))
+      if (currentMatchId) {
+        return
+      }
+
+      const requestId = sessionStorage.getItem('activeMatchRequestId')?.trim()
+      if (!requestId) {
+        return
+      }
+
+      try {
+        const response = await fetch(
+          `/api/match-requests/status?request_id=${encodeURIComponent(requestId)}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }
+        )
+
+        if (!response.ok) {
+          return
+        }
+
+        const result = (await response.json()) as {
+          success?: boolean
+          data?: {
+            match?: { id?: string; status?: string } | null
+          }
+        }
+
+        if (!result.success || !result.data?.match?.id) {
+          return
+        }
+
+        if (result.data.match.status !== 'pending') {
+          return
+        }
+
+        sessionStorage.setItem('activeMatchId', result.data.match.id)
+        router.replace(
+          `/matching?matchId=${encodeURIComponent(result.data.match.id)}`
+        )
+      } catch {
+        // 폴링 실패 시 다음 주기에 재시도합니다.
+      }
+    }
+
+    void pollPendingMatch()
+    const timerId = window.setInterval(() => {
+      void pollPendingMatch()
+    }, PENDING_MATCH_POLL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timerId)
+    }
+  }, [router, searchParams])
 
   useEffect(() => {
     const token = localStorage.getItem('token')

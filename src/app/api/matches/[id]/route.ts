@@ -231,6 +231,35 @@ function createMatchAcceptSseResponse(
 
         request.signal.addEventListener('abort', cleanup)
 
+        // Realtime 실패 대비 — DB 상태 폴링으로 수락 감지
+        const acceptPoll = setInterval(async () => {
+          if (closed) {
+            clearInterval(acceptPoll)
+            return
+          }
+
+          try {
+            const { data: latest, error: latestError } = await supabase
+              .from('matches')
+              .select('id, status')
+              .eq('id', matchId)
+              .maybeSingle()
+
+            if (latestError || !latest) {
+              return
+            }
+
+            if (latest.status === 'accepted') {
+              send({ type: 'accepted', match_id: matchId })
+              cleanup()
+            }
+          } catch {
+            // 폴링 실패 시 다음 주기에 재시도합니다.
+          }
+        }, 2000)
+
+        request.signal.addEventListener('abort', () => clearInterval(acceptPoll))
+
         const keepAlive = setInterval(() => {
           if (closed) {
             clearInterval(keepAlive)
