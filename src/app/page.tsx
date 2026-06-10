@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CongestionHaltModal from '@/components/CongestionHaltModal'
 import {
   fetchCongestionStatus,
@@ -11,6 +11,10 @@ import {
   type CongestionStatus,
 } from '@/lib/congestion'
 import { formatStationDisplayName } from '@/lib/match-display'
+import {
+  isSubwayOperatingHours,
+  SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE,
+} from '@/lib/subway-operating-hours'
 import { getSupabase } from '@/lib/supabase'
 
 interface StoredUser {
@@ -64,6 +68,22 @@ const HOME_LINE_OPTIONS = [
 
 /** 단독 운영 노선 — 노선 선택 단계 생략 시 사용 */
 const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
+
+/** 홈 노선 라벨 → API line 파라미터 */
+function resolveHomeApiLine(lineLabel: string): string {
+  const compact = lineLabel.replace(/\s+/g, '')
+  const seoulMatch = compact.match(/^서울([1-9])호선$/)
+  if (seoulMatch?.[1]) {
+    return `seoul${seoulMatch[1]}`
+  }
+
+  const incheonMatch = compact.match(/^인천([12])호선$/)
+  if (incheonMatch?.[1]) {
+    return `incheon${incheonMatch[1]}`
+  }
+
+  return 'seoul7'
+}
 
 type HomeFlowMode = 'seek' | 'leave'
 type HomeTab = 'seek' | 'leave'
@@ -177,11 +197,401 @@ function mapLineLabelToApiLine(lineLabel: string): string | null {
   return null
 }
 
+type HomeWaitPhase = 'waiting_seek' | 'waiting_leave' | 'match_alert' | 'match_done'
+
+const HOME_MATCH_COMPLETED_HINT_KEY = 'homeMatchCompletedHint'
+
+interface HomeMatchCompletedHint {
+  kind: 'seek' | 'leave'
+  destinationName: string
+  completedAt: number
+}
+
+interface HomeWaitView {
+  requestId: string
+  phase: HomeWaitPhase
+  registrationKind: 'seek' | 'leave'
+  destinationName: string
+  queuePosition: number | null
+  waitingCount: number
+  matchId: string | null
+  trainNo: string | null
+  carNumber: number | null
+}
+
+/** 내 등록 상태 카드 — ①진행상태 ②무엇·어디까지 ③매칭 여부 */
+function resolveHomeMyRegistrationCard(view: HomeWaitView): {
+  statusBadge: string
+  purposeLine: string
+  progressLine: string
+} {
+  const destination = view.destinationName || '목적지 미확인'
+
+  if (view.phase === 'match_done') {
+    if (view.registrationKind === 'leave') {
+      return {
+        statusBadge: '완료',
+        purposeLine: `하차 알림 · ${destination}까지`,
+        progressLine:
+          '목적지 전에도 다시 등록해 주세요. 다른 분과 또 연결될 수 있어요.',
+      }
+    }
+
+    return {
+      statusBadge: '완료',
+      purposeLine: `자리 찾기 · ${destination}까지`,
+      progressLine: '다시 등록하면 다른 빈자리와 또 연결될 수 있어요.',
+    }
+  }
+
+  if (view.phase === 'match_alert') {
+    return {
+      statusBadge: '매칭 도착',
+      purposeLine:
+        view.registrationKind === 'leave'
+          ? `하차 알림 · ${destination}까지`
+          : `자리 찾기 · ${destination}까지`,
+      progressLine: '지금 확인하면 연결됩니다',
+    }
+  }
+
+  if (view.phase === 'waiting_leave') {
+    const poolText =
+      view.waitingCount > 0 ? `${view.waitingCount}명` : '모이는 중'
+    return {
+      statusBadge: '진행 중',
+      purposeLine: `하차 알림 · ${destination}까지`,
+      progressLine: `매칭 대기 중 · 착석 희망자 ${poolText}`,
+    }
+  }
+
+  const rankText = view.queuePosition != null ? `${view.queuePosition}번째` : '순서 확인 중'
+  const totalText = view.waitingCount > 0 ? ` / ${view.waitingCount}명` : ''
+
+  return {
+    statusBadge: '진행 중',
+    purposeLine: `자리 찾기 · ${destination}까지`,
+    progressLine: `매칭 대기 중 · ${rankText}${totalText}`,
+  }
+}
+
+interface HomeWaitDraft {
+  role?: string
+  destinationName?: string
+  trainNo?: string
+  carNumber?: number
+}
+
+/** 등록 직후 sessionStorage에 남은 대기 정보를 읽습니다. */
+function loadHomeWaitDraftFromSession(): {
+  requestId: string
+  draft: HomeWaitDraft
+} | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const requestId = sessionStorage.getItem('activeMatchRequestId')?.trim()
+    if (!requestId) {
+      return null
+    }
+
+    const seekerRegistered =
+      sessionStorage.getItem('seekerMatchRequestRegistered') === 'true'
+    const providerRaw = sessionStorage.getItem('providerRegistered')
+    const providerRegistered =
+      providerRaw === 'true' ||
+      Boolean(providerRaw && providerRaw !== 'false')
+
+    if (!seekerRegistered && !providerRegistered) {
+      return null
+    }
+
+    const rawDraft =
+      sessionStorage.getItem('boardingDraft') ??
+      sessionStorage.getItem('waitingDraft')
+    if (!rawDraft) {
+      return { requestId, draft: {} }
+    }
+
+    const parsed = JSON.parse(rawDraft) as HomeWaitDraft & {
+      destination_name?: string
+      train_no?: string
+      car_number?: number
+    }
+
+    return {
+      requestId,
+      draft: {
+        role: parsed.role,
+        destinationName: parsed.destinationName ?? parsed.destination_name,
+        trainNo: parsed.trainNo ?? parsed.train_no,
+        carNumber: parsed.carNumber ?? parsed.car_number,
+      },
+    }
+  } catch {
+    return null
+  }
+}
+
+/** 매칭 완료 후 홈에서 재등록 안내를 표시하기 위한 힌트를 읽습니다. */
+function loadHomeMatchCompletedHint(): HomeMatchCompletedHint | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = sessionStorage.getItem(HOME_MATCH_COMPLETED_HINT_KEY)
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw) as HomeMatchCompletedHint
+    if (parsed.kind !== 'seek' && parsed.kind !== 'leave') {
+      return null
+    }
+
+    if (!parsed.destinationName?.trim()) {
+      return null
+    }
+
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function clearHomeMatchCompletedHint(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  sessionStorage.removeItem(HOME_MATCH_COMPLETED_HINT_KEY)
+}
+
+function buildHomeMatchDoneView(hint: HomeMatchCompletedHint): HomeWaitView {
+  return {
+    requestId: '',
+    phase: 'match_done',
+    registrationKind: hint.kind,
+    destinationName: formatStationDisplayName(hint.destinationName.trim()),
+    queuePosition: null,
+    waitingCount: 0,
+    matchId: null,
+    trainNo: null,
+    carNumber: null,
+  }
+}
+
+function resolveHomeWaitViewFromCompletedHint(): HomeWaitView | null {
+  const hint = loadHomeMatchCompletedHint()
+  if (!hint) {
+    return null
+  }
+
+  return buildHomeMatchDoneView(hint)
+}
+
+async function fetchMatchRequestStatus(
+  token: string,
+  requestId: string
+): Promise<{
+  queuePosition: number | null
+  pendingMatchId: string | null
+  requestType: string | null
+  requestStatus: string | null
+}> {
+  const statusResponse = await fetch(
+    `/api/match-requests/status?request_id=${encodeURIComponent(requestId)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    }
+  )
+
+  const statusPayload = (await statusResponse.json()) as {
+    success?: boolean
+    data?: {
+      queue_position?: number | null
+      match?: { id?: string; status?: string } | null
+      match_request?: { request_type?: string; status?: string } | null
+    }
+  }
+
+  if (!statusResponse.ok || !statusPayload.success) {
+    return {
+      queuePosition: null,
+      pendingMatchId: null,
+      requestType: null,
+      requestStatus: null,
+    }
+  }
+
+  const pendingMatchId =
+    statusPayload.data?.match?.status === 'pending'
+      ? (statusPayload.data.match?.id ?? null)
+      : null
+
+  return {
+    queuePosition: statusPayload.data?.queue_position ?? null,
+    pendingMatchId,
+    requestType: statusPayload.data?.match_request?.request_type ?? null,
+    requestStatus: statusPayload.data?.match_request?.status ?? null,
+  }
+}
+
+function buildHomeWaitView(input: {
+  requestId: string
+  requestType: string | null
+  requestStatus: string | null
+  destinationName: string
+  queuePosition: number | null
+  waitingCount: number
+  pendingMatchId: string | null
+  trainNo: string | null
+  carNumber: number | null
+}): HomeWaitView | null {
+  const registrationKind: 'seek' | 'leave' =
+    input.requestType === 'leaving' ? 'leave' : 'seek'
+
+  if (input.pendingMatchId) {
+    return {
+      requestId: input.requestId,
+      phase: 'match_alert',
+      registrationKind,
+      destinationName: input.destinationName,
+      queuePosition: input.queuePosition,
+      waitingCount: input.waitingCount,
+      matchId: input.pendingMatchId,
+      trainNo: input.trainNo,
+      carNumber: input.carNumber,
+    }
+  }
+
+  if (input.requestStatus && input.requestStatus !== 'waiting') {
+    return null
+  }
+
+  const phase =
+    input.requestType === 'leaving' ? 'waiting_leave' : 'waiting_seek'
+
+  return {
+    requestId: input.requestId,
+    phase,
+    registrationKind,
+    destinationName: input.destinationName,
+    queuePosition: input.queuePosition,
+    waitingCount: input.waitingCount,
+    matchId: null,
+    trainNo: input.trainNo,
+    carNumber: input.carNumber,
+  }
+}
+
+/** 서버·sessionStorage에서 현재 매칭·대기 상태를 조회합니다. */
+async function fetchHomeWaitView(token: string): Promise<HomeWaitView | null> {
+  let requestId: string | null = null
+  let requestType: string | null = null
+  let requestStatus: string | null = null
+  let destinationName = '목적지'
+  let waitingCount = 0
+  let trainNo: string | null = null
+  let carNumber: number | null = null
+
+  try {
+    const currentResponse = await fetch('/api/match-requests/current', {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    })
+
+    const currentPayload = (await currentResponse.json()) as {
+      success?: boolean
+      data?: {
+        id?: string
+        status?: string
+        request_type?: string | null
+        destination_station_name?: string | null
+        train_no?: string | null
+        car_number?: number | null
+        waiting_count?: number
+      }
+    }
+
+    if (currentResponse.ok && currentPayload.success && currentPayload.data?.id) {
+      const current = currentPayload.data
+      requestId = current.id ?? null
+      requestType = current.request_type ?? null
+      requestStatus = current.status ?? null
+      destinationName = formatStationDisplayName(
+        current.destination_station_name?.trim() || '목적지'
+      )
+      waitingCount = current.waiting_count ?? 0
+      trainNo = current.train_no ?? null
+      carNumber = current.car_number ?? null
+    }
+  } catch {
+    // current API 실패 시 sessionStorage로 이어갑니다.
+  }
+
+  if (!requestId) {
+    const sessionSnapshot = loadHomeWaitDraftFromSession()
+    if (!sessionSnapshot) {
+      return null
+    }
+
+    requestId = sessionSnapshot.requestId
+    requestType =
+      sessionSnapshot.draft.role === 'provider' ? 'leaving' : 'seat_seek'
+    requestStatus = 'waiting'
+    destinationName = formatStationDisplayName(
+      sessionSnapshot.draft.destinationName?.trim() || '목적지'
+    )
+    trainNo = sessionSnapshot.draft.trainNo ?? null
+    carNumber = sessionSnapshot.draft.carNumber ?? null
+  }
+
+  const status = await fetchMatchRequestStatus(token, requestId)
+  if (status.requestType) {
+    requestType = status.requestType
+  }
+  if (status.requestStatus) {
+    requestStatus = status.requestStatus
+  }
+
+  try {
+    sessionStorage.setItem('activeMatchRequestId', requestId)
+    if (status.pendingMatchId) {
+      sessionStorage.setItem('activeMatchId', status.pendingMatchId)
+    }
+    if (requestType === 'leaving') {
+      sessionStorage.setItem('providerRegistered', 'true')
+    } else {
+      sessionStorage.setItem('seekerMatchRequestRegistered', 'true')
+    }
+  } catch {
+    // sessionStorage 실패 시 홈 표시만 유지합니다.
+  }
+
+  return buildHomeWaitView({
+    requestId,
+    requestType,
+    requestStatus,
+    destinationName,
+    queuePosition: status.queuePosition,
+    waitingCount,
+    pendingMatchId: status.pendingMatchId,
+    trainNo,
+    carNumber,
+  })
+}
+
 /**
  * 메인 홈
  */
 export default function Home() {
   const router = useRouter()
+  const pathname = usePathname()
   const transferScrollRef = useRef<HTMLDivElement>(null)
   const mainScrollRef = useRef<HTMLElement>(null)
   const [user, setUser] = useState<StoredUser | null>(null)
@@ -202,12 +612,63 @@ export default function Home() {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [pullStartY, setPullStartY] = useState(0)
   const [pulling, setPulling] = useState(false)
+  const [homeWaitView, setHomeWaitView] = useState<HomeWaitView | null>(null)
+  const isOutsideOperatingHours = useMemo(
+    () => !isSubwayOperatingHours(resolveHomeApiLine(selectedLineLabel)),
+    [selectedLineLabel]
+  )
   const loadHomeData = useCallback(async (token: string | null) => {
     setIsLoadingData(true)
 
     const status = await fetchCongestionStatus(token)
     setCongestionStatus(status)
     setIsLoadingData(false)
+  }, [])
+
+  const loadHomeWaitStatus = useCallback(async (token: string | null) => {
+    const applySessionOrCompletedView = () => {
+      const sessionSnapshot = loadHomeWaitDraftFromSession()
+      if (sessionSnapshot) {
+        clearHomeMatchCompletedHint()
+        setHomeWaitView(
+          buildHomeWaitView({
+            requestId: sessionSnapshot.requestId,
+            requestType:
+              sessionSnapshot.draft.role === 'provider' ? 'leaving' : 'seat_seek',
+            requestStatus: 'waiting',
+            destinationName: formatStationDisplayName(
+              sessionSnapshot.draft.destinationName?.trim() || '목적지'
+            ),
+            queuePosition: null,
+            waitingCount: 0,
+            pendingMatchId: null,
+            trainNo: sessionSnapshot.draft.trainNo ?? null,
+            carNumber: sessionSnapshot.draft.carNumber ?? null,
+          })
+        )
+        return
+      }
+
+      setHomeWaitView(resolveHomeWaitViewFromCompletedHint())
+    }
+
+    if (!token) {
+      applySessionOrCompletedView()
+      return
+    }
+
+    try {
+      const view = await fetchHomeWaitView(token)
+      if (view) {
+        clearHomeMatchCompletedHint()
+        setHomeWaitView(view)
+        return
+      }
+
+      applySessionOrCompletedView()
+    } catch {
+      applySessionOrCompletedView()
+    }
   }, [])
 
   const loadTransferStations = useCallback(async () => {
@@ -252,13 +713,17 @@ export default function Home() {
         token = null
       }
 
-      await Promise.all([loadHomeData(token), loadTransferStations()])
+      await Promise.all([
+        loadHomeData(token),
+        loadTransferStations(),
+        loadHomeWaitStatus(token),
+      ])
     } catch {
       // 새로고침 실패 시에도 화면은 유지합니다.
     } finally {
       setIsHomeRefreshing(false)
     }
-  }, [isHomeRefreshing, loadHomeData, loadTransferStations])
+  }, [isHomeRefreshing, loadHomeData, loadTransferStations, loadHomeWaitStatus])
 
   const handleHomeZoomCycle = useCallback(() => {
     setHomeZoomScale((current) => {
@@ -334,14 +799,16 @@ export default function Home() {
       }
       setIsAuthChecked(true)
       void loadHomeData(token)
+      void loadHomeWaitStatus(token)
     } catch {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       setUser(null)
       setIsAuthChecked(true)
       void loadHomeData(null)
+      setHomeWaitView(null)
     }
-  }, [loadHomeData])
+  }, [loadHomeData, loadHomeWaitStatus])
 
   useEffect(() => {
     void loadTransferStations()
@@ -376,6 +843,64 @@ export default function Home() {
 
   const displayName = user?.username ?? null
   const isLoggedIn = Boolean(displayName)
+
+  useEffect(() => {
+    let token: string | null = null
+    try {
+      token = localStorage.getItem('token')
+    } catch {
+      token = null
+    }
+
+    const timer = window.setInterval(() => {
+      void loadHomeWaitStatus(token)
+    }, 20000)
+
+    return () => window.clearInterval(timer)
+  }, [loadHomeWaitStatus])
+
+  useEffect(() => {
+    function handleVisibilityRefresh() {
+      if (document.visibilityState !== 'visible') {
+        return
+      }
+
+      let token: string | null = null
+      try {
+        token = localStorage.getItem('token')
+      } catch {
+        token = null
+      }
+
+      void loadHomeWaitStatus(token)
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityRefresh)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityRefresh)
+  }, [loadHomeWaitStatus])
+
+  useEffect(() => {
+    if (pathname !== '/') {
+      return
+    }
+
+    let token: string | null = null
+    try {
+      token = localStorage.getItem('token')
+    } catch {
+      token = null
+    }
+
+    void loadHomeWaitStatus(token)
+  }, [pathname, loadHomeWaitStatus])
+
+  // 등록 유형과 탭을 맞춰 하차 알림·자리 찾기가 어긋나 보이지 않게 합니다.
+  useEffect(() => {
+    if (!homeWaitView) {
+      return
+    }
+    setActiveTab(homeWaitView.registrationKind === 'leave' ? 'leave' : 'seek')
+  }, [homeWaitView])
   const homeZoomPercentLabel = `${Math.round(homeZoomScale * 100)}%`
 
   async function pushBoardingPage(
@@ -398,6 +923,7 @@ export default function Home() {
   }
 
   function handleModeSelect(mode: HomeFlowMode, destination?: string) {
+    clearHomeMatchCompletedHint()
     setHomeMode(mode)
     // 단독 노선(서울 7호선) — 노선 선택 단계 생략
     // setHomeStep('line')
@@ -505,6 +1031,50 @@ export default function Home() {
 
   function closeMenu() {
     setMenuOpen(false)
+  }
+
+  function handleHomeWaitStatusClick() {
+    if (!homeWaitView) {
+      return
+    }
+
+    if (homeWaitView.phase === 'match_alert' && homeWaitView.matchId) {
+      try {
+        sessionStorage.setItem('activeMatchId', homeWaitView.matchId)
+      } catch {
+        // sessionStorage 실패 시에도 매칭 화면으로 이동합니다.
+      }
+      router.push('/matching')
+      return
+    }
+
+    router.push('/waiting')
+  }
+
+  async function handleLogout() {
+    closeMenu()
+    const token = localStorage.getItem('token')
+
+    try {
+      if (token) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        })
+      }
+    } catch {
+      // 로컬 로그아웃은 토큰 삭제로 처리
+    } finally {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      sessionStorage.removeItem('boardingDraft')
+      sessionStorage.removeItem('providerRegistered')
+      setUser(null)
+      router.replace('/login')
+    }
   }
 
   // function handleBackToModeStep() {
@@ -732,6 +1302,20 @@ export default function Home() {
               >
                 포인트
               </Link>
+              <Link
+                href="/notice"
+                onClick={closeMenu}
+                className="rounded-lg px-3 py-3 text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
+              >
+                공지사항
+              </Link>
+              <a
+                href="https://zebssak.vercel.app"
+                onClick={closeMenu}
+                className="rounded-lg px-3 py-3 text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
+              >
+                서비스 소개
+              </a>
               <button
                 type="button"
                 disabled={isHomeRefreshing}
@@ -745,11 +1329,11 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => {
-                  handleHomeZoomCycle()
+                  void handleLogout()
                 }}
                 className="rounded-lg px-3 py-3 text-left text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
               >
-                화면 확대 ({homeZoomPercentLabel})
+                로그아웃
               </button>
             </div>
           </nav>
@@ -830,7 +1414,7 @@ export default function Home() {
           <img
             src={`/images/subway-hero.png?v=${HOME_UI_VERSION}`}
             alt="지하철 7호선 실내"
-            className="max-h-[160px] w-full object-contain"
+            className="max-h-[260px] w-full object-contain"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none'
             }}
@@ -868,7 +1452,11 @@ export default function Home() {
           {activeTab === 'seek' ? (
             <button
               type="button"
-              disabled={isMatchingPaused}
+              disabled={
+                isMatchingPaused ||
+                isOutsideOperatingHours ||
+                homeWaitView?.phase === 'waiting_seek'
+              }
               onClick={() => handleModeSelect('seek')}
               className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-xl font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
             >
@@ -877,13 +1465,36 @@ export default function Home() {
           ) : (
             <button
               type="button"
-              disabled={isMatchingPaused}
+              disabled={
+                isMatchingPaused ||
+                isOutsideOperatingHours ||
+                homeWaitView?.phase === 'waiting_leave'
+              }
               onClick={() => handleModeSelect('leave')}
               className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-xl font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
             >
               내릴게요 등록
             </button>
           )}
+
+          {homeWaitView?.phase === 'match_alert' ? (
+            <button
+              type="button"
+              onClick={handleHomeWaitStatusClick}
+              className="zeb-touch-target mt-2 flex w-full items-center justify-center rounded-xl bg-[#E85D04] py-3.5 text-lg font-bold text-white transition active:scale-[0.98]"
+            >
+              매칭 확인하기
+            </button>
+          ) : null}
+
+          {isOutsideOperatingHours ? (
+            <p
+              className="mt-3 rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3 py-2.5 text-xs font-bold text-[#5F6B2E]"
+              role="alert"
+            >
+              {SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE}
+            </p>
+          ) : null}
 
           {isMatchingPaused ? (
             <p
@@ -967,7 +1578,7 @@ export default function Home() {
           </div>
         </section>
 
-        <div className="mx-4 mt-4 mb-6 bg-white rounded-2xl px-4 py-4">
+        <div className="mx-4 mt-4 mb-4 rounded-2xl bg-white px-4 py-4">
           <p className="text-base font-bold text-gray-800 mb-1">🚇 왜 7호선인가?</p>
           <p className="mb-3 text-[12px] font-medium text-[#888888]">서울 7호선 단독 운영</p>
           <div className="flex flex-col gap-2">
@@ -985,6 +1596,35 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {homeWaitView ? (
+          <section
+            className="mx-4 mb-16 rounded-2xl border border-[#D5DDB8] bg-[#F7F8F2] px-4 py-4"
+            aria-label="내 등록 상태"
+          >
+            {(() => {
+              const card = resolveHomeMyRegistrationCard(homeWaitView)
+
+              return (
+                <>
+                  <span
+                    className={`inline-block rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white ${
+                      homeWaitView.phase === 'match_done'
+                        ? 'bg-[#8A9A5B]'
+                        : 'bg-[#747F00]'
+                    }`}
+                  >
+                    {card.statusBadge}
+                  </span>
+                  <p className="mt-2 text-[16px] font-extrabold text-[#1A1A1A]">{card.purposeLine}</p>
+                  <p className="mt-1 text-[14px] font-semibold text-[#5F6B2E]">{card.progressLine}</p>
+                </>
+              )
+            })()}
+          </section>
+        ) : (
+          <div className="mb-16" aria-hidden />
+        )}
 
         {/* 단독 노선 — 노선 선택 UI (복원 시 homeStep === 'line' 분기로 되돌리기)
         ) : (

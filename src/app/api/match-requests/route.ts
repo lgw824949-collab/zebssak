@@ -161,30 +161,6 @@ async function ensureTrain(
 }
 
 /**
- * 동일 train_no + 호선 접두사를 가진 train_id (중복 행 대비)
- */
-async function getTrainIdsForLineTrain(
-  supabase: SupabaseClient,
-  linePrefix: string,
-  trainNo: string,
-  lineNumber: number
-): Promise<string[]> {
-  const storedTrainNo = compositeTrainNo(linePrefix, trainNo)
-
-  const { data, error } = await supabase
-    .from('trains')
-    .select('id')
-    .eq('train_no', storedTrainNo)
-    .eq('line_number', lineNumber)
-
-  if (error || !data?.length) {
-    return []
-  }
-
-  return data.map((row) => row.id as string)
-}
-
-/**
  * user_id 목록에 교통약자/매너포인트를 붙입니다.
  */
 async function attachPriorityFields(

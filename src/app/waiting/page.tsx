@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { handleUnauthorizedResponse } from '@/lib/auth-client'
 import { subscribeMatchRealtime } from '@/lib/match-realtime'
 
@@ -46,6 +46,27 @@ interface BoardingDraft {
 const WAITING_DRAFT_KEY = 'waitingDraft'
 const ACTIVE_REQUEST_KEY = 'activeMatchRequestId'
 const REGISTERED_FLAG_KEY = 'seekerMatchRequestRegistered'
+const PROVIDER_REGISTERED_FLAG_KEY = 'providerRegistered'
+
+/** 하차 예정(provider) 등록 여부 확인 */
+function isProviderRegisteredFlag(): boolean {
+  const raw = sessionStorage.getItem(PROVIDER_REGISTERED_FLAG_KEY)
+  if (!raw || raw === 'false') return false
+  if (raw === 'true') return true
+  try {
+    const parsed = JSON.parse(raw) as { matchRequestId?: string }
+    return Boolean(parsed.matchRequestId)
+  } catch {
+    return true
+  }
+}
+
+function resolveDraftRole(draft: BoardingDraft | null): 'seeker' | 'provider' | null {
+  if (!draft?.role) return null
+  if (draft.role === 'provider') return 'provider'
+  if (draft.role === 'seeker') return 'seeker'
+  return null
+}
 
 /**
  * sessionStorage에서 탑승 draft를 읽습니다.
@@ -157,9 +178,21 @@ function resolveLineColor(draft: BoardingDraft): string {
 
 function resolveLineShortLabel(draft: BoardingDraft): string {
   const fromLabel = (draft.lineLabel || '').replace(/\s+/g, '')
-  if (/^서울2호선$/.test(fromLabel) || fromLabel === '2호선') return '2호선'
-  if (/^서울1호선$/.test(fromLabel) || fromLabel === '1호선') return '1호선'
-  return isLineTwo(draft) ? '2호선' : '1호선'
+  const seoulFromLabel = fromLabel.match(/^서울([1-9])호선$/)
+  if (seoulFromLabel?.[1]) return `${seoulFromLabel[1]}호선`
+  const incheonFromLabel = fromLabel.match(/^인천([12])호선$/)
+  if (incheonFromLabel?.[1]) return `인천${incheonFromLabel[1]}호선`
+  if (/^[1-9]호선$/.test(fromLabel)) return fromLabel
+
+  const lineKey = draft.lineKey || ''
+  const seoulFromKey = lineKey.match(/^seoul([1-9])$/)
+  if (seoulFromKey?.[1]) return `${seoulFromKey[1]}호선`
+  const incheonFromKey = lineKey.match(/^incheon([12])$/)
+  if (incheonFromKey?.[1]) return `인천${incheonFromKey[1]}호선`
+  if (lineKey === 's2' || lineKey === 'line2') return '2호선'
+  if (lineKey === 'line1') return '1호선'
+
+  return '7호선'
 }
 
 function formatTrainSubline(draft: BoardingDraft): string {
@@ -172,11 +205,48 @@ function formatTrainSubline(draft: BoardingDraft): string {
 }
 
 const PRIORITY_CRITERIA = [
-  '교통약자 여부',
-  '매너포인트 높은 순',
-  '남은 역 수',
-  '요청 시각',
+  '먼저 등록한 순',
+  '교통약자 우선',
+  '남은 역 수 많은 순',
 ] as const
+
+const MOBILE_SHELL_MAX_WIDTH = 390
+const MOBILE_PAGE_X = 16
+
+/** PC 뷰포트에서도 휴대폰 폭(390px)으로 중앙 정렬 */
+function WaitingMobileShell({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        minHeight: '100dvh',
+        background: '#E8EAED',
+        display: 'flex',
+        justifyContent: 'center',
+      }}
+    >
+      <div
+        className="wait-mobile-shell"
+        style={{
+          width: '100%',
+          maxWidth: MOBILE_SHELL_MAX_WIDTH,
+          minHeight: '100dvh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#F7F8FA',
+          color: '#1A1A1A',
+          fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
+          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
+          borderLeft: '1px solid #EBEBEB',
+          borderRight: '1px solid #EBEBEB',
+          paddingLeft: `max(${MOBILE_PAGE_X}px, env(safe-area-inset-left))`,
+          paddingRight: `max(${MOBILE_PAGE_X}px, env(safe-area-inset-right))`,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
 
 function parseStationOrderFromId(stationId: string | undefined): number | null {
   if (!stationId) return null
@@ -204,25 +274,28 @@ function resolveRemainingStations(draft: BoardingDraft): number | null {
 
 function WaitingLoading() {
   return (
-    <div className="zeb-page flex flex-col items-center justify-center gap-4">
-      <div className="w-full max-w-[12rem] space-y-2" aria-hidden>
-        <div className="zeb-track zeb-track--line1" />
-        <div className="zeb-track zeb-track--line2" />
+    <WaitingMobileShell>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4">
+        <div className="w-full max-w-[12rem] space-y-2" aria-hidden>
+          <div className="zeb-track zeb-track--line1" />
+          <div className="zeb-track zeb-track--line2" />
+        </div>
+        <p className="zeb-caption" style={{ fontSize: 'var(--font-size-lg)' }}>
+          로딩 중...
+        </p>
       </div>
-      <p className="zeb-caption" style={{ fontSize: 'var(--font-size-lg)' }}>
-        로딩 중...
-      </p>
-    </div>
+    </WaitingMobileShell>
   )
 }
 
 /**
- * 착석 희망 대기 화면
+ * 착석 희망·하차 예정 대기 화면
  */
 export default function WaitingPage() {
   const router = useRouter()
   const [draft, setDraft] = useState<BoardingDraft | null>(null)
   const [waitingRank, setWaitingRank] = useState<number | null>(null)
+  const [isProviderWaiting, setIsProviderWaiting] = useState(false)
   const [error, setError] = useState('')
   const [isReady, setIsReady] = useState(false)
 
@@ -240,8 +313,11 @@ export default function WaitingPage() {
       try {
         const parsedDraft = loadBoardingDraft()
         const existingRequestId = sessionStorage.getItem(ACTIVE_REQUEST_KEY)
-        const isRegistered =
-          sessionStorage.getItem(REGISTERED_FLAG_KEY) === 'true'
+        const draftRole = resolveDraftRole(parsedDraft)
+        const isProviderRole = draftRole === 'provider'
+        const isRegistered = isProviderRole
+          ? isProviderRegisteredFlag()
+          : sessionStorage.getItem(REGISTERED_FLAG_KEY) === 'true'
 
         if (!parsedDraft && !existingRequestId) {
           router.replace('/home')
@@ -249,7 +325,7 @@ export default function WaitingPage() {
         }
 
         if (parsedDraft) {
-          if (parsedDraft.role !== 'seeker') {
+          if (!draftRole) {
             router.replace('/home')
             return
           }
@@ -264,6 +340,12 @@ export default function WaitingPage() {
         if (!isRegistered || !requestId) {
           if (!parsedDraft) {
             router.replace('/home')
+            return
+          }
+
+          if (isProviderRole) {
+            setError('하차 등록 정보를 찾을 수 없습니다. 다시 등록해 주세요.')
+            setIsReady(true)
             return
           }
 
@@ -347,7 +429,8 @@ export default function WaitingPage() {
             error?: string
             data?: {
               queue_position?: number | null
-              match?: { id: string } | null
+              match?: { id: string; status?: string } | null
+              match_request?: { status?: string } | null
             }
           }
 
@@ -364,7 +447,14 @@ export default function WaitingPage() {
           }
 
           if (!cancelled) {
-            setWaitingRank(statusResult.data?.queue_position ?? 1)
+            if (isProviderRole) {
+              const requestStatus = statusResult.data?.match_request?.status
+              setIsProviderWaiting(requestStatus === 'waiting' || !requestStatus)
+              setWaitingRank(null)
+            } else {
+              setIsProviderWaiting(false)
+              setWaitingRank(statusResult.data?.queue_position ?? 1)
+            }
           }
         }
 
@@ -420,6 +510,7 @@ export default function WaitingPage() {
     sessionStorage.removeItem(WAITING_DRAFT_KEY)
     sessionStorage.removeItem(ACTIVE_REQUEST_KEY)
     sessionStorage.removeItem(REGISTERED_FLAG_KEY)
+    sessionStorage.removeItem(PROVIDER_REGISTERED_FLAG_KEY)
     sessionStorage.removeItem('activeMatchId')
     router.push('/home')
   }
@@ -430,18 +521,20 @@ export default function WaitingPage() {
 
   if (!draft && !error) {
     return (
-      <div className="zeb-page wait-theme flex flex-col items-center justify-center gap-4 px-4">
-        <p className="text-center text-sm font-medium text-[#475569]">
-          대기 정보를 불러오지 못했습니다.
-        </p>
-        <button
-          type="button"
-          onClick={handleCancel}
-          className="zeb-btn zeb-btn--secondary"
-        >
-          홈으로
-        </button>
-      </div>
+      <WaitingMobileShell>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4">
+          <p className="text-center text-sm font-medium text-[#475569]">
+            대기 정보를 불러오지 못했습니다.
+          </p>
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="zeb-btn zeb-btn--secondary"
+          >
+            홈으로
+          </button>
+        </div>
+      </WaitingMobileShell>
     )
   }
 
@@ -450,23 +543,21 @@ export default function WaitingPage() {
   const remainingStations = draft ? resolveRemainingStations(draft) : null
   const remainingStationsText =
     remainingStations === null ? '미확인' : `${remainingStations}`
+  const isProviderDraft = draft?.role === 'provider'
+  const pageTitle = isProviderDraft ? '하차 예정 대기' : '착석 희망 대기'
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100dvh',
-        background: '#F7F8FA',
-        color: '#1A1A1A',
-      }}
-    >
+    <WaitingMobileShell>
       <header
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 1fr',
           alignItems: 'center',
-          padding: '14px 16px',
+          padding: '14px 0 10px',
+          marginLeft: `-${MOBILE_PAGE_X}px`,
+          marginRight: `-${MOBILE_PAGE_X}px`,
+          paddingLeft: MOBILE_PAGE_X,
+          paddingRight: MOBILE_PAGE_X,
           background: '#FFFFFF',
           borderBottom: '1px solid #EBEBEB',
           flexShrink: 0,
@@ -499,7 +590,7 @@ export default function WaitingPage() {
             textAlign: 'center',
           }}
         >
-          착석 희망 대기
+          {pageTitle}
         </h1>
         <div style={{ justifySelf: 'end' }} aria-hidden />
       </header>
@@ -510,7 +601,7 @@ export default function WaitingPage() {
           display: 'flex',
           flexDirection: 'column',
           gap: 12,
-          padding: '16px 16px 0',
+          padding: '16px 0 0',
           overflow: 'auto',
         }}
       >
@@ -577,7 +668,7 @@ export default function WaitingPage() {
           </div>
         )}
 
-        {waitingRank !== null && (
+        {(waitingRank !== null || (isProviderDraft && isProviderWaiting)) && (
           <>
             <section
               style={{
@@ -588,22 +679,46 @@ export default function WaitingPage() {
                 textAlign: 'center',
               }}
             >
-              <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#6B7280' }}>
-                현재 대기 순위
-              </p>
-              <p
-                style={{
-                  margin: '12px 0 0',
-                  fontSize: 52,
-                  fontWeight: 800,
-                  lineHeight: 1,
-                  color: lineColor,
-                  fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                }}
-              >
-                {waitingRank}
-                <span style={{ fontSize: 24, fontWeight: 700, marginLeft: 4 }}>위</span>
-              </p>
+              {isProviderDraft ? (
+                <>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#6B7280' }}>
+                    현재 상태
+                  </p>
+                  <p
+                    style={{
+                      margin: '12px 0 0',
+                      fontSize: 28,
+                      fontWeight: 800,
+                      lineHeight: 1.25,
+                      color: lineColor,
+                    }}
+                  >
+                    매칭 대기 중
+                  </p>
+                  <p style={{ margin: '10px 0 0', fontSize: 14, fontWeight: 500, color: '#6B7280' }}>
+                    착석 희망자가 등록되면 알려드려요
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#6B7280' }}>
+                    현재 대기 순위
+                  </p>
+                  <p
+                    style={{
+                      margin: '12px 0 0',
+                      fontSize: 52,
+                      fontWeight: 800,
+                      lineHeight: 1,
+                      color: lineColor,
+                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                    }}
+                  >
+                    {waitingRank}
+                    <span style={{ fontSize: 24, fontWeight: 700, marginLeft: 4 }}>위</span>
+                  </p>
+                </>
+              )}
               <div
                 style={{
                   marginTop: 16,
@@ -667,7 +782,7 @@ export default function WaitingPage() {
                     매칭 유형
                   </span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>
-                    교통약자 우선
+                    {isProviderDraft ? '하차 예정 등록' : '교통약자 우선'}
                   </span>
                 </div>
               </section>
@@ -682,10 +797,17 @@ export default function WaitingPage() {
               }}
             >
               <p style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 700, color: '#374151' }}>
-                우선순위 기준
+                {isProviderDraft ? '매칭 안내' : '우선순위 기준'}
               </p>
               <ol style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                {PRIORITY_CRITERIA.map((label, index) => (
+                {(isProviderDraft
+                  ? [
+                      '착석 희망자가 등록되면 자동 연결',
+                      '매칭되면 알림 화면으로 이동',
+                      '이 화면을 나가도 대기는 유지됩니다',
+                    ]
+                  : PRIORITY_CRITERIA
+                ).map((label, index) => (
                   <li
                     key={label}
                     style={{
@@ -725,7 +847,7 @@ export default function WaitingPage() {
 
       <footer
         style={{
-          padding: '16px 16px max(24px, env(safe-area-inset-bottom))',
+          padding: `16px 0 max(24px, env(safe-area-inset-bottom))`,
           flexShrink: 0,
         }}
       >
@@ -770,6 +892,6 @@ export default function WaitingPage() {
           animation: wait-live-pulse 1.4s ease-in-out infinite;
         }
       `}</style>
-    </div>
+    </WaitingMobileShell>
   )
 }

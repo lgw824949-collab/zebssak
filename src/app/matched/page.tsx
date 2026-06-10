@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 const COUNTDOWN_SECONDS = 180
+const HOME_MATCH_COMPLETED_HINT_KEY = 'homeMatchCompletedHint'
 const MATCH_GREEN = '#4a7c3f'
 const SIDE_SEAT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
@@ -347,6 +348,29 @@ export default function MatchedPage() {
     return () => window.clearInterval(timer)
   }, [])
 
+  function saveHomeMatchCompletedHint() {
+    if (!detail) {
+      return
+    }
+
+    try {
+      const kind = detail.viewer_role === 'provider' ? 'leave' : 'seek'
+      const destinationName =
+        detail.self.destination_station_name?.trim() || '목적지'
+
+      sessionStorage.setItem(
+        HOME_MATCH_COMPLETED_HINT_KEY,
+        JSON.stringify({
+          kind,
+          destinationName,
+          completedAt: Date.now(),
+        })
+      )
+    } catch {
+      // 힌트 저장 실패 시 홈 재등록 안내만 생략합니다.
+    }
+  }
+
   function clearMatchSession() {
     sessionStorage.removeItem('boardingDraft')
     sessionStorage.removeItem('waitingDraft')
@@ -357,6 +381,7 @@ export default function MatchedPage() {
   }
 
   function handleConfirm() {
+    saveHomeMatchCompletedHint()
     clearMatchSession()
     router.push('/')
   }

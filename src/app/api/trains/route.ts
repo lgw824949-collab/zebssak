@@ -15,6 +15,10 @@ import {
   normalizeDirectionKey,
 } from '@/lib/train-direction'
 import {
+  isSubwayOperatingHours,
+  SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE,
+} from '@/lib/subway-operating-hours'
+import {
   MOCK_LINE_1_STATIONS,
   MOCK_LINE_2_STATIONS,
   MOCK_LINE_S1_STATIONS,
@@ -665,11 +669,14 @@ function filterSeoul1BranchTrains(
 async function fetchSeoulTrains(
   request: Request,
   seoulLine: SeoulLineParam,
-  currentStation: string | null
+  currentStation: string | null,
+  operatingHours: boolean
 ): Promise<TrainListItem[]> {
   const lineName = resolveSeoulLineName(toBaseSeoulLine(seoulLine))
   if (!lineName) {
-    return buildSeoulFallbackTrains(seoulLine, currentStation)
+    return operatingHours
+      ? buildSeoulFallbackTrains(seoulLine, currentStation)
+      : []
   }
 
   const stationName = currentStation?.trim().replace(/역$/u, '') ?? ''
@@ -679,6 +686,10 @@ async function fetchSeoulTrains(
       ? fetchRealtimeArrivalRows(request, stationName)
       : Promise.resolve([] as SeoulArrivalRow[]),
   ])
+
+  if (!operatingHours && positionRows.length === 0) {
+    return []
+  }
 
   let mapped: TrainListItem[]
   if (positionRows.length === 0) {
@@ -742,6 +753,7 @@ export async function GET(request: Request) {
 
     let trains: TrainListItem[]
     let stationOrder = STATION_ORDER_BY_LINE[line]
+    const operatingHours = isSubwayOperatingHours(line)
 
     if (isSeoulLine(line)) {
       // 공공데이터 역순 조회는 느려 기본 목록으로 정렬하고, 캐시만 백그라운드 갱신합니다.
@@ -749,15 +761,24 @@ export async function GET(request: Request) {
       void fetchStationOrderFromPublicData(line).catch(() => {
         // 역순 캐시 갱신 실패는 무시합니다.
       })
-      trains = await fetchSeoulTrains(request, line, currentStation)
+      trains = await fetchSeoulTrains(
+        request,
+        line,
+        currentStation,
+        operatingHours
+      )
     } else if (line === 'incheon1') {
-      trains = INCHEON1_MOCK_TRAINS.map((train) =>
-        enrichTrain(train, 'incheon1', currentStation)
-      )
+      trains = operatingHours
+        ? INCHEON1_MOCK_TRAINS.map((train) =>
+            enrichTrain(train, 'incheon1', currentStation)
+          )
+        : []
     } else {
-      trains = INCHEON2_MOCK_TRAINS.map((train) =>
-        enrichTrain(train, 'incheon2', currentStation)
-      )
+      trains = operatingHours
+        ? INCHEON2_MOCK_TRAINS.map((train) =>
+            enrichTrain(train, 'incheon2', currentStation)
+          )
+        : []
     }
 
     trains = filterTrainsTowardDestination(
@@ -774,7 +795,14 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(
-      { trains, station_order: stationOrder },
+      {
+        trains,
+        station_order: stationOrder,
+        is_operating_hours: operatingHours,
+        operating_hours_message: operatingHours
+          ? null
+          : SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE,
+      },
       { headers: JSON_UTF8_HEADERS }
     )
   } catch (error) {

@@ -1,17 +1,22 @@
-import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import SubwaySeatMap, { mapSeatIdToApi } from "@/components/SubwaySeatMap";
 import { formatExitDoorDisplayLabel } from "@/lib/match-display";
 import { handleUnauthorizedResponse } from "@/lib/auth-client";
 import { normalizeDirectionForStorage } from "@/lib/match-direction";
+import {
+  isSubwayOperatingHours,
+  SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE,
+} from "@/lib/subway-operating-hours";
 
 function resolveApiLineFromLineProp(lineLabel) {
-  const seoulMatch = lineLabel.match(/서울\s*([1-9])호선/u);
+  const compact = normalizeLineLabelCompact(lineLabel);
+  const seoulMatch = compact.match(/^서울([1-9])호선$/);
   if (seoulMatch?.[1]) {
     return `seoul${seoulMatch[1]}`;
   }
 
-  const incheonMatch = lineLabel.match(/인천\s*([12])호선/u);
+  const incheonMatch = compact.match(/^인천([12])호선$/);
   if (incheonMatch?.[1]) {
     return `incheon${incheonMatch[1]}`;
   }
@@ -96,10 +101,6 @@ function resolveLineLayoutKey(lineLabel) {
 function resolveCarLayout(lineLabel) {
   const key = resolveLineLayoutKey(lineLabel);
   return LINE_CAR_LAYOUT[key] ?? DEFAULT_CAR_LAYOUT;
-}
-
-function resolveCarCountFromLineProp(lineLabel) {
-  return resolveCarLayout(lineLabel).carCount;
 }
 
 function resolveApiLineKeyFromLineProp(lineLabel) {
@@ -675,7 +676,6 @@ function normalizeLineLabel(lineLabel) {
 const LINE_OLIVE = "#747F00";
 const LINE_OLIVE_LIGHT = "rgba(116, 127, 0, 0.14)";
 const LINE_OLIVE_LIGHT_BG = "#EEF0E0";
-const LINE_OLIVE_DISABLED = "#C5C9A8";
 
 const C = {
   primary: LINE_OLIVE,
@@ -775,44 +775,6 @@ function LoadingSpinner({ size = 18, color = "#fff" }) {
   );
 }
 
-function BottomButton({ label, onClick, disabled, loading = false }) {
-  const isDisabled = disabled || loading;
-  const displayLabel = loading ? "처리 중..." : label;
-
-  return (
-    <div style={{ padding: `12px ${MOBILE.pageX}px max(24px, env(safe-area-inset-bottom))`, background: C.card, borderTop: `1px solid ${C.border}` }}>
-      <button
-        type="button"
-        className="zeb-touch-target"
-        onClick={onClick}
-        disabled={isDisabled}
-        aria-busy={loading || undefined}
-        style={{
-          width: "100%",
-          minHeight: MOBILE.touchMin,
-          padding: "12px 0",
-          background: isDisabled ? LINE_OLIVE_DISABLED : C.primary,
-          color: "#fff",
-          border: "none",
-          borderRadius: 12,
-          fontSize: 16,
-          fontWeight: 700,
-          cursor: isDisabled ? "default" : "pointer",
-          transition: "background 0.2s, opacity 0.2s",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-          opacity: loading ? 0.92 : 1,
-        }}
-      >
-        {loading ? <LoadingSpinner /> : null}
-        {displayLabel}
-      </button>
-    </div>
-  );
-}
-
 function StepFade({ stepKey, children }) {
   const [visible, setVisible] = useState(false);
 
@@ -880,24 +842,38 @@ function StepStation({
   needsManualBoardingStation,
   boardingGpsMessage,
   onBoardingStationChange,
+  onBoardingStationClear,
   onNext,
   onBack,
   onParsedModeChange,
 }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
-  const [results, setResults] = useState([]);
   const [boardingQuery, setBoardingQuery] = useState("");
   const [boardingResults, setBoardingResults] = useState([]);
-  const [searchError, setSearchError] = useState("");
   const [boardingSearchError, setBoardingSearchError] = useState("");
   const [voiceError, setVoiceError] = useState("");
+  const [isVoiceExpanded, setIsVoiceExpanded] = useState(false);
+  const guideSeenStorageKey =
+    mode === "leave" ? "boardingLeaveGuideSeen" : "boardingGuideSeen";
+  const [isGuideExpanded, setIsGuideExpanded] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return !sessionStorage.getItem(guideSeenStorageKey);
+    } catch {
+      return true;
+    }
+  });
   const [isListening, setIsListening] = useState(false);
   const [isParsingVoice, setIsParsingVoice] = useState(false);
+  const [stationRows, setStationRows] = useState([]);
+  const [isStationListLoading, setIsStationListLoading] = useState(true);
+  const [stationListLoadError, setStationListLoadError] = useState("");
+  const [isDestinationComposing, setIsDestinationComposing] = useState(false);
   const inputRef = useRef(null);
   const boardingInputRef = useRef(null);
+  const destinationResultsRef = useRef(null);
   const apiLine = resolveApiLineFromLineProp(line);
-
   useEffect(() => {
     if (needsManualBoardingStation) {
       boardingInputRef.current?.focus();
@@ -969,7 +945,6 @@ function StepStation({
   async function processVoiceTranscript(transcript) {
     setIsParsingVoice(true);
     setVoiceError("");
-    setSearchError("");
     try {
       const parsed = await resolveVoiceParse(transcript);
       await applyParsedVoice({
@@ -1063,68 +1038,61 @@ function StepStation({
 
   useEffect(() => {
     let active = true;
-    const trimmed = query.trim();
-
-    const searchTerm = normalizeStationSearchTerm(trimmed);
-    if (searchTerm.length < 1) {
-      setResults([]);
-      setSearchError("");
-      return () => {
-        active = false;
-      };
-    }
+    setIsStationListLoading(true);
+    setStationListLoadError("");
+    setStationRows([]);
 
     if (!apiLine) {
-      setResults([]);
-      setSearchError("이 노선은 역 검색을 지원하지 않습니다.");
+      setIsStationListLoading(false);
+      setStationListLoadError("이 노선은 역 검색을 지원하지 않습니다.");
       return () => {
         active = false;
       };
     }
 
-    const loadStations = async () => {
-      setSearchError("");
-      try {
-        const stations = await fetchStationsForLine(line);
-        if (!active) return;
-
-        if (!stations) {
-          setResults([]);
-          setSearchError("역 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
-          return;
-        }
-
-        const names = stations
-          .map((row) => row?.name?.trim())
-          .filter((name) => name && stationMatchesSearch(name, trimmed))
-          .slice(0, 8);
-
-        setResults(names);
-        const exactDestination = findExactStationName(trimmed, stations);
-        if (exactDestination) {
-          setSelected(exactDestination);
-        } else if (names.length === 1 && normalizeStationSearchTerm(names[0]) === searchTerm) {
-          setSelected(names[0]);
-        }
-        if (names.length === 0) {
-          setSearchError("");
-        }
-      } catch {
-        if (!active) return;
-        setResults([]);
-        setSearchError("역 검색 중 오류가 발생했습니다.");
+    void fetchStationsForLine(line).then((stations) => {
+      if (!active) return;
+      if (!stations?.length) {
+        setStationRows([]);
+        setStationListLoadError("역 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      } else {
+        setStationRows(stations);
+        setStationListLoadError("");
       }
-    };
-
-    const debounceTimer = setTimeout(() => {
-      void loadStations();
-    }, 280);
+      setIsStationListLoading(false);
+    });
 
     return () => {
       active = false;
-      clearTimeout(debounceTimer);
     };
-  }, [query, line, apiLine]);
+  }, [line, apiLine]);
+
+  const destinationSearchResults = useMemo(() => {
+    if (selected) return [];
+    const trimmed = query.trim();
+    const searchTerm = normalizeStationSearchTerm(trimmed);
+    if (searchTerm.length < 1) return [];
+    if (!apiLine || isStationListLoading || stationListLoadError) return [];
+
+    return stationRows
+      .map((row) => row?.name?.trim())
+      .filter((name) => name && stationMatchesSearch(name, trimmed))
+      .slice(0, 5);
+  }, [query, selected, apiLine, isStationListLoading, stationListLoadError, stationRows]);
+
+  const destinationSearchError = useMemo(() => {
+    const trimmed = query.trim();
+    if (!trimmed || selected) return "";
+    if (!apiLine) return stationListLoadError || "이 노선은 역 검색을 지원하지 않습니다.";
+    if (stationListLoadError) return stationListLoadError;
+    return "";
+  }, [query, selected, apiLine, stationListLoadError]);
+
+  useEffect(() => {
+    if (destinationSearchResults.length > 0) {
+      destinationResultsRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [destinationSearchResults]);
 
   useEffect(() => {
     if (!needsManualBoardingStation) {
@@ -1134,71 +1102,70 @@ function StepStation({
       return;
     }
 
-    let active = true;
     const trimmed = boardingQuery.trim();
     const searchTerm = normalizeStationSearchTerm(trimmed);
     if (searchTerm.length < 1) {
       setBoardingResults([]);
       setBoardingSearchError("");
-      return () => {
-        active = false;
-      };
+      return;
     }
 
     if (!apiLine) {
       setBoardingResults([]);
-      setBoardingSearchError("이 노선은 역 검색을 지원하지 않습니다.");
-      return () => {
-        active = false;
-      };
+      setBoardingSearchError(stationListLoadError || "이 노선은 역 검색을 지원하지 않습니다.");
+      return;
     }
 
-    const loadBoardingStations = async () => {
+    if (isStationListLoading) {
+      setBoardingResults([]);
       setBoardingSearchError("");
-      try {
-        const stations = await fetchStationsForLine(line);
-        if (!active) return;
-        if (!stations) {
-          setBoardingResults([]);
-          setBoardingSearchError("역 목록을 불러오지 못했습니다.");
-          return;
-        }
-        const names = stations
-          .map((row) => row?.name?.trim())
-          .filter((name) => name && stationMatchesSearch(name, trimmed))
-          .slice(0, 8);
-        setBoardingResults(names);
-        const exactBoarding = findExactStationName(trimmed, stations);
-        if (exactBoarding) {
-          onBoardingStationChange?.(exactBoarding);
-          setBoardingQuery(exactBoarding);
-          setBoardingSearchError("");
-        } else if (names.length === 0) {
-          setBoardingSearchError(
-            `'${trimmed}' 역을 이 노선에서 찾지 못했습니다. 목록에서 선택해 주세요.`
-          );
-        } else {
-          setBoardingSearchError("");
-        }
-      } catch {
-        if (!active) return;
-        setBoardingResults([]);
-        setBoardingSearchError("역 검색 중 오류가 발생했습니다.");
-      }
-    };
+      return;
+    }
 
-    const debounceTimer = setTimeout(() => {
-      void loadBoardingStations();
-    }, 280);
+    if (stationListLoadError) {
+      setBoardingResults([]);
+      setBoardingSearchError(stationListLoadError);
+      return;
+    }
 
-    return () => {
-      active = false;
-      clearTimeout(debounceTimer);
-    };
-  }, [boardingQuery, line, apiLine, needsManualBoardingStation]);
+    const names = stationRows
+      .map((row) => row?.name?.trim())
+      .filter((name) => name && stationMatchesSearch(name, trimmed))
+      .slice(0, 5);
+
+    setBoardingResults(names);
+    const exactBoarding = findExactStationName(trimmed, stationRows);
+    if (exactBoarding) {
+      onBoardingStationChange?.(exactBoarding);
+      setBoardingQuery(exactBoarding);
+      setBoardingSearchError("");
+    } else if (names.length === 0) {
+      setBoardingSearchError(
+        `'${trimmed}' 역을 이 노선에서 찾지 못했습니다. 목록에서 선택해 주세요.`
+      );
+    } else {
+      setBoardingSearchError("");
+    }
+  }, [
+    boardingQuery,
+    apiLine,
+    needsManualBoardingStation,
+    stationRows,
+    isStationListLoading,
+    stationListLoadError,
+    onBoardingStationChange,
+  ]);
 
   const canProceedToTrainStep =
     Boolean(selected) && Boolean(boardingStationName) && !isDetectingBoardingStation;
+
+  const proceedHint = (() => {
+    if (canProceedToTrainStep) return "";
+    if (isDetectingBoardingStation) return "위치를 확인하는 중입니다…";
+    if (!boardingStationName) return "출발역을 선택해 주세요";
+    if (!selected) return "목적지를 선택해 주세요";
+    return "";
+  })();
 
   function confirmBoardingFromKeyboard() {
     if (boardingResults.length >= 1) {
@@ -1210,11 +1177,45 @@ function StepStation({
   }
 
   function confirmDestinationFromKeyboard() {
-    if (results.length >= 1) {
-      setSelected(results[0]);
-      setQuery(results[0]);
+    if (destinationSearchResults.length >= 1) {
+      setSelected(destinationSearchResults[0]);
+      setQuery(destinationSearchResults[0]);
     }
   }
+
+  function clearDestinationSelection() {
+    setSelected(null);
+    setQuery("");
+    inputRef.current?.focus();
+  }
+
+  function clearBoardingSelection() {
+    setBoardingQuery("");
+    setBoardingResults([]);
+    setBoardingSearchError("");
+    onBoardingStationClear?.();
+    boardingInputRef.current?.focus();
+  }
+
+  function toggleGuideExpanded() {
+    setIsGuideExpanded((prev) => {
+      const next = !prev;
+      if (!next) {
+        try {
+          sessionStorage.setItem(guideSeenStorageKey, "1");
+        } catch {
+          // sessionStorage 실패 시 접기만 반영합니다.
+        }
+      }
+      return next;
+    });
+  }
+
+  const guideTitle = mode === "leave" ? "내릴게요 등록이란?" : "바로 앉기 등록이란?";
+  const guideItems =
+    mode === "leave"
+      ? ["① 하차 예정·좌석 등록", "② 착석 희망자 자동 매칭", "③ 빈자리 실시간 전달"]
+      : ["① 빈자리 실시간 알림", "② 목적지 입력 → 자동 매칭", "③ 호차·좌석 위치 안내"];
 
   const lineColor = LINE_OLIVE;
   const lineColorLight = LINE_OLIVE_LIGHT;
@@ -1227,17 +1228,33 @@ function StepStation({
     if (/^인천2호선$/.test(compact)) return "인천 2호선";
     return primary || "서울 7호선";
   })();
-  const searchPlaceholder =
-    apiLine === "seoul7" ? "검색 예: 논현" : apiLine === "seoul2" ? "검색 예: 강남" : "검색 예: 신도림";
   const voiceHint =
     apiLine === "seoul7"
       ? '예: "논현 가고 싶어"'
       : apiLine === "seoul2"
         ? '예: "강남 가고 싶어"'
         : '예: "신도림 가고 싶어"';
+  const showDestinationDropdown = !selected && destinationSearchResults.length > 0;
+  const showBoardingDropdown =
+    needsManualBoardingStation && boardingResults.length > 0 && !boardingStationName;
+  const departureBoxClass = boardingStationName
+    ? "bg-[#f0f5e8] border-gray-200"
+    : needsManualBoardingStation
+      ? "bg-amber-50 border-amber-300"
+      : "bg-white border-gray-200";
+  const destinationBoxClass = selected ? "bg-[#f0f5e8] border-gray-200" : "bg-white border-gray-200";
+  const showVoicePanel = isVoiceExpanded || isListening || isParsingVoice;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        background: C.bg,
+        letterSpacing: "-0.3px",
+      }}
+    >
       <div
         style={{
           display: "flex",
@@ -1287,7 +1304,9 @@ function StepStation({
           >
             {lineDisplayName}
           </span>
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>어디까지 가세요?</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.text, textAlign: "left" }}>
+            어디까지 가세요?
+          </div>
         </div>
         <div
           style={{
@@ -1320,186 +1339,196 @@ function StepStation({
           ))}
         </div>
 
-        <div
-          style={{
-            position: "relative",
-            borderRadius: 16,
-            background: lineColor,
-            padding: "16px 18px",
-            color: "#fff",
-            overflow: "hidden",
-          }}
-        >
-          <p style={{ margin: 0, fontSize: 12, fontWeight: 600, opacity: 0.85 }}>현재 위치</p>
-          {needsManualBoardingStation ? (
-            <input
-              className="zeb-field"
-              ref={boardingInputRef}
-              value={boardingQuery}
-              onChange={(e) => setBoardingQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  confirmBoardingFromKeyboard();
-                }
-              }}
-              placeholder="역 검색"
-              style={{
-                marginTop: 8,
-                width: "100%",
-                padding: "10px 12px",
-                border: "none",
-                borderRadius: 10,
-                fontSize: 16,
-                fontWeight: 700,
-                background: "rgba(255,255,255,0.95)",
-                color: C.text,
-                outline: "none",
-                boxSizing: "border-box",
-              }}
-            />
-          ) : (
-            <p
-              style={{
-                margin: "8px 0 0",
-                fontSize: 28,
-                fontWeight: 800,
-                lineHeight: 1.15,
-                wordBreak: "keep-all",
-              }}
-            >
-              {isDetectingBoardingStation
-                ? "확인 중…"
-                : boardingStationName
-                  ? formatStationDisplayName(boardingStationName)
-                  : "—"}
-            </p>
-          )}
+        <div style={{ position: "relative" }}>
+          <div className="bg-white rounded-2xl p-4 flex flex-col gap-2">
+            <div className="w-full flex flex-col gap-1">
+              <p className="m-0 text-sm font-semibold text-gray-700">출발지</p>
+              <div
+                className={`border rounded-xl px-4 py-3 flex items-center gap-1 min-h-[44px] ${departureBoxClass}`}
+              >
+                {isDetectingBoardingStation ? (
+                  <p className="m-0 flex-1 text-sm text-gray-400">위치 감지중...</p>
+                ) : needsManualBoardingStation ? (
+                  <input
+                    className="zeb-field flex-1 min-w-0 m-0 p-0 border-none bg-transparent outline-none text-sm text-gray-800 placeholder:text-gray-400"
+                    ref={boardingInputRef}
+                    value={boardingQuery}
+                    onChange={(e) => setBoardingQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        confirmBoardingFromKeyboard();
+                      }
+                    }}
+                    placeholder="역 검색"
+                  />
+                ) : boardingStationName ? (
+                  <>
+                    <p className="m-0 flex-1 min-w-0 text-sm font-medium text-gray-800 break-keep">
+                      {formatStationDisplayName(boardingStationName)}
+                    </p>
+                    <button
+                      type="button"
+                      className="zeb-touch-target shrink-0"
+                      onClick={clearBoardingSelection}
+                      aria-label="출발역 다시 선택"
+                      style={{
+                        width: MOBILE.touchMin,
+                        height: MOBILE.touchMin,
+                        padding: 0,
+                        border: "none",
+                        borderRadius: "50%",
+                        background: "transparent",
+                        color: C.muted,
+                        fontSize: 18,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      ×
+                    </button>
+                  </>
+                ) : (
+                  <p className="m-0 text-sm text-gray-400">역 검색</p>
+                )}
+              </div>
+              {needsManualBoardingStation && boardingGpsMessage ? (
+                <p className="m-0 px-1 text-xs leading-snug text-amber-700">{boardingGpsMessage}</p>
+              ) : null}
+              {needsManualBoardingStation && boardingSearchError ? (
+                <p className="m-0 px-1 text-xs text-[#DC2626]">{boardingSearchError}</p>
+              ) : null}
+              {showBoardingDropdown ? (
+                <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                  {boardingResults.map((station) => (
+                    <button
+                      key={`boarding-${station}`}
+                      type="button"
+                      className="zeb-touch-target w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-[#f0f5e8] cursor-pointer"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        onBoardingStationChange?.(station);
+                        setBoardingQuery(station);
+                        setBoardingSearchError("");
+                      }}
+                      style={{
+                        background: "transparent",
+                        fontSize: 15,
+                        color: C.text,
+                        minHeight: MOBILE.touchMin,
+                      }}
+                    >
+                      {formatStationDisplayName(station)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <span className="text-[#6b9e3f] font-bold text-center leading-none">↓</span>
+            <div className="w-full flex flex-col gap-1">
+              <p className="m-0 text-sm font-semibold text-gray-700">목적지</p>
+              <div
+                className={`border rounded-xl px-4 py-3 flex items-center gap-1 min-h-[44px] ${destinationBoxClass}`}
+              >
+                {selected ? (
+                  <>
+                    <p className="m-0 flex-1 min-w-0 text-sm font-medium text-gray-800 break-keep">
+                      {formatStationDisplayName(selected)}
+                    </p>
+                    <button
+                      type="button"
+                      className="zeb-touch-target shrink-0"
+                      onClick={clearDestinationSelection}
+                      aria-label="목적지 다시 선택"
+                      style={{
+                        width: MOBILE.touchMin,
+                        height: MOBILE.touchMin,
+                        padding: 0,
+                        border: "none",
+                        borderRadius: "50%",
+                        background: "transparent",
+                        color: C.muted,
+                        fontSize: 18,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      ×
+                    </button>
+                  </>
+                ) : (
+                  <input
+                    className="zeb-field w-full m-0 p-0 border-none bg-transparent outline-none text-sm text-gray-800 placeholder:text-gray-400"
+                    ref={inputRef}
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setSelected(null);
+                    }}
+                    onCompositionStart={() => setIsDestinationComposing(true)}
+                    onCompositionEnd={(e) => {
+                      setIsDestinationComposing(false);
+                      setQuery(e.currentTarget.value);
+                      setSelected(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        confirmDestinationFromKeyboard();
+                      }
+                    }}
+                    placeholder="목적지 선택"
+                  />
+                )}
+              </div>
+              {showDestinationDropdown ? (
+                <div
+                  ref={destinationResultsRef}
+                  className="bg-white rounded-xl shadow-md overflow-hidden"
+                >
+                  {destinationSearchResults.map((station) => (
+                    <button
+                      key={station}
+                      type="button"
+                      className="zeb-touch-target w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-[#f0f5e8] cursor-pointer"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setSelected(station);
+                        setQuery(station);
+                        inputRef.current?.blur();
+                      }}
+                      style={{
+                        background: "transparent",
+                        fontSize: 15,
+                        color: C.text,
+                        minHeight: MOBILE.touchMin,
+                      }}
+                    >
+                      {formatStationDisplayName(station)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
 
-        {needsManualBoardingStation && boardingGpsMessage ? (
-          <p style={{ margin: "8px 0 0", fontSize: 12, color: "#C2410C", lineHeight: 1.4 }}>
-            {boardingGpsMessage}
-          </p>
+        {destinationSearchError ? (
+          <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{destinationSearchError}</p>
         ) : null}
-
-        {needsManualBoardingStation && boardingSearchError ? (
-          <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{boardingSearchError}</p>
-        ) : null}
-
-        {needsManualBoardingStation && boardingResults.length > 0 ? (
-          <div
-            style={{
-              marginTop: 8,
-              background: C.card,
-              border: `1px solid ${C.border}`,
-              borderRadius: 12,
-              overflow: "hidden",
-            }}
-          >
-            {boardingResults.map((station, i) => (
-              <button
-                key={`boarding-${station}`}
-                type="button"
-                className="zeb-touch-target"
-                onClick={() => {
-                  onBoardingStationChange?.(station);
-                  setBoardingQuery(station);
-                }}
-                style={{
-                  width: "100%",
-                  padding: "12px 14px",
-                  minHeight: MOBILE.touchMin,
-                  background: boardingStationName === station ? lineColorLight : C.card,
-                  border: "none",
-                  borderTop: i > 0 ? `1px solid ${C.border}` : "none",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  fontSize: 15,
-                  color: boardingStationName === station ? lineColor : C.text,
-                  fontWeight: boardingStationName === station ? 600 : 400,
-                }}
-              >
-                {formatStationDisplayName(station)}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        <div
-          style={{
-            marginTop: 14,
-            position: "relative",
-            borderRadius: 16,
-            background: lineColor,
-            padding: "16px 18px",
-            color: "#fff",
-            overflow: "hidden",
-          }}
-        >
-          <p className="text-base font-bold text-white m-0">
-            어디까지 가세요?
-          </p>
-          <input
-            className="zeb-field"
-            ref={inputRef}
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelected(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                confirmDestinationFromKeyboard();
-              }
-            }}
-            placeholder={searchPlaceholder}
-            style={{
-              marginTop: 8,
-              width: "100%",
-              padding: "12px 14px",
-              border: "none",
-              borderRadius: 10,
-              fontSize: MOBILE.inputFontSize,
-              fontWeight: 700,
-              background: "rgba(255,255,255,0.95)",
-              color: C.text,
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-          />
-        </div>
-
-        {searchError ? (
-          <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{searchError}</p>
-        ) : null}
-
-        {results.length > 0 && (
-          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-            {results.map((station) => (
-              <button
-                key={station}
-                type="button"
-                className="zeb-touch-target bg-[#6b9e3f] rounded-xl p-4 w-full text-left"
-                onClick={() => {
-                  setSelected(station);
-                  setQuery(station);
-                }}
-              >
-                <p className="text-sm text-white opacity-70 m-0">
-                  하차역
-                </p>
-                <p className="text-xl font-bold text-white m-0 mt-1">
-                  {formatStationDisplayName(station)}
-                </p>
-              </button>
-            ))}
-          </div>
-        )}
 
         {query.length >= 1 &&
-          results.length === 0 &&
+          !selected &&
+          destinationSearchResults.length === 0 &&
+          !isStationListLoading &&
+          !stationListLoadError &&
+          !isDestinationComposing &&
           !voiceError &&
           !isParsingVoice &&
           query.length <= 12 && (
@@ -1508,81 +1537,177 @@ function StepStation({
           </p>
         )}
 
-        <button
-          type="button"
-          className="zeb-touch-target"
-          onClick={startVoiceSearch}
-          disabled={isListening || isParsingVoice}
-          style={{
-            marginTop: 14,
-            width: "100%",
-            padding: "14px 16px",
-            borderRadius: 14,
-            border: `1px solid ${C.border}`,
-            background: C.card,
-            cursor: isListening || isParsingVoice ? "default" : "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            textAlign: "left",
-          }}
-        >
-          <span
+        {showVoicePanel ? (
+          <button
+            type="button"
+            className="zeb-touch-target"
+            onClick={startVoiceSearch}
+            disabled={isListening || isParsingVoice}
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: "50%",
-              background: lineColor,
+              marginTop: 14,
+              width: "100%",
+              padding: "14px 16px",
+              borderRadius: 14,
+              border: `1px solid ${C.border}`,
+              background: C.card,
+              cursor: isListening || isParsingVoice ? "default" : "pointer",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
+              gap: 14,
+              textAlign: "left",
             }}
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#fff"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="22" />
-            </svg>
-          </span>
-          <span style={{ flex: 1, minWidth: 0 }}>
             <span
               style={{
-                display: "block",
-                fontSize: 15,
-                fontWeight: 700,
-                color: C.text,
-                lineHeight: 1.35,
+                width: 44,
+                height: 44,
+                borderRadius: "50%",
+                background: lineColor,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
               }}
             >
-              {isListening
-                ? "듣는 중…"
-                : isParsingVoice
-                  ? "분석 중…"
-                  : "음성으로 어디까지 가세요? 말씀해 주세요"}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#fff"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+              </svg>
             </span>
-            {!isListening && !isParsingVoice ? (
-              <span style={{ display: "block", marginTop: 4, fontSize: 13, color: C.muted }}>
-                {voiceHint}
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span
+                style={{
+                  display: "block",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: C.text,
+                  lineHeight: 1.45,
+                }}
+              >
+                {isListening ? (
+                  "듣는 중…"
+                ) : isParsingVoice ? (
+                  "분석 중…"
+                ) : (
+                  <>
+                    <span style={{ display: "block" }}>음성으로 어디까지 가세요?</span>
+                    <span style={{ display: "block" }}>말씀해 주세요</span>
+                  </>
+                )}
               </span>
-            ) : null}
-          </span>
-        </button>
+              {!isListening && !isParsingVoice ? (
+                <span style={{ display: "block", marginTop: 4, fontSize: 13, color: C.muted }}>
+                  {voiceHint}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="zeb-touch-target"
+            onClick={() => setIsVoiceExpanded(true)}
+            style={{
+              marginTop: 14,
+              width: "100%",
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: `1px solid ${C.border}`,
+              background: C.card,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              textAlign: "left",
+            }}
+          >
+            <span
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: "50%",
+                background: lineColor,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#fff"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+              </svg>
+            </span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>음성으로 목적지 말하기</span>
+          </button>
+        )}
 
         {voiceError ? (
           <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{voiceError}</p>
         ) : null}
+
+        <div className="bg-white rounded-2xl px-4 py-3 mt-4">
+          <button
+            type="button"
+            className="zeb-touch-target w-full flex items-center justify-between gap-2 border-none bg-transparent p-0 cursor-pointer text-left"
+            onClick={toggleGuideExpanded}
+            aria-expanded={isGuideExpanded}
+          >
+            <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{guideTitle}</span>
+            <span style={{ fontSize: 18, color: C.muted, lineHeight: 1 }}>{isGuideExpanded ? "−" : "+"}</span>
+          </button>
+          {isGuideExpanded ? (
+            <ul
+              style={{
+                margin: "10px 0 0",
+                padding: 0,
+                listStyle: "none",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              {guideItems.map((item) => (
+                <li
+                  key={item}
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: C.text,
+                    lineHeight: 1.45,
+                    textAlign: "left",
+                  }}
+                >
+                  {item}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       </div>
 
       <div
@@ -1592,6 +1717,11 @@ function StepStation({
           borderTop: `1px solid ${C.border}`,
         }}
       >
+        {proceedHint ? (
+          <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: lineColor, textAlign: "center" }}>
+            {proceedHint}
+          </p>
+        ) : null}
         <button
           type="button"
           className="zeb-touch-target"
@@ -1617,8 +1747,6 @@ function StepStation({
     </div>
   );
 }
-
-/** 서울 API에 barvl_dt 없을 때 station_order로 도착 예상(초) 추정 */
 function estimateSeoulArrivalSeconds(trainStation, boardingStation, stationOrder, apiLine) {
   if (!Array.isArray(stationOrder) || stationOrder.length === 0) return null;
 
@@ -1666,6 +1794,7 @@ function StepTrain({
   const [travelDirectionKey, setTravelDirectionKey] = useState(null);
   const [stationIndexDebug, setStationIndexDebug] = useState(null);
   const [seoulStationOrder, setSeoulStationOrder] = useState([]);
+  const [isOutsideOperatingHours, setIsOutsideOperatingHours] = useState(false);
   const apiLine = resolveApiLineFromLineProp(line);
 
   function resolveTrainDirectionKey(train) {
@@ -2000,6 +2129,24 @@ function StepTrain({
         setIsLoading(true);
       }
       try {
+        if (!apiLine) {
+          if (!active || seq !== requestSeq) return;
+          setIsOutsideOperatingHours(false);
+          setTrains([]);
+          setLastUpdatedAt(Date.now());
+          return;
+        }
+
+        // 운행 시간 밖에는 seek·leave 공통으로 대체·시간표 열차를 표시하지 않습니다.
+        if (!isSubwayOperatingHours(apiLine)) {
+          if (!active || seq !== requestSeq) return;
+          setIsOutsideOperatingHours(true);
+          setTrains([]);
+          setLastUpdatedAt(Date.now());
+          return;
+        }
+
+        setIsOutsideOperatingHours(false);
         let mapped = [];
 
         if (apiLine.startsWith("incheon")) {
@@ -2090,6 +2237,7 @@ function StepTrain({
             ? payload.station_order
             : [];
           setSeoulStationOrder(stationOrder);
+          setIsOutsideOperatingHours(payload?.is_operating_hours === false);
 
           mapped = apiTrains
             .map((row) => {
@@ -2137,6 +2285,7 @@ function StepTrain({
       } catch (err) {
         if (!active || seq !== requestSeq) return;
         console.error("[StepTrain] loadTrains failed", err);
+        setIsOutsideOperatingHours(false);
         if (!silent) {
           setTrains([]);
         }
@@ -2431,8 +2580,24 @@ function StepTrain({
         </div>
 
         {!isLoading && displayTrains.length === 0 ? (
-          <div style={{ marginTop: 14, color: C.muted, fontSize: 14, lineHeight: 1.5, textAlign: "center" }}>
-            현재 열차 정보가 없습니다
+          <div
+            style={{
+              marginTop: 14,
+              padding: isOutsideOperatingHours ? "14px 16px" : 0,
+              borderRadius: isOutsideOperatingHours ? 14 : 0,
+              border: isOutsideOperatingHours ? `1px solid ${lineColorLight}` : "none",
+              background: isOutsideOperatingHours ? lineColorLight : "transparent",
+              color: isOutsideOperatingHours ? lineColor : C.muted,
+              fontSize: 14,
+              fontWeight: isOutsideOperatingHours ? 700 : 400,
+              lineHeight: 1.5,
+              textAlign: "center",
+            }}
+            role={isOutsideOperatingHours ? "alert" : undefined}
+          >
+            {isOutsideOperatingHours
+              ? SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE
+              : "현재 열차 정보가 없습니다"}
           </div>
         ) : null}
       </div>
@@ -3021,18 +3186,40 @@ function StepSeat({
   );
 }
 
+/** 완료 화면 출입문 라벨을 읽기 쉬운 문구로 변환 */
+function formatDoneDoorFriendly(doorLabel, carNumber, doorNumber) {
+  if (Number.isInteger(carNumber) && Number.isInteger(doorNumber)) {
+    return `${carNumber}호차 ${doorNumber}번 출입문`;
+  }
+  const match = String(doorLabel || "").match(/^출?(\d+)-(\d+)$/);
+  if (match) {
+    return `${match[1]}호차 ${match[2]}번 출입문`;
+  }
+  return doorLabel || "-";
+}
+
 // ─── 완료 화면 ────────────────────────────────────────────────────
-function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaiting }) {
+function StepDone({
+  line,
+  station,
+  boardingStation,
+  trainId,
+  car,
+  seat,
+  matchedOnRegister = false,
+  mode,
+  onReset,
+  onGoWaiting,
+  onGoHome,
+  onGoMatching,
+}) {
   const isLeaveMode = mode === "leave";
-  const matchedOnRegister = seat?.matched === true;
+  const resolvedCar = seat?.car ?? car;
+  const resolvedDoor = seat?.door;
   const seekDoorLabel =
     seat?.doorLabel ||
-    (seat?.car && seat?.door ? formatExitDoorDisplayLabel(seat.car, seat.door) : "");
-  const doneDoorLabel = isLeaveMode
-    ? (seat?.car || car) && seat?.door
-      ? formatExitDoorDisplayLabel(seat?.car || car, seat.door)
-      : "-"
-    : seekDoorLabel || "-";
+    (resolvedCar && resolvedDoor ? formatExitDoorDisplayLabel(resolvedCar, resolvedDoor) : "");
+  const doneDoorFriendly = formatDoneDoorFriendly(seekDoorLabel, resolvedCar, resolvedDoor);
   const doneSeatLabel = seat?.seatLetter ? `${seat.seatLetter}열` : "-";
   const doneDirectionLabel = seat?.side ? resolveSeekSideLabel(seat.side) : "-";
   const lineColor = LINE_OLIVE;
@@ -3047,20 +3234,37 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
   })();
 
   const stationDisplayName = formatStationDisplayName(station);
+  const boardingDisplayName = boardingStation ? formatStationDisplayName(boardingStation) : "";
+  const detailSummaryParts = [
+    trainId ? `${trainId}호 열차` : null,
+    doneDoorFriendly !== "-" ? doneDoorFriendly : null,
+    doneSeatLabel !== "-" ? doneSeatLabel : null,
+    doneDirectionLabel !== "-" ? doneDirectionLabel : null,
+  ].filter(Boolean);
+  const detailSummaryLine = detailSummaryParts.join(" · ");
 
   return (
     <div
       style={{
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100%",
-        padding: "32px 24px",
-        textAlign: "center",
+        flex: 1,
+        minHeight: 0,
         background: C.card,
       }}
     >
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          padding: "28px 24px 16px",
+          textAlign: "center",
+        }}
+      >
       <div
         style={{
           width: 72,
@@ -3094,7 +3298,7 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
       </span>
       <h2
         style={{
-          margin: "0 0 20px",
+          margin: "0 0 12px",
           fontSize: 22,
           fontWeight: 800,
           color: C.text,
@@ -3104,56 +3308,106 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
         {isLeaveMode ? "하차 등록 완료!" : "등록 완료!"}
       </h2>
 
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          marginBottom: 20,
-          fontSize: 14,
-          color: C.muted,
-          lineHeight: 1.6,
-        }}
-      >
-        <p style={{ margin: 0, color: C.muted }}>{lineDisplayName}</p>
-        <p style={{ margin: 0 }}>
-          열차: <strong style={{ color: C.text, fontWeight: 700 }}>{trainId || "-"}</strong>
-        </p>
-        <p style={{ margin: 0 }}>
-          출입문: <strong style={{ color: C.text, fontWeight: 700 }}>{doneDoorLabel}</strong>
-        </p>
-        <p style={{ margin: 0 }}>
-          좌석: <strong style={{ color: C.text, fontWeight: 700 }}>{doneSeatLabel}</strong>
-        </p>
-        <p style={{ margin: 0 }}>
-          방향: <strong style={{ color: C.text, fontWeight: 700 }}>{doneDirectionLabel}</strong>
-        </p>
-      </div>
-
-      <p style={{ margin: "0 0 28px", fontSize: 14, color: C.muted, lineHeight: 1.6 }}>
+      <p style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 700, color: C.text, lineHeight: 1.5 }}>
         {isLeaveMode ? (
           <>
-            <strong style={{ color: C.text, fontWeight: 700 }}>{stationDisplayName}</strong>
-            에서 하차 예정으로 등록했습니다.
-            {matchedOnRegister ? (
-              <>
-                <br />
-                <span style={{ fontSize: 13 }}>
-                  착석 희망자와 매칭되었습니다. 상대방이 수락하면 완료됩니다.
-                </span>
-              </>
-            ) : null}
+            <span style={{ color: lineColor }}>{stationDisplayName}</span>
+            에서 하차 예정으로 등록했어요
           </>
         ) : (
           <>
-            <strong style={{ color: C.text, fontWeight: 700 }}>{stationDisplayName}</strong> 하차 전
-            알림을 드릴게요
+            <span style={{ color: lineColor }}>{stationDisplayName}</span>
+            {" "}
+            하차 전 알림을 드릴게요
           </>
         )}
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 300 }}>
-        {!isLeaveMode && onGoWaiting ? (
+      {onGoWaiting && (!isLeaveMode || !matchedOnRegister) ? (
+        <p style={{ margin: "0 0 16px", fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
+          매칭 대기 화면에서 상태를 확인하세요
+        </p>
+      ) : null}
+
+      {isLeaveMode && matchedOnRegister ? (
+        <p style={{ margin: "0 0 16px", fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
+          착석 희망자와 매칭되었습니다. 매칭 화면에서 확인해 주세요.
+        </p>
+      ) : null}
+
+      {boardingDisplayName && stationDisplayName ? (
+        <p
+          style={{
+            margin: "0 0 14px",
+            fontSize: 14,
+            fontWeight: 600,
+            color: C.text,
+            lineHeight: 1.5,
+          }}
+        >
+          {boardingDisplayName}
+          <span style={{ margin: "0 6px", color: lineColor }}>→</span>
+          {stationDisplayName}
+        </p>
+      ) : null}
+
+      {detailSummaryLine ? (
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 320,
+            marginBottom: 8,
+            padding: "14px 16px",
+            borderRadius: 14,
+            border: `1px solid ${C.border}`,
+            background: C.bg,
+            fontSize: 14,
+            fontWeight: 600,
+            color: C.text,
+            lineHeight: 1.55,
+            wordBreak: "keep-all",
+          }}
+        >
+          {detailSummaryLine}
+        </div>
+      ) : null}
+      </div>
+
+      <div
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          width: "100%",
+          maxWidth: 300,
+          margin: "0 auto",
+          padding: "12px 24px max(20px, env(safe-area-inset-bottom))",
+          borderTop: `1px solid ${C.border}`,
+          background: C.card,
+        }}
+      >
+        {isLeaveMode && matchedOnRegister && onGoMatching ? (
+          <button
+            type="button"
+            className="zeb-touch-target"
+            onClick={onGoMatching}
+            style={{
+              padding: "13px 32px",
+              minHeight: MOBILE.touchMin,
+              background: lineColor,
+              color: "#fff",
+              border: "none",
+              borderRadius: 12,
+              fontSize: MOBILE.inputFontSize,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            매칭 화면으로
+          </button>
+        ) : null}
+        {onGoWaiting && (!isLeaveMode || !matchedOnRegister) ? (
           <button
             type="button"
             className="zeb-touch-target"
@@ -3170,7 +3424,27 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
               cursor: "pointer",
             }}
           >
-            매칭 대기 화면으로
+            매칭 상태 보기
+          </button>
+        ) : null}
+        {isLeaveMode && onGoHome ? (
+          <button
+            type="button"
+            className="zeb-touch-target"
+            onClick={onGoHome}
+            style={{
+              padding: "13px 32px",
+              minHeight: MOBILE.touchMin,
+              background: "#fff",
+              color: lineColor,
+              border: `1.5px solid ${lineColor}`,
+              borderRadius: 12,
+              fontSize: MOBILE.inputFontSize,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            홈으로 가기
           </button>
         ) : null}
         <button
@@ -3189,12 +3463,13 @@ function StepDone({ line, station, trainId, car, seat, mode, onReset, onGoWaitin
             cursor: "pointer",
           }}
         >
-          새로 요청하기
+          다시 등록하기
         </button>
       </div>
     </div>
   );
 }
+
 
 // ─── 메인 ─────────────────────────────────────────────────────────
 export default function BoardingRequest({ line = "서울 1호선 · 소요산 방면", mode = "seek" }) {
@@ -3269,6 +3544,12 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     setNeedsManualBoardingStation(false);
     setBoardingGpsMessage("");
     saveBoardingGpsLocation(normalizedLine, trimmed, { within1km: false });
+  }
+
+  function handleClearBoardingStation() {
+    setCurrentStationName("");
+    setNeedsManualBoardingStation(true);
+    setBoardingGpsMessage((prev) => prev || "현재 역을 직접 선택해 주세요.");
   }
 
   // GPS·캐시로 출발역(1km 이내 최근접) 자동 설정 — seek/leave 공통
@@ -3655,6 +3936,18 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     }
   }
 
+  function goToMatching() {
+    if (typeof window !== "undefined") {
+      window.location.href = "/matching";
+    }
+  }
+
+  function goToMatching() {
+    if (typeof window !== "undefined") {
+      window.location.href = "/matching";
+    }
+  }
+
   /** 첫 단계·내릴게요 열차 단계에서 뒤로가기 → 홈 */
   function exitToHome() {
     router.push("/");
@@ -3740,6 +4033,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
           needsManualBoardingStation={needsManualBoardingStation}
           boardingGpsMessage={boardingGpsMessage}
           onBoardingStationChange={handleManualBoardingStationChange}
+          onBoardingStationClear={handleClearBoardingStation}
           onNext={(s) => {
             setStation(s);
             setStep(2);
@@ -3810,12 +4104,16 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         <StepDone
           line={normalizedLine}
           station={station}
+          boardingStation={currentStationName || trainCurrentStation}
           trainId={trainId}
           car={seatInfo?.car}
           seat={seatInfo?.seat}
+          matchedOnRegister={seatInfo?.matched === true}
           mode={mode}
           onReset={reset}
-          onGoWaiting={isLeaveMode ? undefined : goToWaiting}
+          onGoWaiting={goToWaiting}
+          onGoHome={isLeaveMode ? exitToHome : undefined}
+          onGoMatching={isLeaveMode ? goToMatching : undefined}
         />
         </StepFade>
       )}

@@ -22,16 +22,7 @@ export async function GET(request: Request) {
     const { data: currentRequest, error: currentError } = await supabase
       .from('match_requests')
       .select(
-        `
-        id,
-        status,
-        request_type,
-        remaining_stations,
-        car_number,
-        requested_at,
-        train:trains!train_id(train_no, line_number),
-        destination_station:stations!destination_station_id(station_name)
-      `
+        'id, status, request_type, remaining_stations, car_number, requested_at, destination_station_id, train_id'
       )
       .eq('user_id', userId)
       .in('status', ['waiting', 'matched'])
@@ -62,28 +53,41 @@ export async function GET(request: Request) {
       })
     }
 
-    const trainObj = (Array.isArray(currentRequest.train)
-      ? currentRequest.train[0]
-      : currentRequest.train) as
-      | { train_no?: string; line_number?: number }
-      | null
+    let destinationStationName: string | null = null
+    if (currentRequest.destination_station_id) {
+      const { data: stationRow } = await supabase
+        .from('stations')
+        .select('station_name')
+        .eq('id', currentRequest.destination_station_id as string)
+        .maybeSingle()
+      destinationStationName =
+        typeof stationRow?.station_name === 'string' ? stationRow.station_name : null
+    }
 
-    const destinationObj = (Array.isArray(currentRequest.destination_station)
-      ? currentRequest.destination_station[0]
-      : currentRequest.destination_station) as
-      | { station_name?: string }
-      | null
+    let trainNo: string | null = null
+    let lineNumber: number | null = null
+    if (currentRequest.train_id) {
+      const { data: trainRow } = await supabase
+        .from('trains')
+        .select('train_no, line_number')
+        .eq('id', currentRequest.train_id as string)
+        .maybeSingle()
+      trainNo = typeof trainRow?.train_no === 'string' ? trainRow.train_no : null
+      lineNumber =
+        typeof trainRow?.line_number === 'number' ? trainRow.line_number : null
+    }
 
     return NextResponse.json({
       success: true,
       data: {
         id: currentRequest.id,
         status: currentRequest.status,
-        train_no: trainObj?.train_no ?? null,
-        line_number: trainObj?.line_number ?? null,
+        request_type: currentRequest.request_type ?? null,
+        train_no: trainNo,
+        line_number: lineNumber,
         car_number: currentRequest.car_number ?? null,
-        destination_station_name: destinationObj?.station_name ?? null,
-        next_station_name: destinationObj?.station_name ?? null,
+        destination_station_name: destinationStationName,
+        next_station_name: destinationStationName,
         remaining_stations: currentRequest.remaining_stations ?? null,
         waiting_count: waitingCountRaw ?? 0,
       },
