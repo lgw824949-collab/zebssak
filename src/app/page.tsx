@@ -459,6 +459,40 @@ async function fetchMatchRequestStatus(
   }
 }
 
+/** 대기 중인 match_request를 cancelled로 변경합니다. */
+async function cancelHomeMatchRequest(
+  token: string,
+  requestId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('/api/match-requests/status', {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ request_id: requestId }),
+      cache: 'no-store',
+    })
+
+    const payload = (await response.json()) as {
+      success?: boolean
+      error?: string
+    }
+
+    if (!response.ok || !payload.success) {
+      return {
+        success: false,
+        error: payload.error ?? '요청 취소에 실패했습니다.',
+      }
+    }
+
+    return { success: true }
+  } catch {
+    return { success: false, error: '요청 취소 중 오류가 발생했습니다.' }
+  }
+}
+
 function buildHomeWaitView(input: {
   requestId: string
   requestType: string | null
@@ -637,6 +671,7 @@ export default function Home() {
   const [pullStartY, setPullStartY] = useState(0)
   const [pulling, setPulling] = useState(false)
   const [homeWaitView, setHomeWaitView] = useState<HomeWaitView | null>(null)
+  const [isCancellingHomeWait, setIsCancellingHomeWait] = useState(false)
   const isOutsideOperatingHours = useMemo(
     () => !isSubwayOperatingHours(resolveHomeApiLine(selectedLineLabel)),
     [selectedLineLabel]
@@ -1035,6 +1070,50 @@ export default function Home() {
 
   function closeMenu() {
     setMenuOpen(false)
+  }
+
+  async function handleCancelHomeWaitRequest() {
+    if (!homeWaitView?.requestId) {
+      return
+    }
+
+    if (
+      homeWaitView.phase !== 'waiting_seek' &&
+      homeWaitView.phase !== 'waiting_leave'
+    ) {
+      return
+    }
+
+    if (!window.confirm('요청을 취소하시겠습니까?')) {
+      return
+    }
+
+    let token: string | null = null
+    try {
+      token = localStorage.getItem('token')
+    } catch {
+      token = null
+    }
+
+    if (!token) {
+      return
+    }
+
+    setIsCancellingHomeWait(true)
+
+    try {
+      const result = await cancelHomeMatchRequest(token, homeWaitView.requestId)
+      if (!result.success) {
+        return
+      }
+
+      clearHomeMatchSession()
+      setHomeWaitView(null)
+    } catch {
+      // 취소 실패 시 배너는 유지합니다.
+    } finally {
+      setIsCancellingHomeWait(false)
+    }
   }
 
   function handleHomeWaitStatusClick() {
@@ -1628,21 +1707,43 @@ export default function Home() {
           >
             {(() => {
               const card = resolveHomeMyRegistrationCard(homeWaitView)
+              const showCancelButton =
+                (homeWaitView.phase === 'waiting_seek' ||
+                  homeWaitView.phase === 'waiting_leave') &&
+                Boolean(homeWaitView.requestId)
 
               return (
-                <>
-                  <span
-                    className={`inline-block rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white ${
-                      homeWaitView.phase === 'match_done'
-                        ? 'bg-[#8A9A5B]'
-                        : 'bg-[#747F00]'
-                    }`}
-                  >
-                    {card.statusBadge}
-                  </span>
-                  <p className="mt-2 text-[16px] font-extrabold text-[#1A1A1A]">{card.purposeLine}</p>
-                  <p className="mt-1 text-[14px] font-semibold text-[#5F6B2E]">{card.progressLine}</p>
-                </>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span
+                      className={`inline-block rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white ${
+                        homeWaitView.phase === 'match_done'
+                          ? 'bg-[#8A9A5B]'
+                          : 'bg-[#747F00]'
+                      }`}
+                    >
+                      {card.statusBadge}
+                    </span>
+                    <p className="mt-2 text-[16px] font-extrabold text-[#1A1A1A]">
+                      {card.purposeLine}
+                    </p>
+                    <p className="mt-1 text-[14px] font-semibold text-[#5F6B2E]">
+                      {card.progressLine}
+                    </p>
+                  </div>
+                  {showCancelButton ? (
+                    <button
+                      type="button"
+                      disabled={isCancellingHomeWait}
+                      onClick={() => {
+                        void handleCancelHomeWaitRequest()
+                      }}
+                      className="shrink-0 text-xs text-red-400 font-medium disabled:opacity-50"
+                    >
+                      취소
+                    </button>
+                  ) : null}
+                </div>
               )
             })()}
           </section>

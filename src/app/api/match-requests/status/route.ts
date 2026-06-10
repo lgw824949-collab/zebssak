@@ -88,3 +88,62 @@ export async function GET(request: Request) {
     return errorResponse('서버 오류가 발생했습니다.', 500)
   }
 }
+
+interface PatchStatusBody {
+  request_id?: unknown
+  status?: unknown
+}
+
+/**
+ * PATCH /api/match-requests/status — 대기 요청 취소
+ */
+export async function PATCH(request: Request) {
+  try {
+    const userId = getUserIdFromRequest(request)
+    if (!userId) {
+      return errorResponse('로그인이 필요합니다.', 401)
+    }
+
+    let body: PatchStatusBody
+    try {
+      body = (await request.json()) as PatchStatusBody
+    } catch {
+      return errorResponse('요청 본문이 올바른 JSON이 아닙니다.', 400)
+    }
+
+    const requestId =
+      typeof body.request_id === 'string' ? body.request_id.trim() : ''
+    const status =
+      typeof body.status === 'string' ? body.status.trim() : 'cancelled'
+
+    if (!requestId) {
+      return errorResponse('request_id가 필요합니다.', 400)
+    }
+
+    if (status !== 'cancelled') {
+      return errorResponse("status는 'cancelled'여야 합니다.", 400)
+    }
+
+    const supabase = createSupabaseAdminClient()
+
+    const { data: updated, error: updateError } = await supabase
+      .from('match_requests')
+      .update({ status: 'cancelled' })
+      .eq('id', requestId)
+      .eq('user_id', userId)
+      .select('id')
+      .maybeSingle()
+
+    if (updateError) {
+      return errorResponse('요청 취소에 실패했습니다.', 500)
+    }
+
+    if (!updated) {
+      return errorResponse('매칭 요청을 찾을 수 없습니다.', 404)
+    }
+
+    return NextResponse.json({ success: true })
+  } catch {
+    return errorResponse('서버 오류가 발생했습니다.', 500)
+  }
+}
