@@ -8,6 +8,7 @@ import {
   seatsPerSectionFromStationCode,
 } from '@/lib/match-display'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 interface MatchRow {
   id: string
@@ -144,6 +145,118 @@ async function isSeatSeekerForMatch(
 }
 
 /**
+ * 수락(accepted) 완료 SSE — 상대 수락 시 type: accepted 이벤트 전송
+ */
+function createMatchAcceptSseResponse(
+  request: Request,
+  matchId: string,
+  userId: string
+): Response {
+  const supabase = createSupabaseAdminClient()
+  const encoder = new TextEncoder()
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (payload: object) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
+      }
+
+      let channel: RealtimeChannel | null = null
+      let closed = false
+
+      const cleanup = () => {
+        if (closed) return
+        closed = true
+        if (channel) {
+          supabase.removeChannel(channel)
+        }
+        try {
+          controller.close()
+        } catch {
+          // 이미 닫힌 스트림
+        }
+      }
+
+      try {
+        const { data: matchRaw, error: matchError } = await supabase
+          .from('matches')
+          .select('id, status, seat_seek_request_id, leaving_request_id')
+          .eq('id', matchId)
+          .maybeSingle()
+
+        if (matchError || !matchRaw) {
+          send({ type: 'error', message: '매칭을 찾을 수 없습니다.' })
+          cleanup()
+          return
+        }
+
+        const match = matchRaw as MatchRow
+        const participant = await isMatchParticipant(supabase, match, userId)
+        if (!participant) {
+          send({ type: 'error', message: '이 매칭에 접근할 수 없습니다.' })
+          cleanup()
+          return
+        }
+
+        if (match.status === 'accepted') {
+          send({ type: 'accepted', match_id: matchId })
+          cleanup()
+          return
+        }
+
+        channel = supabase
+          .channel(`match-accept-sse-${matchId}-${userId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'matches',
+              filter: `id=eq.${matchId}`,
+            },
+            (payload) => {
+              const row = payload.new as { id?: string; status?: string }
+              if (row.id && row.status === 'accepted') {
+                send({ type: 'accepted', match_id: matchId })
+                cleanup()
+              }
+            }
+          )
+          .subscribe((status) => {
+            if (status === 'CHANNEL_ERROR') {
+              send({ type: 'error', message: 'Realtime 연결에 실패했습니다.' })
+              cleanup()
+            }
+          })
+
+        request.signal.addEventListener('abort', cleanup)
+
+        const keepAlive = setInterval(() => {
+          if (closed) {
+            clearInterval(keepAlive)
+            return
+          }
+          send({ type: 'ping' })
+        }, 25000)
+
+        request.signal.addEventListener('abort', () => clearInterval(keepAlive))
+      } catch {
+        send({ type: 'error', message: '서버 오류가 발생했습니다.' })
+        cleanup()
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    },
+  })
+}
+
+/**
  * GET /api/matches/[id] — 매칭 결과(양보·착석 상대 정보) 조회
  */
 export async function GET(
@@ -159,6 +272,11 @@ export async function GET(
     const matchId = context.params.id?.trim()
     if (!matchId) {
       return errorResponse('매칭 ID가 필요합니다.', 400)
+    }
+
+    const sseMode = new URL(request.url).searchParams.get('sse')
+    if (sseMode === 'accept') {
+      return createMatchAcceptSseResponse(request, matchId, userId)
     }
 
     const supabase = createSupabaseAdminClient()

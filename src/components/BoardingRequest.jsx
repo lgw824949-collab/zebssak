@@ -1920,23 +1920,30 @@ function StepTrain({
     return filtered;
   })();
 
+  function resolveDisplayArrivalSeconds(train) {
+    const barvlRaw = resolveSeoulBarvlDtForTrain(
+      train.current,
+      currentStation,
+      seoulStationOrder,
+      apiLine,
+      train.barvlDt
+    );
+    if (barvlRaw == null || barvlRaw === "") return Number.POSITIVE_INFINITY;
+
+    const seconds = Number(barvlRaw);
+    if (!Number.isFinite(seconds) || seconds < 0) return Number.POSITIVE_INFINITY;
+    return seconds;
+  }
+
   const displayTrains = (() => {
     const limit = 3;
     if (!Array.isArray(directionFilteredTrains) || directionFilteredTrains.length === 0) {
       return [];
     }
 
-    const target = normalizeStationLabel(currentStation);
-    if (!target) return directionFilteredTrains.slice(0, limit);
-
-    const atCurrentStation = directionFilteredTrains.filter(
-      (train) => normalizeStationLabel(train.current) === target
-    );
-    if (atCurrentStation.length === 0) return directionFilteredTrains.slice(0, limit);
-
-    const seen = new Set(atCurrentStation.map((train) => train.id));
-    const rest = directionFilteredTrains.filter((train) => !seen.has(train.id));
-    return [...atCurrentStation, ...rest].slice(0, limit);
+    return [...directionFilteredTrains]
+      .sort((a, b) => resolveDisplayArrivalSeconds(a) - resolveDisplayArrivalSeconds(b))
+      .slice(0, limit);
   })();
 
   function isTrainAtBoardingStation(trainStation) {

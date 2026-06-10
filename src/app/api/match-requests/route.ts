@@ -4,6 +4,7 @@ import {
   equivalentDirectionsForMatch,
   normalizeDirectionForStorage,
 } from '@/lib/match-direction'
+import { sendMatchPushNotifications } from '@/lib/push-server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -265,9 +266,9 @@ async function tryCreateMatch(
   supabase: SupabaseClient,
   newRequestId: string,
   newRequestType: RequestType,
-  trainNo: string,
+  trainUuid: string,
+  carNumber: number,
   linePrefix: string,
-  lineNumber: number,
   direction: string
 ): Promise<string | null> {
   const oppositeType: RequestType =
@@ -287,6 +288,8 @@ async function tryCreateMatch(
     `)
     .eq('status', 'waiting')
     .eq('request_type', oppositeType)
+    .eq('train_id', trainUuid)
+    .eq('car_number', carNumber)
     .in('direction', directionValues)
     .neq('id', newRequestId)
 
@@ -357,6 +360,15 @@ async function tryCreateMatch(
     await supabase.from('matches').delete().eq('id', match.id as string)
     return null
   }
+
+  void sendMatchPushNotifications(
+    supabase,
+    match.id as string,
+    seatSeekId,
+    leavingId
+  ).catch(() => {
+    // 푸시 실패해도 매칭은 유지합니다.
+  })
 
   return match.id as string
 }
@@ -580,9 +592,9 @@ export async function POST(request: Request) {
       supabase,
       created.id as string,
       requestType,
-      trainNo,
+      trainUuid,
+      carNumber,
       linePrefix,
-      lineNumber,
       directionStored
     )
 

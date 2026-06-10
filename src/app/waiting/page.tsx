@@ -136,9 +136,28 @@ function resolveRequestDirection(draft: BoardingDraft): string {
   return '2'
 }
 
+/** lineKey가 없을 때 lineLabel에서 호선 키를 복원합니다. */
+function resolveLineKeyFromDraft(draft: BoardingDraft): BoardingLineKey | null {
+  if (draft.lineKey) return draft.lineKey
+
+  const fromLabel = (draft.lineLabel || '').replace(/\s+/g, '')
+  const seoulFromLabel = fromLabel.match(/^서울([1-9])호선$/)
+  if (seoulFromLabel?.[1]) {
+    return `seoul${seoulFromLabel[1]}` as BoardingLineKey
+  }
+  const incheonFromLabel = fromLabel.match(/^인천([12])호선$/)
+  if (incheonFromLabel?.[1]) {
+    return `incheon${incheonFromLabel[1]}` as BoardingLineKey
+  }
+  if (fromLabel === '서울1호선') return 'seoul1'
+  if (fromLabel === '서울2호선') return 'seoul2'
+
+  return null
+}
+
 function getDirectionDisplay(draft: BoardingDraft): string {
   const direction = normalizeDirection(draft.direction)
-  const lineKey = draft.lineKey
+  const lineKey = resolveLineKeyFromDraft(draft)
 
   if (lineKey === 'seoul1' || lineKey === 'seoul1_incheon' || lineKey === 'seoul1_cheonan') {
     return direction === '1' ? '소요산 방면' : direction === '2' ? '인천·신창 방면' : ''
@@ -158,8 +177,15 @@ function getDirectionDisplay(draft: BoardingDraft): string {
   }
   if (lineKey === 'incheon2') return direction === '1' ? '운연 방면' : direction === '2' ? '검단오류 방면' : ''
 
-  if (draft.lineNumber === 1) return direction === '1' ? '소요산 방면' : direction === '2' ? '인천·신창 방면' : ''
-  if (draft.lineNumber === 2) return direction === '1' ? '내선순환' : direction === '2' ? '외선순환' : ''
+  // lineNumber만으로는 2호선·7호선을 구분할 수 없어 lineLabel 기반으로만 폴백합니다.
+  const fromLabel = (draft.lineLabel || '').replace(/\s+/g, '')
+  if (fromLabel === '서울1호선' || fromLabel === '인천1호선') {
+    return direction === '1' ? '소요산 방면' : direction === '2' ? '인천·신창 방면' : ''
+  }
+  if (fromLabel === '서울2호선' || fromLabel === '인천2호선') {
+    return direction === '1' ? '내선순환' : direction === '2' ? '외선순환' : ''
+  }
+
   return ''
 }
 
@@ -204,11 +230,30 @@ function formatTrainSubline(draft: BoardingDraft): string {
   return parts.join(' · ')
 }
 
-const PRIORITY_CRITERIA = [
-  '먼저 등록한 순',
-  '교통약자 우선',
-  '남은 역 수 많은 순',
-] as const
+const MATCH_GUIDE_BY_ROLE = {
+  provider: [
+    '착석 희망자가 등록되면 자동 연결',
+    '매칭되면 알림 화면으로 이동',
+    '이 화면을 나가도 대기는 유지됩니다',
+  ],
+  seeker: [
+    '하차 예정자가 등록되면 자동 연결',
+    '매칭되면 알림 화면으로 이동',
+    '이 화면을 나가도 대기는 유지됩니다',
+  ],
+} as const
+
+const WAITING_SUBTITLE_BY_ROLE = {
+  provider: '착석 희망자가 등록되면 알려드려요',
+  seeker: '하차 예정자가 등록되면 알려드려요',
+} as const
+
+const MATCH_TYPE_LABEL_BY_ROLE = {
+  provider: '하차 예정 등록',
+  seeker: '착석 희망 등록',
+} as const
+
+const ACCEPT_STATUS_POLL_MS = 3000
 
 const MOBILE_SHELL_MAX_WIDTH = 390
 const MOBILE_PAGE_X = 16
@@ -296,6 +341,7 @@ export default function WaitingPage() {
   const [draft, setDraft] = useState<BoardingDraft | null>(null)
   const [waitingRank, setWaitingRank] = useState<number | null>(null)
   const [isProviderWaiting, setIsProviderWaiting] = useState(false)
+  const [isSeekerWaiting, setIsSeekerWaiting] = useState(false)
   const [error, setError] = useState('')
   const [isReady, setIsReady] = useState(false)
 
@@ -408,6 +454,8 @@ export default function WaitingPage() {
 
           if (!cancelled) {
             setWaitingRank(result.data.queue_position ?? 1)
+            setIsSeekerWaiting(true)
+            setIsProviderWaiting(false)
           }
         } else if (requestId) {
           const statusResponse = await fetch(
@@ -442,6 +490,10 @@ export default function WaitingPage() {
 
           if (statusResult.data?.match?.id) {
             sessionStorage.setItem('activeMatchId', statusResult.data.match.id)
+            if (statusResult.data.match.status === 'accepted') {
+              router.replace('/matched')
+              return
+            }
             router.replace('/matching')
             return
           }
@@ -450,9 +502,12 @@ export default function WaitingPage() {
             if (isProviderRole) {
               const requestStatus = statusResult.data?.match_request?.status
               setIsProviderWaiting(requestStatus === 'waiting' || !requestStatus)
+              setIsSeekerWaiting(false)
               setWaitingRank(null)
             } else {
+              const requestStatus = statusResult.data?.match_request?.status
               setIsProviderWaiting(false)
+              setIsSeekerWaiting(requestStatus === 'waiting' || !requestStatus)
               setWaitingRank(statusResult.data?.queue_position ?? 1)
             }
           }
@@ -505,6 +560,78 @@ export default function WaitingPage() {
     }
   }, [router])
 
+  // 수락(accepted) 상태 폴링 — 상대 수락 시 완료 화면으로 이동
+  useEffect(() => {
+    if (!isReady) {
+      return
+    }
+
+    const token = localStorage.getItem('token')
+    const requestId = sessionStorage.getItem(ACTIVE_REQUEST_KEY)
+    if (!token || !requestId) {
+      return
+    }
+
+    let cancelled = false
+
+    async function pollAcceptStatus() {
+      try {
+        const statusResponse = await fetch(
+          `/api/match-requests/status?request_id=${encodeURIComponent(requestId as string)}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }
+        )
+
+        if (cancelled) return
+
+        if (handleUnauthorizedResponse(statusResponse)) {
+          return
+        }
+
+        const statusResult = (await statusResponse.json()) as {
+          success?: boolean
+          data?: {
+            match?: { id?: string; status?: string } | null
+          }
+        }
+
+        if (!statusResponse.ok || !statusResult.success) {
+          return
+        }
+
+        const match = statusResult.data?.match
+        if (!match?.id) {
+          return
+        }
+
+        sessionStorage.setItem('activeMatchId', match.id)
+
+        if (match.status === 'accepted') {
+          router.replace('/matched')
+          return
+        }
+
+        if (match.status === 'pending') {
+          router.replace('/matching')
+        }
+      } catch {
+        // 폴링 실패 시 다음 주기에 재시도합니다.
+      }
+    }
+
+    void pollAcceptStatus()
+    const timerId = window.setInterval(() => {
+      void pollAcceptStatus()
+    }, ACCEPT_STATUS_POLL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timerId)
+    }
+  }, [isReady, router])
+
   function handleCancel() {
     sessionStorage.removeItem('boardingDraft')
     sessionStorage.removeItem(WAITING_DRAFT_KEY)
@@ -544,6 +671,8 @@ export default function WaitingPage() {
   const remainingStationsText =
     remainingStations === null ? '미확인' : `${remainingStations}`
   const isProviderDraft = draft?.role === 'provider'
+  const waitingRole = isProviderDraft ? 'provider' : 'seeker'
+  const isWaitingPanelVisible = isProviderDraft ? isProviderWaiting : isSeekerWaiting
   const pageTitle = isProviderDraft ? '하차 예정 대기' : '착석 희망 대기'
 
   return (
@@ -668,7 +797,7 @@ export default function WaitingPage() {
           </div>
         )}
 
-        {(waitingRank !== null || (isProviderDraft && isProviderWaiting)) && (
+        {isWaitingPanelVisible && (
           <>
             <section
               style={{
@@ -679,46 +808,28 @@ export default function WaitingPage() {
                 textAlign: 'center',
               }}
             >
-              {isProviderDraft ? (
-                <>
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#6B7280' }}>
-                    현재 상태
-                  </p>
-                  <p
-                    style={{
-                      margin: '12px 0 0',
-                      fontSize: 28,
-                      fontWeight: 800,
-                      lineHeight: 1.25,
-                      color: lineColor,
-                    }}
-                  >
-                    매칭 대기 중
-                  </p>
-                  <p style={{ margin: '10px 0 0', fontSize: 14, fontWeight: 500, color: '#6B7280' }}>
-                    착석 희망자가 등록되면 알려드려요
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#6B7280' }}>
-                    현재 대기 순위
-                  </p>
-                  <p
-                    style={{
-                      margin: '12px 0 0',
-                      fontSize: 52,
-                      fontWeight: 800,
-                      lineHeight: 1,
-                      color: lineColor,
-                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                    }}
-                  >
-                    {waitingRank}
-                    <span style={{ fontSize: 24, fontWeight: 700, marginLeft: 4 }}>위</span>
-                  </p>
-                </>
-              )}
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#6B7280' }}>
+                현재 상태
+              </p>
+              <p
+                style={{
+                  margin: '12px 0 0',
+                  fontSize: 28,
+                  fontWeight: 800,
+                  lineHeight: 1.25,
+                  color: lineColor,
+                }}
+              >
+                매칭 대기 중
+              </p>
+              <p style={{ margin: '10px 0 0', fontSize: 14, fontWeight: 500, color: '#6B7280' }}>
+                {WAITING_SUBTITLE_BY_ROLE[waitingRole]}
+              </p>
+              {!isProviderDraft && waitingRank != null ? (
+                <p style={{ margin: '8px 0 0', fontSize: 13, fontWeight: 600, color: '#9CA3AF' }}>
+                  대기 순위 {waitingRank}위
+                </p>
+              ) : null}
               <div
                 style={{
                   marginTop: 16,
@@ -782,7 +893,7 @@ export default function WaitingPage() {
                     매칭 유형
                   </span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>
-                    {isProviderDraft ? '하차 예정 등록' : '교통약자 우선'}
+                    {MATCH_TYPE_LABEL_BY_ROLE[waitingRole]}
                   </span>
                 </div>
               </section>
@@ -797,17 +908,10 @@ export default function WaitingPage() {
               }}
             >
               <p style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 700, color: '#374151' }}>
-                {isProviderDraft ? '매칭 안내' : '우선순위 기준'}
+                매칭 안내
               </p>
               <ol style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                {(isProviderDraft
-                  ? [
-                      '착석 희망자가 등록되면 자동 연결',
-                      '매칭되면 알림 화면으로 이동',
-                      '이 화면을 나가도 대기는 유지됩니다',
-                    ]
-                  : PRIORITY_CRITERIA
-                ).map((label, index) => (
+                {MATCH_GUIDE_BY_ROLE[waitingRole].map((label, index) => (
                   <li
                     key={label}
                     style={{

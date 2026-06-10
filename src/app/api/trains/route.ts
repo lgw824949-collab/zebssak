@@ -398,7 +398,15 @@ function stationDistance(
   return Math.abs(fromIndex - trainIndex)
 }
 
-function sortTrainsByProximity(
+function resolveTrainArrivalSortKey(barvlDt: number | null | undefined): number {
+  if (barvlDt == null || !Number.isFinite(barvlDt) || barvlDt < 0) {
+    return Number.POSITIVE_INFINITY
+  }
+  return barvlDt
+}
+
+/** 탑승역 기준 열차 목록 — 도착 시간 빠른 순, 동률 시 현재 위치 거리순 */
+function sortTrainsForBoarding(
   trains: TrainListItem[],
   stationOrder: readonly string[],
   currentStation: string | null
@@ -406,6 +414,13 @@ function sortTrainsByProximity(
   const stationIndexMap = buildStationIndexMap(stationOrder)
 
   return [...trains].sort((a, b) => {
+    const arrivalA = resolveTrainArrivalSortKey(a.barvl_dt)
+    const arrivalB = resolveTrainArrivalSortKey(b.barvl_dt)
+
+    if (arrivalA !== arrivalB) {
+      return arrivalA - arrivalB
+    }
+
     const distA = stationDistance(stationIndexMap, currentStation, a.station_name)
     const distB = stationDistance(stationIndexMap, currentStation, b.station_name)
 
@@ -788,11 +803,11 @@ export async function GET(request: Request) {
       currentStation,
       destinationStation
     )
-    trains = sortTrainsByProximity(trains, stationOrder, currentStation)
-
     if (isSeoulLine(line)) {
       trains = applyEstimatedArrivalToTrains(trains, line, currentStation)
     }
+
+    trains = sortTrainsForBoarding(trains, stationOrder, currentStation)
 
     return NextResponse.json(
       {

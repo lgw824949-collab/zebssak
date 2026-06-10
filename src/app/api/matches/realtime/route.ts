@@ -29,9 +29,15 @@ export async function GET(request: Request) {
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (!matchRequest || matchRequest.request_type !== 'seat_seek') {
+  const requestType = matchRequest?.request_type
+  const isSeeker = requestType === 'seat_seek'
+  const isProvider = requestType === 'leaving'
+
+  if (!matchRequest || (!isSeeker && !isProvider)) {
     return new Response('Forbidden', { status: 403 })
   }
+
+  const matchRequestColumn = isSeeker ? 'seat_seek_request_id' : 'leaving_request_id'
 
   const encoder = new TextEncoder()
 
@@ -46,7 +52,7 @@ export async function GET(request: Request) {
       const { data: existingMatch } = await supabase
         .from('matches')
         .select('id, status')
-        .eq('seat_seek_request_id', requestId)
+        .eq(matchRequestColumn, requestId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -73,15 +79,20 @@ export async function GET(request: Request) {
         }
       }
 
+      const channelName = isSeeker
+        ? `matches-seeker-${requestId}`
+        : `matches-provider-${requestId}`
+      const matchFilter = `${matchRequestColumn}=eq.${requestId}`
+
       channel = supabase
-        .channel(`matches-seeker-${requestId}`)
+        .channel(channelName)
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
             table: 'matches',
-            filter: `seat_seek_request_id=eq.${requestId}`,
+            filter: matchFilter,
           },
           (payload) => {
             const row = payload.new as { id?: string }
@@ -97,7 +108,7 @@ export async function GET(request: Request) {
             event: 'UPDATE',
             schema: 'public',
             table: 'matches',
-            filter: `seat_seek_request_id=eq.${requestId}`,
+            filter: matchFilter,
           },
           (payload) => {
             const row = payload.new as { id?: string; status?: string }

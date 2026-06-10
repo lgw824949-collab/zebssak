@@ -335,6 +335,24 @@ function loadHomeWaitDraftFromSession(): {
   }
 }
 
+/** 서버에 활성 요청이 없을 때 남은 등록 session을 정리합니다. */
+function clearHomeMatchSession(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    sessionStorage.removeItem('boardingDraft')
+    sessionStorage.removeItem('waitingDraft')
+    sessionStorage.removeItem('providerRegistered')
+    sessionStorage.removeItem('activeMatchId')
+    sessionStorage.removeItem('activeMatchRequestId')
+    sessionStorage.removeItem('seekerMatchRequestRegistered')
+  } catch {
+    // sessionStorage 정리 실패 시 무시합니다.
+  }
+}
+
 /** 매칭 완료 후 홈에서 재등록 안내를 표시하기 위한 힌트를 읽습니다. */
 function loadHomeMatchCompletedHint(): HomeMatchCompletedHint | null {
   if (typeof window === 'undefined') {
@@ -573,7 +591,7 @@ async function fetchHomeWaitView(token: string): Promise<HomeWaitView | null> {
     // sessionStorage 실패 시 홈 표시만 유지합니다.
   }
 
-  return buildHomeWaitView({
+  const view = buildHomeWaitView({
     requestId,
     requestType,
     requestStatus,
@@ -584,6 +602,12 @@ async function fetchHomeWaitView(token: string): Promise<HomeWaitView | null> {
     trainNo,
     carNumber,
   })
+
+  if (!view) {
+    clearHomeMatchSession()
+  }
+
+  return view
 }
 
 /**
@@ -626,34 +650,12 @@ export default function Home() {
   }, [])
 
   const loadHomeWaitStatus = useCallback(async (token: string | null) => {
-    const applySessionOrCompletedView = () => {
-      const sessionSnapshot = loadHomeWaitDraftFromSession()
-      if (sessionSnapshot) {
-        clearHomeMatchCompletedHint()
-        setHomeWaitView(
-          buildHomeWaitView({
-            requestId: sessionSnapshot.requestId,
-            requestType:
-              sessionSnapshot.draft.role === 'provider' ? 'leaving' : 'seat_seek',
-            requestStatus: 'waiting',
-            destinationName: formatStationDisplayName(
-              sessionSnapshot.draft.destinationName?.trim() || '목적지'
-            ),
-            queuePosition: null,
-            waitingCount: 0,
-            pendingMatchId: null,
-            trainNo: sessionSnapshot.draft.trainNo ?? null,
-            carNumber: sessionSnapshot.draft.carNumber ?? null,
-          })
-        )
-        return
-      }
-
+    const applyCompletedHintOnly = () => {
       setHomeWaitView(resolveHomeWaitViewFromCompletedHint())
     }
 
     if (!token) {
-      applySessionOrCompletedView()
+      applyCompletedHintOnly()
       return
     }
 
@@ -665,9 +667,11 @@ export default function Home() {
         return
       }
 
-      applySessionOrCompletedView()
+      clearHomeMatchSession()
+      applyCompletedHintOnly()
     } catch {
-      applySessionOrCompletedView()
+      clearHomeMatchSession()
+      applyCompletedHintOnly()
     }
   }, [])
 
@@ -1462,7 +1466,18 @@ export default function Home() {
             >
               바로 앉기 등록
             </button>
-          ) : (
+          ) : null}
+
+          {activeTab === 'seek' &&
+          homeWaitView?.phase === 'waiting_seek' &&
+          !isMatchingPaused &&
+          !isOutsideOperatingHours ? (
+            <p className="mt-2 text-center text-xs font-semibold leading-relaxed text-[#5F6B2E]">
+              이미 등록 중이에요. 아래에서 대기 상태를 확인해 주세요.
+            </p>
+          ) : null}
+
+          {activeTab === 'leave' ? (
             <button
               type="button"
               disabled={
@@ -1475,7 +1490,16 @@ export default function Home() {
             >
               내릴게요 등록
             </button>
-          )}
+          ) : null}
+
+          {activeTab === 'leave' &&
+          homeWaitView?.phase === 'waiting_leave' &&
+          !isMatchingPaused &&
+          !isOutsideOperatingHours ? (
+            <p className="mt-2 text-center text-xs font-semibold leading-relaxed text-[#5F6B2E]">
+              이미 등록 중이에요. 아래에서 대기 상태를 확인해 주세요.
+            </p>
+          ) : null}
 
           {homeWaitView?.phase === 'match_alert' ? (
             <button

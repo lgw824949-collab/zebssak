@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FormEvent, Suspense, useState } from 'react'
+import { subscribePush } from '@/lib/push'
 
 interface AuthApiResponse {
   success: boolean
@@ -86,6 +87,16 @@ function LoginPageContent() {
 
       localStorage.setItem('token', result.data.token)
       localStorage.setItem('user', JSON.stringify(result.data.user))
+
+      if ('serviceWorker' in navigator) {
+        try {
+          await navigator.serviceWorker.register('/sw.js')
+        } catch {
+          // SW 등록 실패 시에도 로그인은 유지합니다.
+        }
+      }
+
+      void subscribePush(result.data.token)
 
       const returnUrl = buildBoardingReturnUrl(searchParams)
       router.replace(returnUrl ?? '/')

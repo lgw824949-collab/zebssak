@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 const MATCH_TIMEOUT_SECONDS = 30
+const PARTNER_ACCEPT_REDIRECT_MS = 1500
 
 interface MatchGuideState {
   carNumber: number | null
@@ -30,6 +31,82 @@ function resolveMatchId(matchIdFromUrl: string | null): string | null {
   return fromUrl
 }
 
+/** 수락 완료 SSE 구독 — type: accepted 수신 시 콜백 호출 */
+async function subscribeMatchAcceptSse(
+  matchId: string,
+  token: string,
+  onAccepted: (matchId: string) => void,
+  onError: (message: string) => void,
+  signal: AbortSignal
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `/api/matches/${encodeURIComponent(matchId)}?sse=accept`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+      }
+    )
+
+    if (signal.aborted) {
+      return
+    }
+
+    if (!response.ok || !response.body) {
+      onError('수락 알림 연결에 실패했습니다.')
+      return
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+
+      buffer += decoder.decode(value, { stream: true })
+      const chunks = buffer.split('\n\n')
+      buffer = chunks.pop() ?? ''
+
+      for (const chunk of chunks) {
+        const line = chunk.split('\n').find((entry) => entry.startsWith('data: '))
+        if (!line) continue
+
+        try {
+          const payload = JSON.parse(line.slice(6)) as {
+            type?: string
+            match_id?: string
+            message?: string
+          }
+
+          if (payload.type === 'accepted' && payload.match_id) {
+            onAccepted(payload.match_id)
+            return
+          }
+          if (payload.type === 'error' && payload.message) {
+            onError(payload.message)
+            return
+          }
+        } catch {
+          onError('수락 알림 메시지 처리에 실패했습니다.')
+          return
+        }
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return
+    }
+    if (signal.aborted) {
+      return
+    }
+    onError('수락 알림 연결에 실패했습니다.')
+  }
+}
+
 /**
  * 매칭 알림 화면 — 30초 내 수락/거절
  */
@@ -43,14 +120,29 @@ function MatchingForm() {
     lineLabel: null,
     destinationName: null,
   })
+  const [viewerRole, setViewerRole] = useState<'seeker' | 'provider' | null>(null)
+  const [partnerAcceptedNotice, setPartnerAcceptedNotice] = useState(false)
   const [actionError, setActionError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const expireRequestedRef = useRef(false)
   const actionHandledRef = useRef(false)
+  const acceptNavigateScheduledRef = useRef(false)
 
   const goToWaiting = useCallback(() => {
     router.replace('/waiting')
   }, [router])
+
+  const goToMatched = useCallback(
+    (matchId: string) => {
+      if (acceptNavigateScheduledRef.current) {
+        return
+      }
+      acceptNavigateScheduledRef.current = true
+      sessionStorage.setItem('activeMatchId', matchId)
+      router.replace('/matched')
+    },
+    [router]
+  )
 
   const expireMatchOnTimeout = useCallback(async () => {
     if (expireRequestedRef.current || actionHandledRef.current) {
@@ -96,6 +188,8 @@ function MatchingForm() {
         const result = (await response.json()) as {
           success?: boolean
           data?: {
+            status?: string
+            viewer_role?: 'seeker' | 'provider'
             partner?: {
               car_number?: number | null
               car_door_short?: string | null
@@ -106,6 +200,15 @@ function MatchingForm() {
         }
 
         if (!response.ok || !result.success || !result.data?.partner) {
+          return
+        }
+
+        if (result.data.viewer_role === 'seeker' || result.data.viewer_role === 'provider') {
+          setViewerRole(result.data.viewer_role)
+        }
+
+        if (result.data.status === 'accepted') {
+          goToMatched(matchId)
           return
         }
 
@@ -130,7 +233,42 @@ function MatchingForm() {
     }
 
     void loadPartnerGuide()
-  }, [router, searchParams])
+  }, [goToMatched, router, searchParams])
+
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    const matchId = resolveMatchId(searchParams.get('matchId'))
+    if (!token || !matchId || !viewerRole || actionHandledRef.current) {
+      return
+    }
+
+    const abortController = new AbortController()
+
+    void subscribeMatchAcceptSse(
+      matchId,
+      token,
+      (acceptedMatchId) => {
+        if (viewerRole === 'provider') {
+          setPartnerAcceptedNotice(true)
+          window.setTimeout(() => {
+            goToMatched(acceptedMatchId)
+          }, PARTNER_ACCEPT_REDIRECT_MS)
+          return
+        }
+        goToMatched(acceptedMatchId)
+      },
+      (message) => {
+        setActionError(message)
+      },
+      abortController.signal
+    ).catch(() => {
+      // Strict Mode cleanup abort — 무시
+    })
+
+    return () => {
+      abortController.abort()
+    }
+  }, [goToMatched, searchParams, viewerRole])
 
   useEffect(() => {
     if (actionHandledRef.current) {
@@ -188,6 +326,10 @@ function MatchingForm() {
         const result = (await response.json()) as {
           success?: boolean
           error?: string
+          data?: {
+            match_id?: string
+            status?: string
+          }
         }
 
         if (!response.ok || !result.success) {
@@ -197,7 +339,7 @@ function MatchingForm() {
         }
 
         if (action === 'accept') {
-          router.push('/matched')
+          goToMatched(result.data?.match_id ?? matchId)
         } else {
           goToWaiting()
         }
@@ -208,7 +350,7 @@ function MatchingForm() {
         setIsSubmitting(false)
       }
     },
-    [goToWaiting, isSubmitting, router, searchParams]
+    [goToMatched, goToWaiting, isSubmitting, router, searchParams]
   )
 
   function handleAccept() {
@@ -262,10 +404,39 @@ function MatchingForm() {
             매칭 성공!
           </h1>
           <p className="zeb-page-desc mt-3">
-            하차 예정 승객과 매칭되었습니다.
-            <br />
-            아래 칸으로 이동해주세요.
+            {viewerRole === 'provider' ? (
+              <>
+                착석 희망자의 수락을 기다리고 있습니다.
+                <br />
+                수락되면 완료 화면으로 이동합니다.
+              </>
+            ) : (
+              <>
+                하차 예정 승객과 매칭되었습니다.
+                <br />
+                아래 칸으로 이동해주세요.
+              </>
+            )}
           </p>
+
+          {partnerAcceptedNotice ? (
+            <div
+              className="mt-4 rounded-[var(--radius-button)] border-2 px-4 py-4"
+              style={{
+                background: 'var(--surface)',
+                borderColor: 'var(--line-1)',
+              }}
+              role="status"
+            >
+              <p
+                className="font-semibold zeb-text-line1"
+                style={{ fontSize: 'var(--font-size-lg)' }}
+              >
+                상대방이 수락했습니다
+              </p>
+              <p className="zeb-caption mt-2">잠시 후 완료 화면으로 이동합니다.</p>
+            </div>
+          ) : null}
 
           <div
             className="mt-8 rounded-[var(--radius-button)] border-2 px-4 py-5"
@@ -365,24 +536,30 @@ function MatchingForm() {
           {actionError && (
             <div className="zeb-alert zeb-alert--danger">{actionError}</div>
           )}
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={handleReject}
-              disabled={isSubmitting}
-              className="zeb-btn zeb-btn--secondary"
-            >
-              {isSubmitting ? '처리 중...' : '거절'}
-            </button>
-            <button
-              type="button"
-              onClick={handleAccept}
-              disabled={isSubmitting}
-              className="zeb-btn zeb-btn--line1"
-            >
-              {isSubmitting ? '처리 중...' : '수락'}
-            </button>
-          </div>
+          {viewerRole === 'provider' ? (
+            <p className="text-center text-sm font-medium text-[#6B7280]">
+              착석 희망자가 수락하면 알려드립니다.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={handleReject}
+                disabled={isSubmitting || partnerAcceptedNotice}
+                className="zeb-btn zeb-btn--secondary"
+              >
+                {isSubmitting ? '처리 중...' : '거절'}
+              </button>
+              <button
+                type="button"
+                onClick={handleAccept}
+                disabled={isSubmitting || partnerAcceptedNotice}
+                className="zeb-btn zeb-btn--line1"
+              >
+                {isSubmitting ? '처리 중...' : '수락'}
+              </button>
+            </div>
+          )}
         </div>
       </footer>
       <style jsx global>{`
