@@ -83,6 +83,68 @@ function loadBoardingDraft(): BoardingDraft | null {
   }
 }
 
+/** session에 draft가 없을 때 서버의 현재 요청으로 draft를 복원합니다. */
+async function loadCurrentRequestSnapshot(
+  token: string,
+  signal?: AbortSignal
+): Promise<{ draft: BoardingDraft; requestId: string } | null> {
+  try {
+    const response = await fetch('/api/match-requests/current', {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+      signal,
+    })
+
+    const payload = (await response.json()) as {
+      success?: boolean
+      data?: {
+        id?: string
+        request_type?: string | null
+        train_no?: string | null
+        line_number?: number | null
+        car_number?: number | null
+        destination_station_name?: string | null
+        remaining_stations?: number | null
+      }
+    }
+
+    if (!response.ok || !payload.success || !payload.data?.id) {
+      return null
+    }
+
+    const data = payload.data
+    const isProvider = data.request_type === 'leaving'
+    const lineNumber = typeof data.line_number === 'number' ? data.line_number : 7
+
+    const draft: BoardingDraft = {
+      role: isProvider ? 'provider' : 'seeker',
+      lineNumber,
+      lineLabel: `서울 ${lineNumber}호선`,
+      lineKey: lineNumber === 7 ? 'seoul7' : undefined,
+      trainNo: data.train_no?.trim() || '-',
+      carNumber: typeof data.car_number === 'number' ? data.car_number : 1,
+      destinationId: '',
+      destinationName: data.destination_station_name?.trim() || '목적지',
+      remainingStations:
+        typeof data.remaining_stations === 'number' ? data.remaining_stations : 0,
+    }
+
+    return { draft, requestId: data.id as string }
+  } catch {
+    return null
+  }
+}
+
+function persistWaitingSession(draft: BoardingDraft, requestId: string): void {
+  sessionStorage.setItem(ACTIVE_REQUEST_KEY, requestId)
+  sessionStorage.setItem(WAITING_DRAFT_KEY, JSON.stringify(draft))
+  if (draft.role === 'provider') {
+    sessionStorage.setItem(PROVIDER_REGISTERED_FLAG_KEY, 'true')
+  } else {
+    sessionStorage.setItem(REGISTERED_FLAG_KEY, 'true')
+  }
+}
+
 /** draft에서 좌석 정보 추출 (seeker API 필수) */
 function resolveSeatFromDraft(
   draft: BoardingDraft
@@ -421,8 +483,31 @@ export default function WaitingPage() {
 
     async function initializeWaiting() {
       try {
-        const parsedDraft = loadBoardingDraft()
-        const existingRequestId = sessionStorage.getItem(ACTIVE_REQUEST_KEY)
+        let parsedDraft = loadBoardingDraft()
+        let existingRequestId = sessionStorage.getItem(ACTIVE_REQUEST_KEY)
+
+        if (!parsedDraft || !existingRequestId) {
+          const snapshot = await loadCurrentRequestSnapshot(
+            authToken,
+            abortController.signal
+          )
+          if (cancelled) {
+            return
+          }
+          if (snapshot) {
+            if (!parsedDraft) {
+              parsedDraft = snapshot.draft
+            }
+            if (!existingRequestId) {
+              existingRequestId = snapshot.requestId
+            }
+            persistWaitingSession(snapshot.draft, snapshot.requestId)
+            if (!cancelled) {
+              setDraft(parsedDraft)
+            }
+          }
+        }
+
         const draftRole = resolveDraftRole(parsedDraft)
         const isProviderRole = draftRole === 'provider'
         const isRegistered = isProviderRole
@@ -878,7 +963,7 @@ export default function WaitingPage() {
           </p>
           <button
             type="button"
-            onClick={handleCancel}
+            onClick={() => router.push('/')}
             className="zeb-btn zeb-btn--secondary"
           >
             홈으로

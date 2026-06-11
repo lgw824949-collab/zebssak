@@ -1245,13 +1245,11 @@ export default function Home() {
         <span className="zeb-touch-target w-9 shrink-0" aria-hidden />
       </header>
 
-      <main
-        className="zeb-no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain"
-      >
+      <main className="zeb-no-scrollbar zeb-scroll-y flex min-h-0 flex-1 flex-col pb-4">
         {/* 객실 일러스트 — 높이를 키워 3~4명이 보이게, 나머지는 좌우 스크롤 */}
         <section className="w-full shrink-0 bg-[#f5f5f0]" aria-label="지하철 객실 안내">
           <div
-            className="zeb-no-scrollbar overflow-x-auto overflow-y-hidden touch-pan-x"
+            className="zeb-no-scrollbar overflow-x-auto overflow-y-hidden [touch-action:pan-x_pan-y]"
             aria-label="객실 이미지 가로 스크롤"
           >
             <img
