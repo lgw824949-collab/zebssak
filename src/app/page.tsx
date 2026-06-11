@@ -26,7 +26,7 @@ interface StoredUser {
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
 const GPS_MAX_RADIUS_KM = 1
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
-const HOME_UI_VERSION = '2026-06-11-scroll-touch-v29'
+const HOME_UI_VERSION = '2026-06-11-native-scroll-v30'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {
@@ -101,19 +101,6 @@ const DEFAULT_TRANSFER_STATIONS = [
 ] as const
 
 // const VOICE_PARSE_PENDING_KEY = 'voiceParsePending'
-/** 홈 화면 확대 단계 — localStorage에 저장 */
-const HOME_ZOOM_STORAGE_KEY = 'zeb_home_zoom_scale'
-const HOME_ZOOM_STEPS = [1, 1.1, 1.25] as const
-type HomeZoomScale = (typeof HOME_ZOOM_STEPS)[number]
-
-function parseStoredHomeZoom(raw: string | null): HomeZoomScale {
-  const parsed = Number(raw)
-  if (HOME_ZOOM_STEPS.includes(parsed as HomeZoomScale)) {
-    return parsed as HomeZoomScale
-  }
-  return 1
-}
-
 type TransferStationRow = {
   destination_station?:
     | { station_name?: string | null }
@@ -636,7 +623,6 @@ export default function Home() {
   const [transferStationsLoading, setTransferStationsLoading] = useState(true)
   const [transferStations, setTransferStations] = useState<string[]>([...DEFAULT_TRANSFER_STATIONS])
   const [selectedTransferStation, setSelectedTransferStation] = useState<string | null>(null)
-  const [homeZoomScale, setHomeZoomScale] = useState<HomeZoomScale>(1)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [homeWaitView, setHomeWaitView] = useState<HomeWaitView | null>(null)
   const [isCancellingHomeWait, setIsCancellingHomeWait] = useState(false)
@@ -711,57 +697,6 @@ export default function Home() {
   }, [congestionStatus, isLoadingData])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    // 로컬 개발에서는 SW·캐시 갱신이 _next/static 500을 유발하므로 건너뜁니다.
-    if (process.env.NODE_ENV === 'development') return
-
-    const versionKey = 'zeb_home_ui_version'
-    const reloadOnceKey = `zeb_home_reloaded_${HOME_UI_VERSION}`
-    const previous = localStorage.getItem(versionKey)
-    if (previous === HOME_UI_VERSION || sessionStorage.getItem(reloadOnceKey)) return
-
-    localStorage.setItem(versionKey, HOME_UI_VERSION)
-    const hadServiceWorker = Boolean(navigator.serviceWorker?.controller)
-
-    void (async () => {
-      try {
-        if ('caches' in window) {
-          const keys = await caches.keys()
-          await Promise.all(keys.map((key) => caches.delete(key)))
-        }
-        if ('serviceWorker' in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations()
-          await Promise.all(registrations.map((registration) => registration.unregister()))
-        }
-      } catch {
-        // 캐시 정리 실패 시에도 화면은 계속 표시합니다.
-      }
-
-      const versionChanged = previous != null && previous !== HOME_UI_VERSION
-      if (versionChanged || hadServiceWorker) {
-        sessionStorage.setItem(reloadOnceKey, '1')
-        window.location.reload()
-      }
-    })()
-  }, [])
-
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      return
-    }
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
-      return
-    }
-
-    void navigator.serviceWorker
-      .register(`/sw.js?v=${HOME_UI_VERSION}`)
-      .then((registration) => registration.update())
-      .catch(() => {
-        // SW 갱신 실패 시에도 화면은 계속 표시합니다.
-      })
-  }, [])
-
-  useEffect(() => {
     try {
       const token = localStorage.getItem('token')
       const raw = localStorage.getItem('user')
@@ -786,18 +721,6 @@ export default function Home() {
   useEffect(() => {
     void loadTransferStations()
   }, [loadTransferStations])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    try {
-      setHomeZoomScale(parseStoredHomeZoom(localStorage.getItem(HOME_ZOOM_STORAGE_KEY)))
-    } catch {
-      setHomeZoomScale(1)
-    }
-  }, [])
 
   const displayName = user?.username ?? null
   const isLoggedIn = Boolean(displayName)
@@ -1213,10 +1136,7 @@ export default function Home() {
   }
 
   return (
-    <div
-      className="mx-auto flex w-full max-w-[480px] flex-col bg-[#f5f5f0]"
-      style={{ zoom: homeZoomScale }}
-    >
+    <div className="mx-auto flex w-full max-w-[480px] flex-col bg-[#f5f5f0]">
       <CongestionHaltModal
         open={showCongestionModal}
         onClose={() => setShowCongestionModal(false)}
@@ -1248,10 +1168,7 @@ export default function Home() {
       <main className="flex flex-col pb-4">
         {/* 객실 일러스트 — 높이를 키워 3~4명이 보이게, 나머지는 좌우 스크롤 */}
         <section className="w-full shrink-0 bg-[#f5f5f0]" aria-label="지하철 객실 안내">
-          <div
-            className="zeb-no-scrollbar overflow-x-auto overflow-y-hidden"
-            aria-label="객실 이미지 가로 스크롤"
-          >
+          <div className="zeb-no-scrollbar zeb-hero-pan-x" aria-label="객실 이미지 가로 스크롤">
             <img
               src={`/images/subway-hero.png?v=${HOME_UI_VERSION}`}
               alt="지하철 7호선 실내"

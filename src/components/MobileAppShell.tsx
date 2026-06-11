@@ -15,8 +15,8 @@ export default function MobileAppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="mobile-app-frame">
-      <div className="mobile-app-shell flex min-h-dvh flex-col">
-        <div className="zeb-no-scrollbar zeb-scroll-y min-h-0 flex-1">{children}</div>
+      <div className="mobile-app-shell">
+        {children}
         <BottomNav />
       </div>
     </div>

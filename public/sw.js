@@ -1,4 +1,4 @@
-const SW_VERSION = '2026-06-10-push-v1'
+const SW_VERSION = '2026-06-11-push-only-v2'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting())
@@ -18,12 +18,7 @@ self.addEventListener('activate', (event) => {
   )
 })
 
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    fetch(event.request)
-      .catch(() => caches.match(event.request))
-  );
-});
+// fetch 가로채기 제거 — 앱 스크롤·청크 로딩은 브라우저가 직접 처리 (푸시 전용 SW)
 
 self.addEventListener('push', (event) => {
   let payload = {
