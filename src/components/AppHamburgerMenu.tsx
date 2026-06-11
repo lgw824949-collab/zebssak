@@ -11,18 +11,47 @@ const MENU_ITEMS = [
   { href: '/rules', label: '매칭·이용 규칙', description: '우선순위·패널티·혼잡도' },
 ] as const
 
+/** localStorage에서 로그인 아이디 조회 */
+function readStoredUsername(): string {
+  try {
+    const raw = localStorage.getItem('user')
+    if (!raw) {
+      return ''
+    }
+    const user = JSON.parse(raw) as { username?: string }
+    return user.username?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
+
 /** 햄버거 메뉴 — 이용 방법·포인트·규칙 바로가기 */
 export default function AppHamburgerMenu() {
   const [isOpen, setIsOpen] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [username, setUsername] = useState('')
 
   const closeMenu = useCallback(() => {
     setIsOpen(false)
+  }, [])
+
+  const refreshAuthState = useCallback(() => {
+    try {
+      const hasToken = Boolean(localStorage.getItem('token'))
+      setIsLoggedIn(hasToken)
+      setUsername(hasToken ? readStoredUsername() : '')
+    } catch {
+      setIsLoggedIn(false)
+      setUsername('')
+    }
   }, [])
 
   useEffect(() => {
     if (!isOpen) {
       return
     }
+
+    refreshAuthState()
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -34,12 +63,19 @@ export default function AppHamburgerMenu() {
     }
 
     window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('storage', refreshAuthState)
+    window.addEventListener('focus', refreshAuthState)
 
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('storage', refreshAuthState)
+      window.removeEventListener('focus', refreshAuthState)
     }
-  }, [closeMenu, isOpen])
+  }, [closeMenu, isOpen, refreshAuthState])
+
+  const accountHref = isLoggedIn ? '/profile' : '/login'
+  const accountLabel = isLoggedIn ? username || '아이디' : '로그인'
 
   return (
     <>
@@ -101,13 +137,29 @@ export default function AppHamburgerMenu() {
               ))}
             </ul>
 
-            <p
-              className="border-t border-[#EBEBEB] px-4 py-3 text-center text-[12px] font-medium text-[#9CA3AF]"
+            <div
+              className="border-t border-[#EBEBEB] px-4 py-3"
               style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
             >
-              서울 7호선 ·{' '}
-              <span style={{ color: LINE7_COLOR }}>잽싸게</span>
-            </p>
+              <Link
+                href={accountHref}
+                onClick={closeMenu}
+                className="zeb-touch-target block truncate py-2 text-[15px] font-bold text-[#1A1A1A]"
+              >
+                {accountLabel}
+              </Link>
+              <Link
+                href="/privacy"
+                onClick={closeMenu}
+                className="zeb-touch-target inline-block py-1 text-[13px] font-medium text-[#9CA3AF] underline decoration-[#D1D5DB] underline-offset-2"
+              >
+                개인정보 처리방침
+              </Link>
+              <p className="mt-2 text-center text-[12px] font-medium text-[#9CA3AF]">
+                서울 7호선 ·{' '}
+                <span style={{ color: LINE7_COLOR }}>잽싸게</span>
+              </p>
+            </div>
           </nav>
         </div>
       ) : null}

@@ -1083,6 +1083,10 @@ function StepStation({
   const [isVoiceExpanded, setIsVoiceExpanded] = useState(false);
   const [voiceSentenceActive, setVoiceSentenceActive] = useState(false);
   const [voiceParseResult, setVoiceParseResult] = useState(null);
+  const [voiceTrains, setVoiceTrains] = useState([]);
+  const [voiceSelectedTrain, setVoiceSelectedTrain] = useState(null);
+  const [voiceTrainsLoading, setVoiceTrainsLoading] = useState(false);
+  const [voiceTrainsError, setVoiceTrainsError] = useState("");
   const guideSeenStorageKey =
     mode === "leave" ? "boardingLeaveGuideSeen" : "boardingGuideSeen";
   const [isGuideExpanded, setIsGuideExpanded] = useState(() => {
@@ -1244,6 +1248,13 @@ function StepStation({
     setIsListening(false);
   }
 
+  function resetVoiceTrainSelection() {
+    setVoiceTrains([]);
+    setVoiceSelectedTrain(null);
+    setVoiceTrainsLoading(false);
+    setVoiceTrainsError("");
+  }
+
   function closeVoicePanel() {
     if (typeof window !== "undefined") {
       window.speechSynthesis?.cancel();
@@ -1251,6 +1262,7 @@ function StepStation({
     stopVoiceRecognition();
     setVoiceSentenceActive(false);
     setVoiceParseResult(null);
+    resetVoiceTrainSelection();
     setIsVoiceExpanded(false);
     setIsParsingVoice(false);
   }
@@ -1312,6 +1324,7 @@ function StepStation({
     setIsParsingVoice(true);
     setVoiceError("");
     setVoiceParseResult(null);
+    resetVoiceTrainSelection();
     stopVoiceRecognition();
     try {
       let parsed;
@@ -1381,8 +1394,54 @@ function StepStation({
   function retryVoiceSentence() {
     setVoiceError("");
     setVoiceParseResult(null);
+    resetVoiceTrainSelection();
     beginVoiceSentenceListening();
   }
+
+  useEffect(() => {
+    if (!voiceParseResult?.stationName || !boardingStationName?.trim()) {
+      resetVoiceTrainSelection();
+      return undefined;
+    }
+
+    let active = true;
+
+    async function loadVoiceTrains() {
+      setVoiceTrainsLoading(true);
+      setVoiceTrainsError("");
+      try {
+        const trains = await fetchTrainsForVoicePanel({
+          lineLabel: line,
+          destination: voiceParseResult.stationName,
+          boardingStation: boardingStationName,
+        });
+        if (!active) {
+          return;
+        }
+        setVoiceTrains(trains);
+        setVoiceSelectedTrain(null);
+        if (trains.length === 0) {
+          setVoiceTrainsError("현재 열차를 찾지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        }
+      } catch {
+        if (!active) {
+          return;
+        }
+        setVoiceTrains([]);
+        setVoiceSelectedTrain(null);
+        setVoiceTrainsError("열차 정보를 불러오지 못했습니다.");
+      } finally {
+        if (active) {
+          setVoiceTrainsLoading(false);
+        }
+      }
+    }
+
+    void loadVoiceTrains();
+    return () => {
+      active = false;
+    };
+  }, [boardingStationName, line, voiceParseResult?.stationName]);
 
   async function handleVoiceSentenceConfirm() {
     if (!voiceParseResult) {
@@ -1418,6 +1477,11 @@ function StepStation({
       return;
     }
 
+    if (!voiceSelectedTrain?.id) {
+      setVoiceError("탑승할 열차를 선택해 주세요.");
+      return;
+    }
+
     if (onVoiceSeekRegister) {
       setIsParsingVoice(true);
       try {
@@ -1429,6 +1493,7 @@ function StepStation({
           side,
           seatLetter,
           mapped,
+          selectedTrain: voiceSelectedTrain,
         });
         setQuery(stationName);
         setSelected(stationName);
@@ -1459,6 +1524,7 @@ function StepStation({
   function startVoiceSentenceFlow() {
     setVoiceError("");
     setVoiceParseResult(null);
+    resetVoiceTrainSelection();
     if (mode !== "seek") {
       setIsVoiceExpanded(true);
       startVoiceSearchLeave();
@@ -1782,14 +1848,18 @@ function StepStation({
           }}
         >
           <div
+            className="zeb-no-scrollbar"
             style={{
               flex: 1,
+              minHeight: 0,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              justifyContent: "center",
+              justifyContent: voiceParseResult ? "flex-start" : "center",
               textAlign: "center",
               padding: "8px 0 16px",
+              overflowY: voiceParseResult ? "auto" : "hidden",
+              width: "100%",
             }}
           >
             <span
@@ -1887,9 +1957,113 @@ function StepStation({
                       </span>
                     ))}
                 </div>
-                <p style={{ margin: "10px 0 0", fontSize: 12, color: C.muted }}>
-                  맞으면 확인을 눌러 주세요
+                <p style={{ margin: "12px 0 0", fontSize: 12, color: C.muted }}>
+                  아래 열차가 맞는지 확인해 주세요
                 </p>
+
+                <div style={{ width: "100%", marginTop: 16, textAlign: "left" }}>
+                  <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: C.text }}>
+                    탑승할 열차
+                  </p>
+                  {boardingStationName ? (
+                    <p style={{ margin: "0 0 10px", fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+                      {formatStationDisplayName(boardingStationName)} 역 기준 ·{" "}
+                      {formatStationDisplayName(voiceParseResult.stationName)} 방향
+                    </p>
+                  ) : null}
+
+                  {voiceTrainsLoading ? (
+                    <p style={{ margin: 0, fontSize: 13, color: C.muted }}>열차 불러오는 중…</p>
+                  ) : null}
+
+                  {!voiceTrainsLoading && voiceTrainsError ? (
+                    <p style={{ margin: 0, fontSize: 13, color: "#DC2626", lineHeight: 1.5 }}>
+                      {voiceTrainsError}
+                    </p>
+                  ) : null}
+
+                  {!voiceTrainsLoading && voiceTrains.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {voiceTrains.map((train, index) => {
+                        const isSelected = voiceSelectedTrain?.id === train.id;
+                        return (
+                          <button
+                            key={train.id}
+                            type="button"
+                            onClick={() => setVoiceSelectedTrain(train)}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "14px",
+                              borderRadius: 14,
+                              border: `2px solid ${isSelected ? lineColor : C.border}`,
+                              background: isSelected ? lineColorLight : C.card,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "flex-start",
+                                gap: 10,
+                              }}
+                            >
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: 26,
+                                    fontWeight: 800,
+                                    color: lineColor,
+                                    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                                    lineHeight: 1.1,
+                                  }}
+                                >
+                                  {train.id}
+                                </div>
+                                <div
+                                  style={{
+                                    marginTop: 6,
+                                    fontSize: 14,
+                                    color: lineColor,
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {formatVoiceTrainArrival(train, boardingStationName)}
+                                </div>
+                                <div
+                                  style={{ marginTop: 4, fontSize: 13, color: C.text, fontWeight: 600 }}
+                                >
+                                  {train.eta}
+                                </div>
+                                <div style={{ marginTop: 4, fontSize: 12, color: C.muted }}>
+                                  {train.direction}
+                                  {train.current && train.current !== "정보 없음"
+                                    ? ` · ${formatStationDisplayName(train.current)}`
+                                    : ""}
+                                </div>
+                              </div>
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: index === 0 ? lineColor : C.muted,
+                                  background: index === 0 ? lineColorLight : "#F0F4F8",
+                                  borderRadius: 999,
+                                  padding: "4px 10px",
+                                  whiteSpace: "nowrap",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {index === 0 ? "곧 도착" : "다음 열차"}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
               </>
             ) : null}
             {voiceError ? (
@@ -2310,22 +2484,34 @@ function StepStation({
                 onClick={() => {
                   void handleVoiceSentenceConfirm();
                 }}
-                disabled={isParsingVoice}
+                disabled={isParsingVoice || voiceTrainsLoading || !voiceSelectedTrain?.id}
                 style={{
                   width: "100%",
                   minHeight: MOBILE.touchMin,
                   marginBottom: 10,
                   padding: "12px 0",
-                  background: isParsingVoice ? "#D1D5DB" : lineColor,
+                  background:
+                    isParsingVoice || voiceTrainsLoading || !voiceSelectedTrain?.id
+                      ? "#D1D5DB"
+                      : lineColor,
                   color: "#fff",
                   border: "none",
                   borderRadius: 12,
                   fontSize: 16,
                   fontWeight: 700,
-                  cursor: isParsingVoice ? "default" : "pointer",
+                  cursor:
+                    isParsingVoice || voiceTrainsLoading || !voiceSelectedTrain?.id
+                      ? "default"
+                      : "pointer",
                 }}
               >
-                {isParsingVoice ? "매칭 등록 중..." : "확인 · 매칭 등록"}
+                {isParsingVoice
+                  ? "매칭 등록 중..."
+                  : voiceTrainsLoading
+                    ? "열차 확인 중..."
+                    : voiceSelectedTrain?.id
+                      ? "확인 · 매칭 등록"
+                      : "열차를 선택해 주세요"}
               </button>
             ) : null}
             {voiceError ? (
@@ -2436,16 +2622,21 @@ function estimateSeoulArrivalSeconds(trainStation, boardingStation, stationOrder
   return linear === 0 ? 45 : linear * secondsPerStation;
 }
 
-/** 음성 등록용 첫 번째 열차 조회 */
-async function fetchFirstTrainForVoiceSeek({ lineLabel, destination, boardingStation }) {
+/** 음성·수동 등록 공통 — 실시간 열차 목록 조회 */
+async function fetchTrainsForVoicePanel({
+  lineLabel,
+  destination,
+  boardingStation,
+  limit = 3,
+}) {
   const apiLine = resolveApiLineFromLineProp(lineLabel);
   if (!apiLine || !isSubwayOperatingHours(apiLine)) {
-    return null;
+    return [];
   }
 
   const dest = (destination || "").trim().replace(/역$/u, "");
   if (!dest) {
-    return null;
+    return [];
   }
 
   try {
@@ -2463,38 +2654,70 @@ async function fetchFirstTrainForVoiceSeek({ lineLabel, destination, boardingSta
       cache: "no-store",
     });
     if (!response.ok) {
-      return null;
+      return [];
     }
 
     const payload = await response.json();
     if (payload?.is_operating_hours === false) {
-      return null;
+      return [];
     }
 
     const apiTrains = Array.isArray(payload?.trains) ? payload.trains : [];
-    const row = apiTrains.find((entry) => entry?.train_no);
-    if (!row) {
-      return null;
-    }
-
-    const directionDisplay = String(row?.direction_display ?? row?.direction ?? "").trim();
-    return {
-      id: String(row.train_no),
-      current: row?.station_name?.trim() || boarding || "정보 없음",
-      eta: directionDisplay.endsWith("방면")
-        ? directionDisplay
-        : directionDisplay
-          ? `${directionDisplay} 방면`
-          : "하행",
-      direction: row?.direction?.trim() || "하행",
-      directionCode: row?.direction_code ?? row?.updnLine ?? null,
-      updnLine: row?.updnLine ?? row?.direction_code ?? null,
-      arvlMsg2: row?.arvl_msg2 ?? row?.arvlMsg2 ?? null,
-      bstatnNm: row?.bstatn_nm ?? row?.bstatnNm ?? null,
-    };
+    return apiTrains
+      .filter((entry) => entry?.train_no)
+      .slice(0, limit)
+      .map((row) => {
+        const directionDisplay = String(row?.direction_display ?? row?.direction ?? "").trim();
+        return {
+          id: String(row.train_no),
+          current: row?.station_name?.trim() || boarding || "정보 없음",
+          eta: directionDisplay.endsWith("방면")
+            ? directionDisplay
+            : directionDisplay
+              ? `${directionDisplay} 방면`
+              : "하행",
+          direction: row?.direction?.trim() || "하행",
+          directionCode: row?.direction_code ?? row?.updnLine ?? null,
+          updnLine: row?.updnLine ?? row?.direction_code ?? null,
+          barvlDt: row?.barvl_dt ?? row?.barvlDt ?? null,
+          arvlMsg2: row?.arvl_msg2 ?? row?.arvlMsg2 ?? null,
+          bstatnNm: row?.bstatn_nm ?? row?.bstatnNm ?? null,
+        };
+      });
   } catch {
-    return null;
+    return [];
   }
+}
+
+/** 음성 등록용 첫 번째 열차 조회 */
+async function fetchFirstTrainForVoiceSeek(params) {
+  const trains = await fetchTrainsForVoicePanel({ ...params, limit: 1 });
+  return trains[0] ?? null;
+}
+
+/** 음성 열차 카드 도착 문구 */
+function formatVoiceTrainArrival(train, boardingStation) {
+  const atBoarding =
+    normalizeStationLabel(train?.current) === normalizeStationLabel(boardingStation);
+  const seconds = train?.barvlDt != null ? Number(train.barvlDt) : Number.NaN;
+
+  if (atBoarding || seconds === 0) {
+    return "곧 도착";
+  }
+  if (Number.isFinite(seconds) && seconds > 0 && seconds < 60) {
+    return `${seconds}초 후 도착`;
+  }
+  if (Number.isFinite(seconds) && seconds >= 60) {
+    const minutes = Math.floor(seconds / 60);
+    const remainSeconds = seconds % 60;
+    if (remainSeconds > 0) {
+      return `${minutes}분 ${remainSeconds}초 후 도착`;
+    }
+    return `${minutes}분 후 도착`;
+  }
+
+  const arrivalMessage = typeof train?.arvlMsg2 === "string" ? train.arvlMsg2.trim() : "";
+  return arrivalMessage || "도착 정보 확인 중";
 }
 
 // ─── Step 2: 열차 선택 (탭 1회 → 매칭 시도) ───────────────────────
@@ -4131,6 +4354,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
   const [submitError, setSubmitError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [voiceSeekDraft, setVoiceSeekDraft] = useState(null);
+  const submitSeekFailureRef = useRef("");
   const lineNumber = resolveLineNumberFromLineProp(normalizedLine);
 
   // URL·props(호선/모드) 변경 시 단계·열차 선택을 초기화합니다.
@@ -4245,9 +4469,26 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     };
   }, [normalizedLine]);
 
-  async function submitSeekRequest(info, { afterVoice = false } = {}) {
+  async function submitSeekRequest(
+    info,
+    {
+      afterVoice = false,
+      trainIdOverride,
+      stationOverride,
+      trainDirectionOverride,
+      trainCurrentStationOverride,
+    } = {}
+  ) {
+    submitSeekFailureRef.current = "";
+
+    const activeTrainId = trainIdOverride ?? trainId;
+    const activeStation = stationOverride ?? station;
+    const activeTrainDirection = trainDirectionOverride ?? trainDirection;
+    const activeTrainCurrentStation = trainCurrentStationOverride ?? trainCurrentStation;
+
     const stopSubmitting = (message) => {
       if (message) {
+        submitSeekFailureRef.current = message;
         setSubmitError(message);
       }
       setIsSubmitting(false);
@@ -4258,7 +4499,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     if (!token) {
       return stopSubmitting("로그인이 필요합니다.");
     }
-    if (!trainId || !info?.doorLabel || !station) {
+    if (!activeTrainId || !info?.doorLabel || !activeStation) {
       return stopSubmitting("열차, 출입문, 어디까지 가세요?을 확인해 주세요.");
     }
 
@@ -4285,12 +4526,12 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
 
     try {
       const stations = await fetchStationsForLine(normalizedLine);
-      const destinationMeta = await lookupStationMeta(station, normalizedLine);
+      const destinationMeta = await lookupStationMeta(activeStation, normalizedLine);
       if (!destinationMeta?.stationCode) {
         return stopSubmitting("어디까지 가세요? 정보를 찾을 수 없습니다.");
       }
 
-      const boardingName = trainCurrentStation || currentStationName || "현재역";
+      const boardingName = activeTrainCurrentStation || currentStationName || "현재역";
       const boardingMeta =
         (await lookupStationMeta(boardingName, normalizedLine)) ?? {
           stationCode: `${resolveStationCodePrefixFromLineProp(normalizedLine)}-01`,
@@ -4304,7 +4545,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         boardingMeta,
         destinationMeta,
         normalizedLine,
-        trainDirection
+        activeTrainDirection
       );
 
       const response = await fetch("/api/match-requests", {
@@ -4315,14 +4556,14 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         },
         body: JSON.stringify({
           role: "seeker",
-          train_id: trainId,
+          train_id: activeTrainId,
           line_number: lineNumber,
-          direction: normalizeDirectionForStorage(trainDirection || "하행"),
+          direction: normalizeDirectionForStorage(activeTrainDirection || "하행"),
           car_number: mapped.car,
           seat_side: seatApi.seatSide,
           seat_number: seatApi.seatNumber,
           destination_id: destinationMeta.stationCode,
-          destination_name: destinationMeta.stationName || station,
+          destination_name: destinationMeta.stationName || activeStation,
           boarding_station_id: boardingMeta.stationCode,
           boarding_station_name: boardingMeta.stationName || boardingName,
           remaining_stops: remainingStops,
@@ -4358,13 +4599,13 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         lineKey: resolveApiLineKeyFromLineProp(normalizedLine),
         lineLabel: normalizedLine,
         lineNumber,
-        trainNo: trainId,
+        trainNo: activeTrainId,
         carNumber: mapped.car,
-        direction: normalizeDirectionForStorage(trainDirection || "하행"),
+        direction: normalizeDirectionForStorage(activeTrainDirection || "하행"),
         boardingStationId: boardingMeta.stationCode,
         boardingStationName: boardingMeta.stationName,
         destinationId: destinationMeta.stationCode,
-        destinationName: destinationMeta.stationName || station,
+        destinationName: destinationMeta.stationName || activeStation,
         remainingStations: remainingStops,
         seatSide: seatApi.seatSide,
         seatNumber: seatApi.seatNumber,
@@ -4647,18 +4888,10 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     setIsSubmitting(true);
 
     try {
-      const train = await fetchFirstTrainForVoiceSeek({
-        lineLabel: normalizedLine,
-        destination: draft.stationName,
-        boardingStation: currentStationName,
-      });
+      const train = draft.selectedTrain;
 
       if (!train?.id) {
-        setVoiceSeekDraft(draft);
-        setStation(draft.stationName);
-        setStep(2);
-        setSubmitError("열차를 자동으로 찾지 못했습니다. 열차를 선택해 주세요.");
-        return "need_train";
+        throw new Error("탑승할 열차를 선택해 주세요.");
       }
 
       setTrainId(train.id);
@@ -4672,9 +4905,15 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       }
 
       setVoiceSeekDraft(null);
-      const outcome = await submitSeekRequest(info, { afterVoice: true });
+      const outcome = await submitSeekRequest(info, {
+        afterVoice: true,
+        trainIdOverride: train.id,
+        stationOverride: draft.stationName,
+        trainDirectionOverride: train.direction || "하행",
+        trainCurrentStationOverride: train.current || "",
+      });
       if (outcome === false) {
-        throw new Error("매칭 등록에 실패했습니다.");
+        throw new Error(submitSeekFailureRef.current || "매칭 등록에 실패했습니다.");
       }
       return outcome;
     } finally {
