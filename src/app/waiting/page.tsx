@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
+import AppHamburgerMenu from '@/components/AppHamburgerMenu'
 import { handleUnauthorizedResponse } from '@/lib/auth-client'
 import { subscribeMatchRealtime } from '@/lib/match-realtime'
 
@@ -441,9 +442,47 @@ function resolveRemainingStations(draft: BoardingDraft): number | null {
   return null
 }
 
-function WaitingLoading() {
+function WaitingPageHeader({ onBack }: { onBack: () => void }) {
+  return (
+    <header
+      className="zeb-app-header"
+      style={{
+        marginLeft: `-${MOBILE_PAGE_X}px`,
+        marginRight: `-${MOBILE_PAGE_X}px`,
+        paddingLeft: MOBILE_PAGE_X,
+        paddingRight: MOBILE_PAGE_X,
+        justifyContent: 'space-between',
+      }}
+    >
+      <button
+        type="button"
+        onClick={onBack}
+        className="zeb-touch-target flex shrink-0 items-center text-sm font-medium text-[#6B7280]"
+        aria-label="뒤로가기"
+      >
+        ← 뒤로
+      </button>
+      <h1
+        style={{
+          margin: 0,
+          flex: 1,
+          fontSize: 17,
+          fontWeight: 700,
+          color: '#1A1A1A',
+          textAlign: 'center',
+        }}
+      >
+        내 상태
+      </h1>
+      <AppHamburgerMenu />
+    </header>
+  )
+}
+
+function WaitingLoading({ onBack }: { onBack: () => void }) {
   return (
     <WaitingPageLayout>
+      <WaitingPageHeader onBack={onBack} />
       <div className="flex flex-1 flex-col items-center justify-center gap-4">
         <div className="w-full max-w-[12rem] space-y-2" aria-hidden>
           <div className="zeb-track zeb-track--line1" />
@@ -950,24 +989,22 @@ export default function WaitingPage() {
     router.push('/home')
   }
 
+  const goBack = () => {
+    router.push('/')
+  }
+
   if (!isReady && !error) {
-    return <WaitingLoading />
+    return <WaitingLoading onBack={goBack} />
   }
 
   if (!draft && !error) {
     return (
       <WaitingPageLayout>
+        <WaitingPageHeader onBack={goBack} />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4">
           <p className="text-center text-sm font-medium text-[#475569]">
-            대기 정보를 불러오지 못했습니다.
+            진행 중인 등록이 없습니다.
           </p>
-          <button
-            type="button"
-            onClick={() => router.push('/')}
-            className="zeb-btn zeb-btn--secondary"
-          >
-            홈으로
-          </button>
         </div>
       </WaitingPageLayout>
     )
@@ -983,28 +1020,7 @@ export default function WaitingPage() {
   const isWaitingPanelVisible = isProviderDraft ? isProviderWaiting : isSeekerWaiting
   return (
     <WaitingPageLayout>
-      <header
-        className="zeb-app-header"
-        style={{
-          marginLeft: `-${MOBILE_PAGE_X}px`,
-          marginRight: `-${MOBILE_PAGE_X}px`,
-          paddingLeft: MOBILE_PAGE_X,
-          paddingRight: MOBILE_PAGE_X,
-          justifyContent: 'center',
-        }}
-      >
-        <h1
-          style={{
-            margin: 0,
-            fontSize: 17,
-            fontWeight: 700,
-            color: '#1A1A1A',
-            textAlign: 'center',
-          }}
-        >
-          내 상태
-        </h1>
-      </header>
+      <WaitingPageHeader onBack={goBack} />
 
       <main
         className="zeb-no-scrollbar"

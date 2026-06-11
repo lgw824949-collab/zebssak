@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import AppHamburgerMenu from '@/components/AppHamburgerMenu'
 
 interface StoredUser {
   username?: string
@@ -110,8 +111,10 @@ export default function ProfilePage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
-      <header className="zeb-app-header justify-center">
-        <h1 className="text-[17px] font-bold text-slate-900">내 정보</h1>
+      <header className="zeb-app-header justify-between">
+        <span className="zeb-touch-target w-9 shrink-0" aria-hidden />
+        <h1 className="flex-1 text-center text-[17px] font-bold text-slate-900">내 정보</h1>
+        <AppHamburgerMenu />
       </header>
 
       <main className="zeb-no-scrollbar mx-auto w-full max-w-md flex-1 space-y-6 overflow-y-auto px-4 py-6">

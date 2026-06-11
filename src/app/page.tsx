@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import AppHamburgerMenu from '@/components/AppHamburgerMenu'
 import CongestionHaltModal from '@/components/CongestionHaltModal'
 import {
   fetchCongestionStatus,
@@ -15,8 +16,6 @@ import {
   isSubwayOperatingHours,
   SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE,
 } from '@/lib/subway-operating-hours'
-import { getSupabase } from '@/lib/supabase'
-
 interface StoredUser {
   username: string
   nickname?: string | null
@@ -26,7 +25,7 @@ interface StoredUser {
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
 const GPS_MAX_RADIUS_KM = 1
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
-const HOME_UI_VERSION = '2026-06-11-native-scroll-v30'
+const HOME_UI_VERSION = '2026-06-11-first-visit-v32'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {
@@ -91,43 +90,16 @@ function resolveHomeApiLine(lineLabel: string): string {
 
 type HomeFlowMode = 'seek' | 'leave'
 
-/** 환승 많은 역 — fetch 실패·데이터 없음 시 기본값 */
-const DEFAULT_TRANSFER_STATIONS = [
-  '건대입구역',
-  '노원역',
-  '가산디지털단지역',
-  '고속터미널역',
-  '도봉산역',
+/** 환승 많은 역 — 노출 순위 고정 (1~5) */
+const HOME_TRANSFER_STATIONS = [
+  { label: '가산디지털단지역', destination: '가산디지털단지역' },
+  { label: '철산역', destination: '철산역' },
+  { label: '학동역', destination: '학동역' },
+  { label: '광명사거리역', destination: '광명사거리역' },
+  { label: '어린이대공원(세종대)역', destination: '어린이대공원역' },
 ] as const
 
 // const VOICE_PARSE_PENDING_KEY = 'voiceParsePending'
-type TransferStationRow = {
-  destination_station?:
-    | { station_name?: string | null }
-    | Array<{ station_name?: string | null }>
-    | null
-}
-
-/** 목적지 역명 빈도 상위 N개 추출 */
-function pickTopStationNames(rows: TransferStationRow[], limit = 5): string[] {
-  const counts = new Map<string, number>()
-
-  for (const row of rows) {
-    const destination = row.destination_station
-    const station = Array.isArray(destination) ? destination[0] : destination
-    const raw = station?.station_name?.trim()
-    if (!raw) {
-      continue
-    }
-    const displayName = formatStationDisplayName(raw)
-    counts.set(displayName, (counts.get(displayName) ?? 0) + 1)
-  }
-
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([name]) => name)
-}
 
 // type HomeStep = 'mode' | 'line'
 
@@ -620,8 +592,10 @@ export default function Home() {
   const [showCongestionModal, setShowCongestionModal] = useState(false)
   const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 7호선')
   const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
-  const [transferStationsLoading, setTransferStationsLoading] = useState(true)
-  const [transferStations, setTransferStations] = useState<string[]>([...DEFAULT_TRANSFER_STATIONS])
+  const [transferStationsLoading, setTransferStationsLoading] = useState(false)
+  const [transferStations, setTransferStations] = useState<
+    (typeof HOME_TRANSFER_STATIONS)[number][]
+  >([...HOME_TRANSFER_STATIONS])
   const [selectedTransferStation, setSelectedTransferStation] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [homeWaitView, setHomeWaitView] = useState<HomeWaitView | null>(null)
@@ -664,31 +638,9 @@ export default function Home() {
     }
   }, [])
 
-  const loadTransferStations = useCallback(async () => {
-    setTransferStationsLoading(true)
-
-    try {
-      const supabase = getSupabase()
-      const { data, error } = await supabase
-        .from('match_requests')
-        .select('destination_station:stations!destination_station_id(station_name)')
-        .order('created_at', { ascending: false })
-        .limit(100)
-
-      if (error || !data?.length) {
-        setTransferStations([...DEFAULT_TRANSFER_STATIONS])
-        return
-      }
-
-      const topStations = pickTopStationNames(data as TransferStationRow[])
-      setTransferStations(
-        topStations.length > 0 ? topStations : [...DEFAULT_TRANSFER_STATIONS]
-      )
-    } catch {
-      setTransferStations([...DEFAULT_TRANSFER_STATIONS])
-    } finally {
-      setTransferStationsLoading(false)
-    }
+  const loadTransferStations = useCallback(() => {
+    setTransferStations([...HOME_TRANSFER_STATIONS])
+    setTransferStationsLoading(false)
   }, [])
 
   useEffect(() => {
@@ -802,13 +754,13 @@ export default function Home() {
     handleLinePick(DEFAULT_HOME_LINE_LABEL, mode, destination)
   }
 
-  function handleTransferStationClick(stationName: string) {
+  function handleTransferStationClick(station: (typeof HOME_TRANSFER_STATIONS)[number]) {
     if (isMatchingPaused) {
       return
     }
 
-    setSelectedTransferStation(stationName)
-    setToastMessage(`${stationName}을 목적지로 설정했어요 📍`)
+    setSelectedTransferStation(station.label)
+    setToastMessage(`${station.label}을 목적지로 설정했어요 📍`)
     setTimeout(() => {
       setToastMessage(null)
     }, 1500)
@@ -885,7 +837,7 @@ export default function Home() {
       )
     }
 
-    handleModeSelect('seek', stationName)
+    handleModeSelect('seek', station.destination)
   }
 
   function scrollTransferStations(direction: 'prev' | 'next') {
@@ -1155,14 +1107,29 @@ export default function Home() {
           className="zeb-touch-target flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#EBEBEB] bg-[#f5f5f0] text-sm font-bold text-[#1A1A1A]"
           aria-label={isLoggedIn ? '내 정보' : '로그인'}
         >
-          {isLoggedIn ? displayName!.slice(0, 1).toUpperCase() : 'L'}
+          {isLoggedIn ? (
+            displayName!.slice(0, 1).toUpperCase()
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <circle cx="12" cy="9" r="3.5" stroke="#6B7280" strokeWidth="1.8" />
+              <path
+                d="M5 20c1.5-3 4-4.5 7-4.5s5.5 1.5 7 4.5"
+                stroke="#6B7280"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+          )}
         </Link>
 
-        <p className="min-w-0 flex-1 truncate px-1 text-center text-[17px] font-bold text-[#1A1A1A]">
-          빈자리, 잽싸게
-        </p>
+        <div className="min-w-0 flex-1 px-1 text-center">
+          <p className="truncate text-[17px] font-bold text-[#1A1A1A]">빈자리, 잽싸게</p>
+          <p className="mt-0.5 text-[13px] font-medium leading-snug text-[#6B7280]">
+            곧 비어질 좌석을 미리 확인하세요
+          </p>
+        </div>
 
-        <span className="zeb-touch-target w-9 shrink-0" aria-hidden />
+        <AppHamburgerMenu />
       </header>
 
       <main className="flex flex-col pb-4">
@@ -1181,7 +1148,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 등록 액션 — 바로 앉기(7호선) / 내릴게요(톤온톤) */}
+        {/* 등록 액션 — 빈자리 찾기(7호선) / 자리 넘기기(톤온톤) */}
         <section className="mx-4 mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -1191,14 +1158,18 @@ export default function Home() {
               homeWaitView?.phase === 'waiting_seek'
             }
             onClick={() => handleModeSelect('seek')}
-            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-start justify-center rounded-xl px-3.5 py-3 text-left disabled:cursor-not-allowed disabled:opacity-45"
+            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl px-3 py-3 text-center disabled:cursor-not-allowed disabled:opacity-45"
             style={{
               backgroundColor: LINE7_COLOR,
               boxShadow: '0 2px 10px rgba(116, 127, 0, 0.16)',
             }}
           >
-            <span className="text-[15px] font-bold leading-tight text-white">바로 앉기</span>
-            <span className="mt-0.5 text-[11px] font-medium text-white/80">빈자리 매칭</span>
+            <span className="text-[18px] font-bold leading-snug text-white">
+              {homeWaitView?.phase === 'waiting_seek' ? '등록 중…' : '빈자리 찾기'}
+            </span>
+            {homeWaitView?.phase === 'waiting_seek' ? (
+              <span className="mt-1 text-[12px] font-medium text-white/85">아래 카드에서 확인</span>
+            ) : null}
           </button>
           <button
             type="button"
@@ -1208,15 +1179,17 @@ export default function Home() {
               homeWaitView?.phase === 'waiting_leave'
             }
             onClick={() => handleModeSelect('leave')}
-            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-start justify-center rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3.5 py-3 text-left disabled:cursor-not-allowed disabled:opacity-45"
+            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3 py-3 text-center disabled:cursor-not-allowed disabled:opacity-45"
           >
             <span
-              className="text-[15px] font-bold leading-tight"
+              className="text-[18px] font-bold leading-snug"
               style={{ color: LINE7_COLOR_DARK }}
             >
-              내릴게요
+              {homeWaitView?.phase === 'waiting_leave' ? '등록 중…' : '자리 넘기기'}
             </span>
-            <span className="mt-0.5 text-[11px] font-medium text-[#8A9A5B]">하차 알림</span>
+            {homeWaitView?.phase === 'waiting_leave' ? (
+              <span className="mt-1 text-[12px] font-medium text-[#8A9A5B]">아래 카드에서 확인</span>
+            ) : null}
           </button>
         </section>
 
@@ -1237,6 +1210,78 @@ export default function Home() {
             현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
           </p>
         ) : null}
+
+        {/* 환승 많은 역 */}
+        <section className="mx-4 mt-3" aria-label="환승 많은 역">
+          <div className="mb-1 flex items-center justify-between">
+            <h2 className="text-base font-bold text-[#1A1A1A]">환승 많은 역</h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="text-[#AAAAAA]"
+                aria-label="이전"
+                onClick={() => scrollTransferStations('prev')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="text-[#AAAAAA]"
+                aria-label="다음"
+                onClick={() => scrollTransferStations('next')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div
+            ref={transferScrollRef}
+            className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {transferStationsLoading ? (
+              <>
+                <span
+                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
+                  aria-hidden
+                />
+                <span
+                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
+                  aria-hidden
+                />
+                <span
+                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
+                  aria-hidden
+                />
+              </>
+            ) : (
+              transferStations.map((station, index) => {
+                const isSelected =
+                  selectedTransferStation === station.label ||
+                  (selectedTransferStation === null && index === 0)
+
+                return (
+                  <button
+                    key={`${station.label}-${index}`}
+                    type="button"
+                    disabled={isMatchingPaused}
+                    onClick={() => handleTransferStationClick(station)}
+                    className={`shrink-0 rounded-full px-3 py-1 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                      isSelected
+                        ? 'bg-[#747F00] text-white'
+                        : 'border border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    {station.label}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </section>
 
         {homeWaitView ? (
           <section className="mx-4 mt-3" aria-label="내 등록 상태">
@@ -1317,90 +1362,21 @@ export default function Home() {
             >
               ▶
             </span>
-            더 보기
+            왜 7호선인가?
           </summary>
-
-        {/* 환승 많은 역 */}
-        <section className="mt-4" aria-label="환승 많은 역">
-          <div className="mb-1 flex items-center justify-between">
-            <h2 className="text-base font-bold text-[#1A1A1A]">환승 많은 역</h2>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="text-[#AAAAAA]"
-                aria-label="이전"
-                onClick={() => scrollTransferStations('prev')}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className="text-[#AAAAAA]"
-                aria-label="다음"
-                onClick={() => scrollTransferStations('next')}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            </div>
-          </div>
-          <div
-            ref={transferScrollRef}
-            className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          <section
+            className="mt-3 rounded-2xl border border-[#EBEBEB] bg-white px-4 py-3.5"
+            aria-label="서비스 안내"
           >
-            {transferStationsLoading ? (
-              <>
-                <span
-                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
-                  aria-hidden
-                />
-                <span
-                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
-                  aria-hidden
-                />
-                <span
-                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
-                  aria-hidden
-                />
-              </>
-            ) : (
-              transferStations.map((station, index) => {
-                const isSelected =
-                  selectedTransferStation === station ||
-                  (selectedTransferStation === null && index === 0)
-
-                return (
-                  <button
-                    key={`${station}-${index}`}
-                    type="button"
-                    disabled={isMatchingPaused}
-                    onClick={() => handleTransferStationClick(station)}
-                    className={`shrink-0 rounded-full px-3 py-1 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${
-                      isSelected
-                        ? 'bg-[#747F00] text-white'
-                        : 'border border-gray-200 bg-white text-gray-600'
-                    }`}
-                  >
-                    {station}
-                  </button>
-                )
-              })
-            )}
-          </div>
-        </section>
-
-        <div className="mt-4">
-          <p className="mb-1 text-sm font-bold text-gray-800">왜 7호선인가?</p>
-          <p className="mb-2 text-[12px] font-medium text-[#888888]">서울 7호선 단독 운영</p>
-          <ul className="flex flex-col gap-1.5 text-[13px] leading-snug text-gray-600">
-            <li>서울교통공사 혼잡도 데이터 분석 결과</li>
-            <li>착석 수요·장거리 이용 최적 노선</li>
-            <li>환승역 66개, 평균 착석 시간 30분</li>
-          </ul>
-        </div>
+            <p className="text-[13px] font-medium leading-snug text-[#6B7280]">
+              서울 7호선 단독 운영 · 혼잡도 데이터 기반 매칭
+            </p>
+            <ul className="mt-2.5 flex flex-col gap-1.5 text-[14px] leading-snug text-[#4B5563]">
+              <li>· 착석 수요가 많은 장거리 노선</li>
+              <li>· 환승역 66개 — 빈자리 찾기에 유리</li>
+              <li>· 교통약자·일반 이용자 모두 이용 가능</li>
+            </ul>
+          </section>
         </details>
 
         <div className="h-3 shrink-0" aria-hidden />

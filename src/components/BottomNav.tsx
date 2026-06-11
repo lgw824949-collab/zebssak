@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
-type StatusBadge = 'none' | 'waiting' | 'match'
+type StatusBadge = 'none' | 'match'
 
 const LINE7_COLOR = '#747F00'
 
@@ -16,7 +16,7 @@ function isBottomNavPath(pathname: string | null): boolean {
   return BOTTOM_NAV_PATHS.has(pathname)
 }
 
-/** session·API로 내 상태 탭 배지를 판별합니다. */
+/** session·API로 매칭 대기(수락 필요) 시에만 내 상태 탭 배지를 표시합니다. */
 async function resolveStatusBadge(): Promise<StatusBadge> {
   if (typeof window === 'undefined') {
     return 'none'
@@ -24,8 +24,27 @@ async function resolveStatusBadge(): Promise<StatusBadge> {
 
   try {
     const token = localStorage.getItem('token')
-    const requestId = sessionStorage.getItem('activeMatchRequestId')?.trim()
-    if (!token || !requestId) {
+    if (!token) {
+      return 'none'
+    }
+
+    let requestId = sessionStorage.getItem('activeMatchRequestId')?.trim() ?? ''
+
+    if (!requestId) {
+      const currentResponse = await fetch('/api/match-requests/current', {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      })
+      const currentPayload = (await currentResponse.json()) as {
+        success?: boolean
+        data?: { id?: string }
+      }
+      if (currentResponse.ok && currentPayload.success && currentPayload.data?.id) {
+        requestId = currentPayload.data.id
+      }
+    }
+
+    if (!requestId) {
       return 'none'
     }
 
@@ -41,20 +60,15 @@ async function resolveStatusBadge(): Promise<StatusBadge> {
       success?: boolean
       data?: {
         match?: { id?: string; status?: string } | null
-        match_request?: { status?: string } | null
       }
     }
 
     if (!response.ok || !payload.success) {
-      return 'waiting'
+      return 'none'
     }
 
     if (payload.data?.match?.status === 'pending' && payload.data.match.id) {
       return 'match'
-    }
-
-    if (payload.data?.match_request?.status === 'waiting') {
-      return 'waiting'
     }
 
     return 'none'
@@ -198,12 +212,6 @@ export default function BottomNav() {
               {'badge' in tab && tab.badge === 'match' ? (
                 <span
                   className="absolute -right-1.5 -top-1 flex h-2.5 w-2.5 rounded-full bg-[#E85D04]"
-                  aria-hidden
-                />
-              ) : null}
-              {'badge' in tab && tab.badge === 'waiting' ? (
-                <span
-                  className="absolute -right-1.5 -top-1 flex h-2.5 w-2.5 rounded-full bg-[#747F00]"
                   aria-hidden
                 />
               ) : null}
