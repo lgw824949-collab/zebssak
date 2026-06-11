@@ -88,6 +88,7 @@
     --app-header-pb: 0.625rem;
     --app-header-px: 1rem;
     --app-header-height: calc(var(--app-header-pt) + var(--touch-target-min) + var(--app-header-pb));
+    --bottom-nav-height: calc(3.5rem + max(0.375rem, var(--safe-area-bottom)));
     --body-line-height: 1.6;
     --body-letter-spacing: -0.3px;
   }
@@ -288,6 +289,7 @@
     width: 100%;
     max-width: 480px;
     min-height: 100dvh;
+    padding-bottom: var(--bottom-nav-height);
     background-color: var(--background);
   }
 
@@ -300,12 +302,19 @@
   }
 
   .zeb-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    z-index: 40;
     display: grid;
+    width: 100%;
+    max-width: 480px;
     grid-template-columns: repeat(3, 1fr);
     flex-shrink: 0;
     border-top: 1px solid var(--border);
     background: var(--card);
     padding-bottom: max(0.375rem, var(--safe-area-bottom));
+    transform: translateX(-50%);
   }
 
   .zeb-bottom-nav__item {

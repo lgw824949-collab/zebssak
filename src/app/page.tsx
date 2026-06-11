@@ -712,6 +712,8 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    // 로컬 개발에서는 SW·캐시 갱신이 _next/static 500을 유발하므로 건너뜁니다.
+    if (process.env.NODE_ENV === 'development') return
 
     const versionKey = 'zeb_home_ui_version'
     const reloadOnceKey = `zeb_home_reloaded_${HOME_UI_VERSION}`
@@ -744,6 +746,9 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      return
+    }
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
       return
     }
@@ -1209,7 +1214,7 @@ export default function Home() {
 
   return (
     <div
-      className="mx-auto flex h-dvh max-h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-[#f5f5f0]"
+      className="mx-auto flex min-h-0 w-full max-w-[480px] flex-1 flex-col overflow-hidden bg-[#f5f5f0]"
       style={{ zoom: homeZoomScale }}
     >
       <CongestionHaltModal
@@ -1219,7 +1224,7 @@ export default function Home() {
       />
 
       {toastMessage ? (
-        <p className="fixed bottom-[4.5rem] left-1/2 z-30 -translate-x-1/2 rounded-full bg-gray-800 px-4 py-2 text-sm text-white">
+        <p className="fixed bottom-[calc(var(--bottom-nav-height)+0.5rem)] left-1/2 z-30 -translate-x-1/2 rounded-full bg-gray-800 px-4 py-2 text-sm text-white">
           {toastMessage}
         </p>
       ) : null}
@@ -1243,16 +1248,23 @@ export default function Home() {
       <main
         className="zeb-no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain"
       >
-        <div className="w-full">
-          <img
-            src={`/images/subway-hero.png?v=${HOME_UI_VERSION}`}
-            alt="지하철 7호선 실내"
-            className="max-h-[300px] w-full object-contain"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none'
-            }}
-          />
-        </div>
+        {/* 객실 일러스트 — 높이를 키워 3~4명이 보이게, 나머지는 좌우 스크롤 */}
+        <section className="w-full shrink-0 bg-[#f5f5f0]" aria-label="지하철 객실 안내">
+          <div
+            className="zeb-no-scrollbar overflow-x-auto overflow-y-hidden touch-pan-x"
+            aria-label="객실 이미지 가로 스크롤"
+          >
+            <img
+              src={`/images/subway-hero.png?v=${HOME_UI_VERSION}`}
+              alt="지하철 7호선 실내"
+              className="block h-[min(72vw,300px)] min-h-[260px] w-auto max-w-none select-none"
+              draggable={false}
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none'
+              }}
+            />
+          </div>
+        </section>
 
         {/* 등록 액션 — 바로 앉기(7호선) / 내릴게요(톤온톤) */}
         <section className="mx-4 mt-3 grid grid-cols-2 gap-2">
