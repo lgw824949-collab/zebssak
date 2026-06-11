@@ -93,8 +93,8 @@ export default function PointsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-white border-b border-slate-200 px-4 py-4">
-        <div className="max-w-md mx-auto flex items-center justify-between">
+      <header className="zeb-app-header">
+        <div className="mx-auto flex w-full max-w-md items-center justify-between">
           <Link
             href="/home"
             className="text-sm text-slate-500 hover:text-slate-800"

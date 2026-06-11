@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import { handleUnauthorizedResponse } from '@/lib/auth-client'
@@ -340,7 +339,8 @@ function WaitingPageLayout({ children }: { children: ReactNode }) {
     <div
       className="wait-page-layout"
       style={{
-        minHeight: '100dvh',
+        flex: 1,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         background: '#F7F8FA',
@@ -896,58 +896,33 @@ export default function WaitingPage() {
   const isProviderDraft = draft?.role === 'provider'
   const waitingRole = isProviderDraft ? 'provider' : 'seeker'
   const isWaitingPanelVisible = isProviderDraft ? isProviderWaiting : isSeekerWaiting
-  const pageTitle = isProviderDraft ? '하차 예정 대기' : '착석 희망 대기'
-
   return (
     <WaitingPageLayout>
       <header
+        className="zeb-app-header"
         style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          alignItems: 'center',
-          padding: '14px 0 10px',
           marginLeft: `-${MOBILE_PAGE_X}px`,
           marginRight: `-${MOBILE_PAGE_X}px`,
           paddingLeft: MOBILE_PAGE_X,
           paddingRight: MOBILE_PAGE_X,
-          background: '#FFFFFF',
-          borderBottom: '1px solid #EBEBEB',
-          flexShrink: 0,
+          justifyContent: 'center',
         }}
       >
-        <div style={{ justifySelf: 'start' }}>
-          <Link
-            href="/"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              minHeight: 44,
-              padding: '0 4px',
-              fontSize: 15,
-              fontWeight: 600,
-              color: '#374151',
-              textDecoration: 'none',
-            }}
-          >
-            홈
-          </Link>
-        </div>
         <h1
           style={{
-            justifySelf: 'center',
             margin: 0,
-            fontSize: 16,
+            fontSize: 17,
             fontWeight: 700,
             color: '#1A1A1A',
             textAlign: 'center',
           }}
         >
-          {pageTitle}
+          내 상태
         </h1>
-        <div style={{ justifySelf: 'end' }} aria-hidden />
       </header>
 
       <main
+        className="zeb-no-scrollbar"
         style={{
           flex: 1,
           display: 'flex',

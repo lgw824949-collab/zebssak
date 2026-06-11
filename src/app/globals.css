@@ -83,6 +83,11 @@
     --safe-area-right: env(safe-area-inset-right, 0px);
     --safe-area-bottom: env(safe-area-inset-bottom, 0px);
     --safe-area-left: env(safe-area-inset-left, 0px);
+    /* 앱 공통 헤더 — 상·하·좌우 패딩 및 높이 */
+    --app-header-pt: 0.875rem;
+    --app-header-pb: 0.625rem;
+    --app-header-px: 1rem;
+    --app-header-height: calc(var(--app-header-pt) + var(--touch-target-min) + var(--app-header-pb));
     --body-line-height: 1.6;
     --body-letter-spacing: -0.3px;
   }
@@ -148,8 +153,37 @@
     letter-spacing: var(--body-letter-spacing);
   }
 
+  .zeb-app-header {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 0.75rem;
+    min-height: var(--app-header-height);
+    padding-top: var(--app-header-pt);
+    padding-bottom: var(--app-header-pb);
+    padding-left: max(var(--app-header-px), var(--safe-area-left));
+    padding-right: max(var(--app-header-px), var(--safe-area-right));
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .zeb-app-header--grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
+    gap: 0;
+  }
+
   .zeb-page-header {
-    padding-top: max(0.75rem, var(--safe-area-top));
+    flex-shrink: 0;
+    min-height: var(--app-header-height);
+    padding-top: var(--app-header-pt);
+    padding-bottom: var(--app-header-pb);
+    padding-left: max(var(--app-header-px), var(--safe-area-left));
+    padding-right: max(var(--app-header-px), var(--safe-area-right));
   }
 
   .zeb-btn {
@@ -237,6 +271,19 @@
     background: #e8eaed;
   }
 
+  /* PC 앱 프레임 — 회색 스크롤바 숨김 (스크롤은 유지) */
+  .mobile-app-frame,
+  .mobile-app-frame * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .mobile-app-frame *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   .mobile-app-shell {
     width: 100%;
     max-width: 480px;
@@ -250,6 +297,39 @@
       border-right: 1px solid var(--border);
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
     }
+  }
+
+  .zeb-bottom-nav {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    background: var(--card);
+    padding-bottom: max(0.375rem, var(--safe-area-bottom));
+  }
+
+  .zeb-bottom-nav__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    min-height: 3.5rem;
+    padding: 0.35rem 0.25rem 0.2rem;
+    color: #9ca3af;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .zeb-bottom-nav__item--active {
+    color: #747f00;
+  }
+
+  .zeb-bottom-nav__label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.2px;
   }
 }
 

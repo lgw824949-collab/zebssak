@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
@@ -110,21 +109,12 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-white border-b border-slate-200 px-4 py-4">
-        <div className="max-w-md mx-auto flex items-center justify-between">
-          <Link
-            href="/home"
-            className="text-sm text-slate-500 hover:text-slate-800"
-          >
-            ← 홈
-          </Link>
-          <h1 className="text-lg font-bold text-slate-900">프로필 설정</h1>
-          <span className="w-8" aria-hidden />
-        </div>
+    <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
+      <header className="zeb-app-header justify-center">
+        <h1 className="text-[17px] font-bold text-slate-900">내 정보</h1>
       </header>
 
-      <main className="flex-1 max-w-md mx-auto w-full px-4 py-6 space-y-6 pb-8">
+      <main className="zeb-no-scrollbar mx-auto w-full max-w-md flex-1 space-y-6 overflow-y-auto px-4 py-6">
         <section className="rounded-xl bg-white border border-slate-200 p-5">
           <label className="block text-sm font-medium text-slate-500 mb-1">
             아이디

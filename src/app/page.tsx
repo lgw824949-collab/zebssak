@@ -1247,7 +1247,7 @@ export default function Home() {
           <img
             src={`/images/subway-hero.png?v=${HOME_UI_VERSION}`}
             alt="지하철 7호선 실내"
-            className="max-h-[200px] w-full object-contain"
+            className="max-h-[300px] w-full object-contain"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none'
             }}

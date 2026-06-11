@@ -835,16 +835,128 @@ function formatStationDisplayName(stationName) {
   return name.endsWith("역") ? name : `${name}역`;
 }
 
+/** 헤더 원형 배지 라벨 — 서울 N호선 → N호선 */
+function resolveLineBadgeLabel(lineLabel) {
+  const primary = (lineLabel || "").split("·")[0].trim();
+  const compact = primary.replace(/\s+/g, "");
+  const seoulLineNo = compact.match(/^서울([1-9])호선$/);
+  if (seoulLineNo?.[1]) return `${seoulLineNo[1]}호선`;
+  const incheonMatch = compact.match(/^인천([12])호선$/);
+  if (incheonMatch?.[1]) return `인천${incheonMatch[1]}`;
+  return "7호선";
+}
+
+function formatDestinationDirectionTitle(station, direction) {
+  const name = (station || "").trim();
+  if (name) {
+    const display = formatStationDisplayName(name);
+    return display.endsWith("방면") ? display : `${display} 방면`;
+  }
+  const dir = (direction || "").trim();
+  if (dir) {
+    return dir.endsWith("방면") ? dir : `${dir} 방면`;
+  }
+  return "목적지 방면";
+}
+
+function CarNumberSlider({
+  carNumbers,
+  activeCar,
+  onSelect,
+  disabled = false,
+  lineColor = LINE_OLIVE,
+}) {
+  const scrollRef = useRef(null);
+  const buttonRefs = useRef({});
+
+  useEffect(() => {
+    const el = buttonRefs.current[activeCar];
+    if (!el || !scrollRef.current) return;
+    el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [activeCar]);
+
+  return (
+    <div
+      ref={scrollRef}
+      className="zeb-no-scrollbar"
+      style={{
+        display: "flex",
+        gap: 8,
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
+        paddingBottom: 4,
+        scrollbarWidth: "none",
+        msOverflowStyle: "none",
+      }}
+    >
+      {carNumbers.map((carNum) => {
+        const isActive = activeCar === carNum;
+        return (
+          <button
+            key={carNum}
+            ref={(node) => {
+              buttonRefs.current[carNum] = node;
+            }}
+            type="button"
+            className="zeb-touch-target"
+            disabled={disabled}
+            onClick={() => onSelect(carNum)}
+            aria-label={`${carNum}호차`}
+            aria-pressed={isActive}
+            style={{
+              flexShrink: 0,
+              minWidth: 72,
+              minHeight: 44,
+              padding: "0 14px",
+              borderRadius: 999,
+              border: `1.5px solid ${isActive ? lineColor : C.border}`,
+              background: isActive ? lineColor : C.card,
+              color: isActive ? "#fff" : C.text,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: disabled ? "default" : "pointer",
+              opacity: disabled ? 0.55 : 1,
+            }}
+          >
+            {carNum}호차
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function LineCircleBadge({ line, size = 36 }) {
+  const label = resolveLineBadgeLabel(line);
+  const fontSize = label.length <= 3 ? 11 : 10;
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        fontSize,
+        fontWeight: 700,
+        color: "#fff",
+        background: LINE_OLIVE,
+        flexShrink: 0,
+        lineHeight: 1.1,
+        textAlign: "center",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 // ─── 공통 컴포넌트 ────────────────────────────────────────────────
 function Header({ step, onBack, title, line }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 12,
-      padding: "14px 16px 10px",
-      borderBottom: `1px solid ${C.border}`,
-      background: C.card,
-      position: "sticky", top: 0, zIndex: 10,
-    }}>
+    <div className="zeb-app-header">
       <button
         type="button"
         className="zeb-touch-target"
@@ -857,8 +969,8 @@ function Header({ step, onBack, title, line }) {
       }}>
         ←
       </button>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: C.muted, marginBottom: 1 }}>{line}</div>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+        <LineCircleBadge line={line} />
         <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{title}</div>
       </div>
       <div style={{
@@ -1559,15 +1671,6 @@ function StepStation({
 
   const lineColor = LINE_OLIVE;
   const lineColorLight = LINE_OLIVE_LIGHT;
-  const lineDisplayName = (() => {
-    const primary = (line || "").split("·")[0].trim();
-    const compact = primary.replace(/\s+/g, "");
-    const seoulLineNo = compact.match(/^서울([1-9])호선$/);
-    if (seoulLineNo?.[1]) return `서울 ${seoulLineNo[1]}호선`;
-    if (/^인천1호선$/.test(compact)) return "인천 1호선";
-    if (/^인천2호선$/.test(compact)) return "인천 2호선";
-    return primary || "서울 7호선";
-  })();
   const voiceHint =
     apiLine === "seoul7"
       ? '예: "논현 가고 싶어"'
@@ -1597,19 +1700,7 @@ function StepStation({
         letterSpacing: "-0.3px",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "14px 16px 10px",
-          borderBottom: `1px solid ${C.border}`,
-          background: C.card,
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-        }}
-      >
+      <div className="zeb-app-header">
         <button
           type="button"
           className="zeb-touch-target"
@@ -1631,21 +1722,8 @@ function StepStation({
         >
           ←
         </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <span
-            style={{
-              display: "inline-block",
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#fff",
-              background: lineColor,
-              borderRadius: 999,
-              padding: "3px 10px",
-              marginBottom: 4,
-            }}
-          >
-            {lineDisplayName}
-          </span>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+          <LineCircleBadge line={line} />
           <div style={{ fontSize: 16, fontWeight: 700, color: C.text, textAlign: "left" }}>
             {showSeekVoiceOverlay ? "음성으로 등록" : "어디까지 가세요?"}
           </div>
@@ -1841,21 +1919,6 @@ function StepStation({
           msOverflowStyle: "none",
         }}
       >
-        <div style={{ display: "flex", gap: 6, justifyContent: "center", paddingBottom: 14 }}>
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              style={{
-                width: i === 1 ? 20 : 6,
-                height: 6,
-                borderRadius: 3,
-                background: i === 1 ? lineColor : C.border,
-                transition: "width 0.2s",
-              }}
-            />
-          ))}
-        </div>
-
         <div style={{ position: "relative" }}>
           <div className="bg-white rounded-2xl p-4 flex flex-col gap-2">
             <div className="w-full flex flex-col gap-1">
@@ -3010,32 +3073,11 @@ function StepTrain({
 
   const lineColor = LINE_OLIVE;
   const lineColorLight = LINE_OLIVE_LIGHT;
-  const lineDisplayName = (() => {
-    const primary = (line || "").split("·")[0].trim();
-    const compact = primary.replace(/\s+/g, "");
-    const seoulLineNo = compact.match(/^서울([1-9])호선$/);
-    if (seoulLineNo?.[1]) return `서울 ${seoulLineNo[1]}호선`;
-    if (/^인천1호선$/.test(compact)) return "인천 1호선";
-    if (/^인천2호선$/.test(compact)) return "인천 2호선";
-    return primary || "서울 7호선";
-  })();
   const directionLabel = (line || "").split("·")[1]?.trim() || "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "14px 16px 10px",
-          borderBottom: `1px solid ${C.border}`,
-          background: C.card,
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-        }}
-      >
+      <div className="zeb-app-header">
         <button
           type="button"
           className="zeb-touch-target"
@@ -3057,21 +3099,8 @@ function StepTrain({
         >
           ←
         </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <span
-            style={{
-              display: "inline-block",
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#fff",
-              background: lineColor,
-              borderRadius: 999,
-              padding: "3px 10px",
-              marginBottom: 4,
-            }}
-          >
-            {lineDisplayName}
-          </span>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+          <LineCircleBadge line={line} />
           <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>열차 선택</div>
         </div>
         <div
@@ -3090,21 +3119,6 @@ function StepTrain({
       </div>
 
       <div style={{ flex: 1, overflow: "auto", padding: `12px ${MOBILE.pageX}px 0` }}>
-        <div style={{ display: "flex", gap: 6, justifyContent: "center", paddingBottom: 14 }}>
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              style={{
-                width: i === 2 ? 20 : 6,
-                height: 6,
-                borderRadius: 3,
-                background: i <= 2 ? lineColor : C.border,
-                transition: "width 0.2s",
-              }}
-            />
-          ))}
-        </div>
-
         <div
           style={{
             padding: "14px 16px",
@@ -3385,59 +3399,35 @@ function StepSeekDoor({
       >
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
 
-        <p
-          style={{
-            margin: "0 0 6px",
-            fontSize: 12,
-            fontWeight: 700,
-            color: lineColor,
-            textAlign: "center",
-          }}
-        >
-          먼저 호차를 선택해 주세요
-        </p>
+        <div style={{ margin: "8px 0 12px", textAlign: "center" }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 26,
+              fontWeight: 800,
+              color: C.text,
+              lineHeight: 1.25,
+              letterSpacing: "-0.4px",
+            }}
+          >
+            {formatDestinationDirectionTitle(station, direction)}
+          </p>
+          <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 600, color: C.muted }}>
+            호차를 선택해 주세요
+          </p>
+        </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: 8,
-            paddingBottom: 2,
-            marginBottom: 8,
-          }}
-        >
-          {carNumbers.map((carNum) => {
-            const isActive = activeCar === carNum;
-            return (
-              <button
-                key={carNum}
-                type="button"
-                className="zeb-touch-target"
-                disabled={isSubmitting}
-                onClick={() => {
-                  setActiveCar(carNum);
-                  setSelectedSeat(null);
-                }}
-                aria-label={`${carNum}호차`}
-                aria-pressed={isActive}
-                style={{
-                  width: "100%",
-                  minHeight: 44,
-                  padding: "0 8px",
-                  borderRadius: 10,
-                  border: `1.5px solid ${isActive ? lineColor : C.border}`,
-                  background: isActive ? lineColor : C.card,
-                  color: isActive ? "#fff" : C.text,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: isSubmitting ? "default" : "pointer",
-                  opacity: isSubmitting ? 0.55 : 1,
-                }}
-              >
-                {carNum}호차
-              </button>
-            );
-          })}
+        <div style={{ marginBottom: 10 }}>
+          <CarNumberSlider
+            carNumbers={carNumbers}
+            activeCar={activeCar}
+            disabled={isSubmitting}
+            lineColor={lineColor}
+            onSelect={(carNum) => {
+              setActiveCar(carNum);
+              setSelectedSeat(null);
+            }}
+          />
         </div>
 
         <div
@@ -3656,59 +3646,35 @@ function StepSeat({
       >
         {isSubmitting ? <SubmitSkeletonOverlay /> : null}
 
-        <p
-          style={{
-            margin: "0 0 6px",
-            fontSize: 12,
-            fontWeight: 700,
-            color: lineColor,
-            textAlign: "center",
-          }}
-        >
-          먼저 호차를 선택해 주세요
-        </p>
+        <div style={{ margin: "8px 0 12px", textAlign: "center" }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 26,
+              fontWeight: 800,
+              color: C.text,
+              lineHeight: 1.25,
+              letterSpacing: "-0.4px",
+            }}
+          >
+            {formatDestinationDirectionTitle(station, direction)}
+          </p>
+          <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 600, color: C.muted }}>
+            호차를 선택해 주세요
+          </p>
+        </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: 8,
-            paddingBottom: 2,
-            marginBottom: 8,
-          }}
-        >
-          {carNumbers.map((carNum) => {
-            const isActive = activeCar === carNum;
-            return (
-              <button
-                key={carNum}
-                type="button"
-                className="zeb-touch-target"
-                disabled={isSubmitting}
-                onClick={() => {
-                  setActiveCar(carNum);
-                  setSelectedSeat(null);
-                }}
-                aria-label={`${carNum}호차`}
-                aria-pressed={isActive}
-                style={{
-                  width: "100%",
-                  minHeight: 44,
-                  padding: "0 8px",
-                  borderRadius: 10,
-                  border: `1.5px solid ${isActive ? lineColor : C.border}`,
-                  background: isActive ? lineColor : C.card,
-                  color: isActive ? "#fff" : C.text,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: isSubmitting ? "default" : "pointer",
-                  opacity: isSubmitting ? 0.55 : 1,
-                }}
-              >
-                {carNum}호차
-              </button>
-            );
-          })}
+        <div style={{ marginBottom: 10 }}>
+          <CarNumberSlider
+            carNumbers={carNumbers}
+            activeCar={activeCar}
+            disabled={isSubmitting}
+            lineColor={lineColor}
+            onSelect={(carNum) => {
+              setActiveCar(carNum);
+              setSelectedSeat(null);
+            }}
+          />
         </div>
 
         <div
@@ -3890,15 +3856,6 @@ function StepDone({
   const doneSeatLabel = seat?.seatLetter ? `${seat.seatLetter}열` : "-";
   const doneDirectionLabel = seat?.side ? resolveSeekSideLabel(seat.side) : "-";
   const lineColor = LINE_OLIVE;
-  const lineDisplayName = (() => {
-    const primary = (line || "").split("·")[0].trim();
-    const compact = primary.replace(/\s+/g, "");
-    const seoulLineNo = compact.match(/^서울([1-9])호선$/);
-    if (seoulLineNo?.[1]) return `서울 ${seoulLineNo[1]}호선`;
-    if (/^인천1호선$/.test(compact)) return "인천 1호선";
-    if (/^인천2호선$/.test(compact)) return "인천 2호선";
-    return primary || "서울 7호선";
-  })();
 
   const stationDisplayName = formatStationDisplayName(station);
   const boardingDisplayName = boardingStation ? formatStationDisplayName(boardingStation) : "";
@@ -3909,6 +3866,21 @@ function StepDone({
     doneDirectionLabel !== "-" ? doneDirectionLabel : null,
   ].filter(Boolean);
   const detailSummaryLine = detailSummaryParts.join(" · ");
+  const routeLine =
+    boardingDisplayName && stationDisplayName
+      ? `${boardingDisplayName} → ${stationDisplayName}`
+      : stationDisplayName || "";
+  const statusHint =
+    isLeaveMode && matchedOnRegister
+      ? "매칭 화면에서 확인해 주세요"
+      : onGoWaiting && (!isLeaveMode || !matchedOnRegister)
+        ? "매칭 대기 화면에서 상태를 확인하세요"
+        : "";
+  const summaryLine = isLeaveMode
+    ? matchedOnRegister
+      ? "착석 희망자와 매칭됐어요"
+      : `${stationDisplayName} 하차 예정으로 등록했어요`
+    : `${stationDisplayName} 도착 전 알림을 보내드려요`;
 
   return (
     <div
@@ -3917,7 +3889,7 @@ function StepDone({
         flexDirection: "column",
         flex: 1,
         minHeight: 0,
-        background: C.card,
+        background: C.bg,
       }}
     >
       <div
@@ -3925,119 +3897,120 @@ function StepDone({
           flex: 1,
           minHeight: 0,
           overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          padding: "28px 24px 16px",
-          textAlign: "center",
+          padding: `20px ${MOBILE.pageX}px 16px`,
         }}
       >
-      <div
-        style={{
-          width: 72,
-          height: 72,
-          borderRadius: 36,
-          background: lineColor,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 36,
-          marginBottom: 16,
-          color: "#fff",
-          fontWeight: 700,
-        }}
-      >
-        ✓
-      </div>
-      <span
-        style={{
-          display: "inline-block",
-          fontSize: 12,
-          fontWeight: 700,
-          color: "#fff",
-          background: lineColor,
-          borderRadius: 999,
-          padding: "4px 12px",
-          marginBottom: 12,
-        }}
-      >
-        {lineDisplayName}
-      </span>
-      <h2
-        style={{
-          margin: "0 0 12px",
-          fontSize: 22,
-          fontWeight: 800,
-          color: C.text,
-          lineHeight: 1.3,
-        }}
-      >
-        {isLeaveMode ? "하차 등록 완료!" : "등록 완료!"}
-      </h2>
-
-      <p style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 700, color: C.text, lineHeight: 1.5 }}>
-        {isLeaveMode ? (
-          <>
-            <span style={{ color: lineColor }}>{stationDisplayName}</span>
-            에서 하차 예정으로 등록했어요
-          </>
-        ) : (
-          <>
-            <span style={{ color: lineColor }}>{stationDisplayName}</span>
-            {" "}
-            하차 전 알림을 드릴게요
-          </>
-        )}
-      </p>
-
-      {onGoWaiting && (!isLeaveMode || !matchedOnRegister) ? (
-        <p style={{ margin: "0 0 16px", fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
-          매칭 대기 화면에서 상태를 확인하세요
-        </p>
-      ) : null}
-
-      {isLeaveMode && matchedOnRegister ? (
-        <p style={{ margin: "0 0 16px", fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
-          착석 희망자와 매칭되었습니다. 매칭 화면에서 확인해 주세요.
-        </p>
-      ) : null}
-
-      {boardingDisplayName && stationDisplayName ? (
-        <p
-          style={{
-            margin: "0 0 14px",
-            fontSize: 14,
-            fontWeight: 600,
-            color: C.text,
-            lineHeight: 1.5,
-          }}
-        >
-          {boardingDisplayName}
-          <span style={{ margin: "0 6px", color: lineColor }}>→</span>
-          {stationDisplayName}
-        </p>
-      ) : null}
-
-      {detailSummaryLine ? (
         <div
           style={{
-            width: "100%",
-            maxWidth: 320,
-            marginBottom: 8,
-            padding: "14px 16px",
-            borderRadius: 14,
-            border: `1px solid ${C.border}`,
-            background: C.bg,
-            fontSize: 14,
-            fontWeight: 600,
-            color: C.text,
-            lineHeight: 1.55,
-            wordBreak: "keep-all",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 16,
           }}
         >
-          {detailSummaryLine}
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              background: lineColor,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 24,
+              color: "#fff",
+              fontWeight: 700,
+              flexShrink: 0,
+            }}
+          >
+            ✓
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <LineCircleBadge line={line} size={32} />
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: C.text,
+                  lineHeight: 1.2,
+                }}
+              >
+                {isLeaveMode ? "하차 등록 완료" : "등록 완료"}
+              </h2>
+            </div>
+            {statusHint ? (
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: C.muted, lineHeight: 1.45 }}>
+                {statusHint}
+              </p>
+            ) : null}
+          </div>
         </div>
-      ) : null}
+
+        <div
+          style={{
+            padding: "16px",
+            borderRadius: 16,
+            border: `1px solid ${C.border}`,
+            background: C.card,
+          }}
+        >
+          {routeLine ? (
+            <p
+              style={{
+                margin: 0,
+                fontSize: 18,
+                fontWeight: 800,
+                color: C.text,
+                lineHeight: 1.35,
+                textAlign: "center",
+                wordBreak: "keep-all",
+              }}
+            >
+              {routeLine}
+            </p>
+          ) : null}
+
+          <p
+            style={{
+              margin: routeLine ? "10px 0 0" : 0,
+              fontSize: 14,
+              fontWeight: 600,
+              color: C.muted,
+              lineHeight: 1.5,
+              textAlign: "center",
+              wordBreak: "keep-all",
+            }}
+          >
+            {summaryLine}
+          </p>
+
+          {detailSummaryLine ? (
+            <>
+              <div
+                style={{
+                  height: 1,
+                  margin: "14px 0",
+                  background: C.border,
+                }}
+              />
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: C.text,
+                  lineHeight: 1.55,
+                  textAlign: "center",
+                  wordBreak: "keep-all",
+                }}
+              >
+                {detailSummaryLine}
+              </p>
+            </>
+          ) : null}
+        </div>
       </div>
 
       <div
@@ -4045,11 +4018,8 @@ function StepDone({
           flexShrink: 0,
           display: "flex",
           flexDirection: "column",
-          gap: 10,
-          width: "100%",
-          maxWidth: 300,
-          margin: "0 auto",
-          padding: "12px 24px max(20px, env(safe-area-inset-bottom))",
+          gap: 8,
+          padding: `12px ${MOBILE.pageX}px max(16px, env(safe-area-inset-bottom))`,
           borderTop: `1px solid ${C.border}`,
           background: C.card,
         }}
@@ -4060,13 +4030,14 @@ function StepDone({
             className="zeb-touch-target"
             onClick={onGoMatching}
             style={{
-              padding: "13px 32px",
+              width: "100%",
+              padding: "12px 16px",
               minHeight: MOBILE.touchMin,
               background: lineColor,
               color: "#fff",
               border: "none",
               borderRadius: 12,
-              fontSize: MOBILE.inputFontSize,
+              fontSize: 15,
               fontWeight: 700,
               cursor: "pointer",
             }}
@@ -4080,13 +4051,14 @@ function StepDone({
             className="zeb-touch-target"
             onClick={onGoWaiting}
             style={{
-              padding: "13px 32px",
+              width: "100%",
+              padding: "12px 16px",
               minHeight: MOBILE.touchMin,
               background: lineColor,
               color: "#fff",
               border: "none",
               borderRadius: 12,
-              fontSize: MOBILE.inputFontSize,
+              fontSize: 15,
               fontWeight: 700,
               cursor: "pointer",
             }}
@@ -4100,13 +4072,14 @@ function StepDone({
             className="zeb-touch-target"
             onClick={onGoHome}
             style={{
-              padding: "13px 32px",
+              width: "100%",
+              padding: "12px 16px",
               minHeight: MOBILE.touchMin,
-              background: "#fff",
-              color: lineColor,
-              border: `1.5px solid ${lineColor}`,
+              background: "#F7F8F2",
+              color: "#5F6B2E",
+              border: "1px solid #D5DDB8",
               borderRadius: 12,
-              fontSize: MOBILE.inputFontSize,
+              fontSize: 15,
               fontWeight: 700,
               cursor: "pointer",
             }}
@@ -4119,13 +4092,14 @@ function StepDone({
           className="zeb-touch-target"
           onClick={onReset}
           style={{
-            padding: "13px 32px",
+            width: "100%",
+            padding: "12px 16px",
             minHeight: MOBILE.touchMin,
-            background: "#fff",
-            color: lineColor,
-            border: `1.5px solid ${lineColor}`,
+            background: "#F7F8F2",
+            color: "#5F6B2E",
+            border: "1px solid #D5DDB8",
             borderRadius: 12,
-            fontSize: MOBILE.inputFontSize,
+            fontSize: 15,
             fontWeight: 700,
             cursor: "pointer",
           }}
