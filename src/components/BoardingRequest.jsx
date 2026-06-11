@@ -500,14 +500,8 @@ const VOICE_SENTENCE_GUIDE_TITLE = "플랫폼에서 한 번에 말해 주세요"
 
 const VOICE_SENTENCE_GUIDE_SUB = "목적지 · 출입문(1-1~1-4) · 방향 · 열(선택)";
 
-const VOICE_SENTENCE_GUIDE_TTS =
-  "플랫폼에서 한 번에 말씀해 주세요. 목적지, 출입문, 방향, 열 순으로 말해 주세요.";
-
 const VOICE_SENTENCE_RETRY_TEXT =
   "인식에 실패했습니다.\n목적지 · 출입문 · 방향을 다시 말씀해 주세요.";
-
-const VOICE_SENTENCE_RETRY_TTS =
-  "인식에 실패했습니다. 목적지, 출입문, 방향을 다시 말씀해 주세요.";
 
 /** 한 문장 음성 — /api/voice/parse + 로컬 추출로 필드 파싱 */
 async function parseVoiceSentenceWithApi(transcript, lineLabel) {
@@ -523,33 +517,6 @@ async function parseVoiceSentenceWithApi(transcript, lineLabel) {
     side,
     seatLetter,
   };
-}
-
-/** TTS용 — 모든 숫자-숫자 형식을 숫자다시숫자로 변환 (예: 출1-2 → 출 1다시2) */
-function formatTextForKoreanTts(text) {
-  return String(text || "")
-    .replace(/(\d+)\s*[-–—]\s*(\d+)/g, "$1다시$2")
-    .replace(/출\s*(\d)/g, "출 $1");
-}
-
-/** TTS로 한국어 멘트 재생 */
-function speakKorean(text, onEnd) {
-  if (typeof window === "undefined") {
-    onEnd?.();
-    return;
-  }
-  const synth = window.speechSynthesis;
-  if (!synth) {
-    onEnd?.();
-    return;
-  }
-  synth.cancel();
-  const utterance = new SpeechSynthesisUtterance(formatTextForKoreanTts(text));
-  utterance.lang = "ko-KR";
-  utterance.rate = 1.35;
-  utterance.onend = () => onEnd?.();
-  utterance.onerror = () => onEnd?.();
-  synth.speak(utterance);
 }
 
 /** 음성 문장에서 출입문(호차-문) 추출 */
@@ -1302,9 +1269,7 @@ function StepStation({
   function retryVoiceSentence() {
     setVoiceError("");
     setVoiceParseResult(null);
-    speakKorean(VOICE_SENTENCE_RETRY_TTS, () => {
-      beginVoiceSentenceListening();
-    });
+    beginVoiceSentenceListening();
   }
 
   async function handleVoiceSentenceConfirm() {
@@ -1389,9 +1354,7 @@ function StepStation({
     }
     setVoiceSentenceActive(true);
     setIsVoiceExpanded(true);
-    speakKorean(VOICE_SENTENCE_GUIDE_TTS, () => {
-      beginVoiceSentenceListening();
-    });
+    beginVoiceSentenceListening();
   }
 
   function startVoiceSearchLeave() {
