@@ -114,35 +114,6 @@ function parseStoredHomeZoom(raw: string | null): HomeZoomScale {
   return 1
 }
 
-function getNextHomeZoomScale(current: HomeZoomScale): HomeZoomScale {
-  const index = HOME_ZOOM_STEPS.indexOf(current)
-  return HOME_ZOOM_STEPS[(index + 1) % HOME_ZOOM_STEPS.length]
-}
-
-function RefreshIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M20 12a8 8 0 10-2.34 5.66M20 12V7m0 5h-5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function ZoomInIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-      <path d="M16 16l4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M11 8v6M8 11h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 type TransferStationRow = {
   destination_station?:
     | { station_name?: string | null }
@@ -666,7 +637,6 @@ export default function Home() {
   const [transferStations, setTransferStations] = useState<string[]>([...DEFAULT_TRANSFER_STATIONS])
   const [selectedTransferStation, setSelectedTransferStation] = useState<string | null>(null)
   const [homeZoomScale, setHomeZoomScale] = useState<HomeZoomScale>(1)
-  const [isHomeRefreshing, setIsHomeRefreshing] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [homeWaitView, setHomeWaitView] = useState<HomeWaitView | null>(null)
   const [isCancellingHomeWait, setIsCancellingHomeWait] = useState(false)
@@ -733,45 +703,6 @@ export default function Home() {
     } finally {
       setTransferStationsLoading(false)
     }
-  }, [])
-
-  const handleHomeRefresh = useCallback(async () => {
-    if (isHomeRefreshing) {
-      return
-    }
-
-    setIsHomeRefreshing(true)
-
-    try {
-      let token: string | null = null
-      try {
-        token = localStorage.getItem('token')
-      } catch {
-        token = null
-      }
-
-      await Promise.all([
-        loadHomeData(token),
-        loadTransferStations(),
-        loadHomeWaitStatus(token),
-      ])
-    } catch {
-      // 새로고침 실패 시에도 화면은 유지합니다.
-    } finally {
-      setIsHomeRefreshing(false)
-    }
-  }, [isHomeRefreshing, loadHomeData, loadTransferStations, loadHomeWaitStatus])
-
-  const handleHomeZoomCycle = useCallback(() => {
-    setHomeZoomScale((current) => {
-      const next = getNextHomeZoomScale(current)
-      try {
-        localStorage.setItem(HOME_ZOOM_STORAGE_KEY, String(next))
-      } catch {
-        // 저장 실패 시에도 확대 단계는 적용합니다.
-      }
-      return next
-    })
   }, [])
 
   useEffect(() => {
@@ -915,8 +846,6 @@ export default function Home() {
 
     void loadHomeWaitStatus(token)
   }, [pathname, loadHomeWaitStatus])
-
-  const homeZoomPercentLabel = `${Math.round(homeZoomScale * 100)}%`
 
   async function pushBoardingPage(
     lineLabel: string,
