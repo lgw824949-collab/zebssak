@@ -496,15 +496,24 @@ function extractModeFromVoiceTranscript(transcript) {
 
 const VOICE_CONVERSATIONAL_LETTERS = ["A", "B", "C", "D", "E", "F"];
 
-const VOICE_SENTENCE_GUIDE_TEXT = `탑승 전 플랫폼에서 말씀해주세요.
-플랫폼 바닥의 출입문 번호를 확인 후 말씀해주세요.
+const VOICE_SENTENCE_GUIDE_INTRO =
+  "플랫폼 바닥 출입문 번호 확인 후, 한 문장으로 말씀해 주세요.";
 
-예시:
-논현역 가는데 1-2번 문으로 탔고 진행방향 오른쪽이야
-부천시청, 1-3, 왼쪽, B열`;
+const VOICE_SENTENCE_GUIDE_ITEMS = [
+  "목적지 역",
+  "출입문 번호 (1-1 ~ 1-4)",
+  "방향 (좌측 / 우측)",
+  "열 (A~F, 선택)",
+];
 
-const VOICE_SENTENCE_RETRY_TEXT = `다시 말씀해주세요.
-예: 논현역, 1-2번 문, 오른쪽`;
+const VOICE_SENTENCE_GUIDE_TTS =
+  "플랫폼에서 목적지, 출입문 번호, 방향, 열을 한 문장으로 말씀해 주세요.";
+
+const VOICE_SENTENCE_RETRY_TEXT =
+  "인식에 실패했습니다.\n목적지 · 출입문 · 방향을 다시 말씀해 주세요.";
+
+const VOICE_SENTENCE_RETRY_TTS =
+  "인식에 실패했습니다. 목적지, 출입문, 방향을 다시 말씀해 주세요.";
 
 /** 한 문장 음성 — /api/voice/parse + 로컬 추출로 필드 파싱 */
 async function parseVoiceSentenceWithApi(transcript, lineLabel) {
@@ -543,7 +552,7 @@ function speakKorean(text, onEnd) {
   synth.cancel();
   const utterance = new SpeechSynthesisUtterance(formatTextForKoreanTts(text));
   utterance.lang = "ko-KR";
-  utterance.rate = 0.95;
+  utterance.rate = 1.35;
   utterance.onend = () => onEnd?.();
   utterance.onerror = () => onEnd?.();
   synth.speak(utterance);
@@ -1297,7 +1306,7 @@ function StepStation({
   function retryVoiceSentence() {
     setVoiceError("");
     setVoiceParseResult(null);
-    speakKorean(VOICE_SENTENCE_GUIDE_TEXT, () => {
+    speakKorean(VOICE_SENTENCE_RETRY_TTS, () => {
       beginVoiceSentenceListening();
     });
   }
@@ -1370,7 +1379,7 @@ function StepStation({
     }
     setVoiceSentenceActive(true);
     setIsVoiceExpanded(true);
-    speakKorean(VOICE_SENTENCE_GUIDE_TEXT, () => {
+    speakKorean(VOICE_SENTENCE_GUIDE_TTS, () => {
       beginVoiceSentenceListening();
     });
   }
@@ -1682,7 +1691,16 @@ function StepStation({
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: `12px ${MOBILE.pageX}px 0` }}>
+      <div
+        className="zeb-no-scrollbar"
+        style={{
+          flex: 1,
+          overflow: "auto",
+          padding: `12px ${MOBILE.pageX}px 0`,
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
         <div style={{ display: "flex", gap: 6, justifyContent: "center", paddingBottom: 14 }}>
           {[1, 2, 3].map((i) => (
             <div
@@ -2043,16 +2061,38 @@ function StepStation({
           >
             <p
               style={{
-                margin: "0 0 12px",
+                margin: "0 0 10px",
                 fontSize: 14,
-                fontWeight: 500,
+                fontWeight: 600,
                 color: C.text,
-                lineHeight: 1.55,
-                whiteSpace: "pre-line",
+                lineHeight: 1.5,
               }}
             >
-              {VOICE_SENTENCE_GUIDE_TEXT}
+              {VOICE_SENTENCE_GUIDE_INTRO}
             </p>
+            <p
+              style={{
+                margin: "0 0 6px",
+                fontSize: 12,
+                fontWeight: 700,
+                color: lineColor,
+              }}
+            >
+              말할 내용
+            </p>
+            <ul
+              style={{
+                margin: "0 0 12px",
+                padding: "0 0 0 18px",
+                fontSize: 13,
+                color: C.text,
+                lineHeight: 1.6,
+              }}
+            >
+              {VOICE_SENTENCE_GUIDE_ITEMS.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
             {isListening ? (
               <p style={{ margin: "0 0 12px", fontSize: 13, color: lineColor, fontWeight: 600 }}>
                 듣는 중…
