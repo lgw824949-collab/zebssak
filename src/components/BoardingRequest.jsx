@@ -496,6 +496,32 @@ function extractModeFromVoiceTranscript(transcript) {
 
 const VOICE_CONVERSATIONAL_LETTERS = ["A", "B", "C", "D", "E", "F"];
 
+const VOICE_SENTENCE_GUIDE_TEXT = `탑승 전 플랫폼에서 말씀해주세요.
+플랫폼 바닥의 출입문 번호를 확인 후 말씀해주세요.
+
+예시:
+논현역 가는데 1-2번 문으로 탔고 진행방향 오른쪽이야
+부천시청, 1-3, 왼쪽, B열`;
+
+const VOICE_SENTENCE_RETRY_TEXT = `다시 말씀해주세요.
+예: 논현역, 1-2번 문, 오른쪽`;
+
+/** 한 문장 음성 — /api/voice/parse + 로컬 추출로 필드 파싱 */
+async function parseVoiceSentenceWithApi(transcript, lineLabel) {
+  const apiParsed = await parseVoiceIntentWithApi(transcript);
+  const door = extractDoorFromTranscript(transcript, lineLabel);
+  const side = extractDirectionFromTranscript(transcript);
+  const seatLetter = extractSeatLetterFromTranscript(transcript);
+
+  return {
+    destination: apiParsed.destination,
+    mode: apiParsed.mode,
+    door,
+    side,
+    seatLetter,
+  };
+}
+
 /** TTS용 — 모든 숫자-숫자 형식을 숫자다시숫자로 변환 (예: 출1-2 → 출 1다시2) */
 function formatTextForKoreanTts(text) {
   return String(text || "")
@@ -973,16 +999,8 @@ function StepStation({
   const [boardingSearchError, setBoardingSearchError] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const [isVoiceExpanded, setIsVoiceExpanded] = useState(false);
-  const [voiceFlowActive, setVoiceFlowActive] = useState(false);
-  const [voiceFlowStep, setVoiceFlowStep] = useState(1);
-  const [voiceDraft, setVoiceDraft] = useState({
-    stationName: null,
-    car: null,
-    door: null,
-    doorLabel: null,
-    side: null,
-    seatLetter: null,
-  });
+  const [voiceSentenceActive, setVoiceSentenceActive] = useState(false);
+  const [voiceParseResult, setVoiceParseResult] = useState(null);
   const guideSeenStorageKey =
     mode === "leave" ? "boardingLeaveGuideSeen" : "boardingGuideSeen";
   const [isGuideExpanded, setIsGuideExpanded] = useState(() => {
@@ -1144,45 +1162,15 @@ function StepStation({
     setIsListening(false);
   }
 
-  function closeVoiceConversation() {
+  function closeVoicePanel() {
     if (typeof window !== "undefined") {
       window.speechSynthesis?.cancel();
     }
     stopVoiceRecognition();
-    setVoiceFlowActive(false);
-    setVoiceFlowStep(1);
-    setVoiceDraft({
-      stationName: null,
-      car: null,
-      door: null,
-      doorLabel: null,
-      side: null,
-      seatLetter: null,
-    });
+    setVoiceSentenceActive(false);
+    setVoiceParseResult(null);
     setIsVoiceExpanded(false);
     setIsParsingVoice(false);
-  }
-
-  function getVoiceConversationPrompt(step, draft) {
-    const destShort = (draft?.stationName || "").replace(/역$/u, "");
-    switch (step) {
-      case 1:
-        return "목적지가 어디세요?";
-      case 2:
-        return `${destShort}군요. 몇 번 출입문 앞에 계세요? 예: 출1-2`;
-      case 3:
-        return "출입문 기준으로 좌측이세요 우측이세요?";
-      case 4:
-        return "출입문에서 가장 가까운 자리가 A, 맨 끝이 F입니다. A부터 F 중 어디세요?";
-      case 5: {
-        const doorText = draft?.doorLabel || "";
-        const sideText = draft?.side || "";
-        const colText = draft?.seatLetter ? `${draft.seatLetter}열` : "";
-        return `${destShort} ${doorText} ${sideText} ${colText}로 등록할게요. 맞으시면 확인을 눌러주세요.`;
-      }
-      default:
-        return "";
-    }
   }
 
   function startVoiceListening(onTranscript) {
@@ -1238,111 +1226,104 @@ function StepStation({
     }
   }
 
-  async function processVoiceConversationTranscript(transcript) {
+  async function processVoiceSentenceTranscript(transcript) {
     setIsParsingVoice(true);
     setVoiceError("");
+    setVoiceParseResult(null);
     stopVoiceRecognition();
     try {
-      if (voiceFlowStep === 1) {
-        const stations = stationRows.length ? stationRows : await fetchStationsForLine(line);
-        let destination = findDestinationInTranscript(transcript, stations);
-        if (!destination) {
-          try {
-            const parsed = await parseVoiceIntentWithApi(transcript);
-            destination = parsed.destination;
-          } catch {
-            // API 실패 시 로컬 파싱만 사용합니다.
+      let parsed;
+      try {
+        parsed = await parseVoiceSentenceWithApi(transcript, line);
+      } catch (err) {
+        if (err instanceof Error && err.message === "로그인이 필요합니다.") {
+          setVoiceError(err.message);
+          return;
+        }
+        setVoiceError(VOICE_SENTENCE_RETRY_TEXT);
+        return;
+      }
+
+      if (parsed.mode && parsed.mode !== mode) {
+        try {
+          if (parsed.destination) {
+            sessionStorage.setItem(
+              VOICE_PARSE_PENDING_KEY,
+              JSON.stringify({ destination: parsed.destination })
+            );
           }
+        } catch {
+          // sessionStorage 실패 시 모드만 변경합니다.
         }
-        if (!destination) {
-          setVoiceError("목적지를 찾지 못했습니다. 역 이름을 다시 말씀해 주세요.");
-          return;
-        }
-        const stationName = await resolveStationNameFromDestination(destination, line);
-        if (!stationName) {
-          setVoiceError(`"${destination}" 역을 이 노선에서 찾지 못했습니다.`);
-          return;
-        }
-        setVoiceDraft((prev) => ({ ...prev, stationName }));
-        setVoiceFlowStep(2);
+        onParsedModeChange?.(parsed.mode);
+        closeVoicePanel();
         return;
       }
 
-      if (voiceFlowStep === 2) {
-        const door = extractDoorFromTranscript(transcript, line);
-        if (!door) {
-          setVoiceError('출입문을 찾지 못했습니다. "출1-2"처럼 다시 말씀해 주세요.');
-          return;
-        }
-        setVoiceDraft((prev) => ({ ...prev, ...door }));
-        setVoiceFlowStep(3);
+      const { destination, door, side, seatLetter } = parsed;
+      if (!destination || !door?.doorLabel || !side) {
+        setVoiceError(VOICE_SENTENCE_RETRY_TEXT);
         return;
       }
 
-      if (voiceFlowStep === 3) {
-        const side = extractDirectionFromTranscript(transcript);
-        if (!side) {
-          setVoiceError("좌측 또는 우측을 다시 말씀해 주세요.");
-          return;
-        }
-        setVoiceDraft((prev) => ({ ...prev, side }));
-        setVoiceFlowStep(4);
+      const stationName = await resolveStationNameFromDestination(destination, line);
+      if (!stationName) {
+        setVoiceError(VOICE_SENTENCE_RETRY_TEXT);
         return;
       }
 
-      if (voiceFlowStep === 4) {
-        const seatLetter = extractSeatLetterFromTranscript(transcript);
-        if (!seatLetter) {
-          setVoiceError("A부터 F 중 하나를 다시 말씀해 주세요.");
-          return;
-        }
-        setVoiceDraft((prev) => ({ ...prev, seatLetter }));
-        setVoiceFlowStep(5);
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message ? err.message : "음성 처리 중 오류가 발생했습니다.";
-      setVoiceError(message);
+      setVoiceParseResult({
+        stationName,
+        car: door.car,
+        door: door.door,
+        doorLabel: door.doorLabel,
+        side,
+        seatLetter: seatLetter || null,
+      });
+      setVoiceError("");
+    } catch {
+      setVoiceError(VOICE_SENTENCE_RETRY_TEXT);
     } finally {
       setIsParsingVoice(false);
     }
   }
 
-  function retryVoiceConversationStep() {
-    setVoiceError("");
-    if (voiceFlowStep === 5) {
-      speakKorean(getVoiceConversationPrompt(5, voiceDraft));
-      return;
-    }
-    speakKorean(getVoiceConversationPrompt(voiceFlowStep, voiceDraft), () => {
-      startVoiceListening((nextTranscript) => {
-        void processVoiceConversationTranscript(nextTranscript);
-      });
+  function beginVoiceSentenceListening() {
+    startVoiceListening((nextTranscript) => {
+      void processVoiceSentenceTranscript(nextTranscript);
     });
   }
 
-  async function handleVoiceConversationConfirm() {
-    const { stationName, car, door, doorLabel, side, seatLetter } = voiceDraft;
-    if (
-      !stationName ||
-      !doorLabel ||
-      !side ||
-      !seatLetter ||
-      !Number.isInteger(car) ||
-      !Number.isInteger(door)
-    ) {
-      setVoiceError("입력 정보가 부족합니다. 처음부터 다시 시도해 주세요.");
+  function retryVoiceSentence() {
+    setVoiceError("");
+    setVoiceParseResult(null);
+    speakKorean(VOICE_SENTENCE_GUIDE_TEXT, () => {
+      beginVoiceSentenceListening();
+    });
+  }
+
+  async function handleVoiceSentenceConfirm() {
+    if (!voiceParseResult) {
       return;
     }
 
-    const mapped = mapSeekSelectionToSubmission({
-      car,
-      door,
-      doorLabel,
-      side,
-      seatLetter,
-      lineLabel: line,
-    });
+    const { stationName, car, door, doorLabel, side, seatLetter } = voiceParseResult;
+    if (!stationName || !doorLabel || !side || !Number.isInteger(car) || !Number.isInteger(door)) {
+      setVoiceError(VOICE_SENTENCE_RETRY_TEXT);
+      return;
+    }
+
+    const mapped = seatLetter
+      ? mapSeekSelectionToSubmission({
+          car,
+          door,
+          doorLabel,
+          side,
+          seatLetter,
+          lineLabel: line,
+        })
+      : mapSeekDoorToSubmission(doorLabel, line);
+
     if (!mapped?.seatSide || !mapped?.seatNumber) {
       setVoiceError("위치 정보를 변환할 수 없습니다. 다시 시도해 주세요.");
       return;
@@ -1362,7 +1343,7 @@ function StepStation({
         });
         setQuery(stationName);
         setSelected(stationName);
-        closeVoiceConversation();
+        closeVoicePanel();
       } catch (err) {
         const message =
           err instanceof Error && err.message ? err.message : "등록에 실패했습니다.";
@@ -1375,28 +1356,23 @@ function StepStation({
 
     setQuery(stationName);
     setSelected(stationName);
-    closeVoiceConversation();
+    closeVoicePanel();
     onNext(stationName);
   }
 
-  function startVoiceConversationFlow() {
+  function startVoiceSentenceFlow() {
     setVoiceError("");
+    setVoiceParseResult(null);
     if (mode !== "seek") {
       setIsVoiceExpanded(true);
       startVoiceSearchLeave();
       return;
     }
-    setVoiceFlowActive(true);
-    setVoiceFlowStep(1);
-    setVoiceDraft({
-      stationName: null,
-      car: null,
-      door: null,
-      doorLabel: null,
-      side: null,
-      seatLetter: null,
-    });
+    setVoiceSentenceActive(true);
     setIsVoiceExpanded(true);
+    speakKorean(VOICE_SENTENCE_GUIDE_TEXT, () => {
+      beginVoiceSentenceListening();
+    });
   }
 
   function startVoiceSearchLeave() {
@@ -1408,35 +1384,6 @@ function StepStation({
       void processVoiceTranscript(transcript);
     });
   }
-
-  useEffect(() => {
-    if (!voiceFlowActive || mode !== "seek") {
-      return undefined;
-    }
-
-    if (voiceFlowStep === 5) {
-      speakKorean(getVoiceConversationPrompt(5, voiceDraft));
-      return () => {
-        if (typeof window !== "undefined") {
-          window.speechSynthesis?.cancel();
-        }
-      };
-    }
-
-    const prompt = getVoiceConversationPrompt(voiceFlowStep, voiceDraft);
-    speakKorean(prompt, () => {
-      startVoiceListening((nextTranscript) => {
-        void processVoiceConversationTranscript(nextTranscript);
-      });
-    });
-
-    return () => {
-      if (typeof window !== "undefined") {
-        window.speechSynthesis?.cancel();
-      }
-      stopVoiceRecognition();
-    };
-  }, [voiceFlowActive, voiceFlowStep, mode]);
 
   useEffect(() => {
     return () => {
@@ -1656,9 +1603,6 @@ function StepStation({
   const destinationBoxClass = selected ? "bg-[#f0f5e8] border-gray-200" : "bg-white border-gray-200";
   const showLeaveVoicePanel =
     mode === "leave" && (isVoiceExpanded || isListening || isParsingVoice);
-  const voiceConversationPrompt = voiceFlowActive
-    ? getVoiceConversationPrompt(voiceFlowStep, voiceDraft)
-    : "";
 
   return (
     <div
@@ -2029,11 +1973,11 @@ function StepStation({
               ) : null}
             </span>
           </button>
-        ) : !voiceFlowActive ? (
+        ) : !voiceSentenceActive ? (
           <button
             type="button"
             className="zeb-touch-target"
-            onClick={startVoiceConversationFlow}
+            onClick={startVoiceSentenceFlow}
             disabled={isParsingVoice}
             style={{
               marginTop: 14,
@@ -2084,7 +2028,7 @@ function StepStation({
           </button>
         ) : null}
 
-        {voiceFlowActive ? (
+        {voiceSentenceActive ? (
           <div
             role="dialog"
             aria-modal="true"
@@ -2099,24 +2043,15 @@ function StepStation({
           >
             <p
               style={{
-                margin: "0 0 6px",
-                fontSize: 12,
-                fontWeight: 700,
-                color: lineColor,
-              }}
-            >
-              음성 등록 {voiceFlowStep} / 5
-            </p>
-            <p
-              style={{
                 margin: "0 0 12px",
-                fontSize: 15,
-                fontWeight: 600,
+                fontSize: 14,
+                fontWeight: 500,
                 color: C.text,
-                lineHeight: 1.5,
+                lineHeight: 1.55,
+                whiteSpace: "pre-line",
               }}
             >
-              {voiceConversationPrompt}
+              {VOICE_SENTENCE_GUIDE_TEXT}
             </p>
             {isListening ? (
               <p style={{ margin: "0 0 12px", fontSize: 13, color: lineColor, fontWeight: 600 }}>
@@ -2128,12 +2063,39 @@ function StepStation({
                 분석 중…
               </p>
             ) : null}
-            {voiceFlowStep === 5 ? (
+            {voiceParseResult ? (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  background: LINE_OLIVE_LIGHT_BG,
+                  border: `1px solid ${C.border}`,
+                }}
+              >
+                <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: lineColor }}>
+                  인식 결과
+                </p>
+                <p style={{ margin: "0 0 4px", fontSize: 14, color: C.text }}>
+                  목적지: {formatStationDisplayName(voiceParseResult.stationName)}
+                </p>
+                <p style={{ margin: "0 0 4px", fontSize: 14, color: C.text }}>
+                  출입문: {voiceParseResult.doorLabel}
+                </p>
+                <p style={{ margin: "0 0 4px", fontSize: 14, color: C.text }}>
+                  방향: {voiceParseResult.side}
+                </p>
+                <p style={{ margin: 0, fontSize: 14, color: C.text }}>
+                  열: {voiceParseResult.seatLetter ? `${voiceParseResult.seatLetter}열` : "미입력"}
+                </p>
+              </div>
+            ) : null}
+            {voiceParseResult ? (
               <button
                 type="button"
                 className="zeb-touch-target"
                 onClick={() => {
-                  void handleVoiceConversationConfirm();
+                  void handleVoiceSentenceConfirm();
                 }}
                 disabled={isParsingVoice}
                 style={{
@@ -2154,13 +2116,23 @@ function StepStation({
               </button>
             ) : null}
             {voiceError ? (
-              <p style={{ margin: "0 0 10px", fontSize: 12, color: "#DC2626" }}>{voiceError}</p>
+              <p
+                style={{
+                  margin: "0 0 10px",
+                  fontSize: 13,
+                  color: "#DC2626",
+                  lineHeight: 1.5,
+                  whiteSpace: "pre-line",
+                }}
+              >
+                {voiceError}
+              </p>
             ) : null}
             {voiceError ? (
               <button
                 type="button"
                 className="zeb-touch-target"
-                onClick={retryVoiceConversationStep}
+                onClick={retryVoiceSentence}
                 disabled={isListening || isParsingVoice}
                 style={{
                   width: "100%",
@@ -2182,7 +2154,10 @@ function StepStation({
             <button
               type="button"
               className="zeb-touch-target"
-              onClick={closeVoiceConversation}
+              onClick={() => {
+                setVoiceError("");
+                closeVoicePanel();
+              }}
               disabled={isParsingVoice}
               style={{
                 width: "100%",
@@ -2202,7 +2177,7 @@ function StepStation({
           </div>
         ) : null}
 
-        {voiceError && !voiceFlowActive ? (
+        {voiceError && !voiceSentenceActive ? (
           <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{voiceError}</p>
         ) : null}
 
