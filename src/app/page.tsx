@@ -69,6 +69,10 @@ const HOME_LINE_OPTIONS = [
 /** 단독 운영 노선 — 노선 선택 단계 생략 시 사용 */
 const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
 
+/** 7호선 브랜드 — 홈 등록 버튼 */
+const LINE7_COLOR = '#747F00'
+const LINE7_COLOR_DARK = '#5F6B2E'
+
 /** 홈 노선 라벨 → API line 파라미터 */
 function resolveHomeApiLine(lineLabel: string): string {
   const compact = lineLabel.replace(/\s+/g, '')
@@ -86,7 +90,6 @@ function resolveHomeApiLine(lineLabel: string): string {
 }
 
 type HomeFlowMode = 'seek' | 'leave'
-type HomeTab = 'seek' | 'leave'
 
 /** 환승 많은 역 — fetch 실패·데이터 없음 시 기본값 */
 const DEFAULT_TRANSFER_STATIONS = [
@@ -651,7 +654,6 @@ export default function Home() {
   const router = useRouter()
   const pathname = usePathname()
   const transferScrollRef = useRef<HTMLDivElement>(null)
-  const mainScrollRef = useRef<HTMLElement>(null)
   const [user, setUser] = useState<StoredUser | null>(null)
   const [isAuthChecked, setIsAuthChecked] = useState(false)
   const [isLoadingData, setIsLoadingData] = useState(true)
@@ -660,16 +662,12 @@ export default function Home() {
   const [showCongestionModal, setShowCongestionModal] = useState(false)
   const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 7호선')
   const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
-  const [activeTab, setActiveTab] = useState<HomeTab>('seek')
-  const [menuOpen, setMenuOpen] = useState(false)
   const [transferStationsLoading, setTransferStationsLoading] = useState(true)
   const [transferStations, setTransferStations] = useState<string[]>([...DEFAULT_TRANSFER_STATIONS])
   const [selectedTransferStation, setSelectedTransferStation] = useState<string | null>(null)
   const [homeZoomScale, setHomeZoomScale] = useState<HomeZoomScale>(1)
   const [isHomeRefreshing, setIsHomeRefreshing] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
-  const [pullStartY, setPullStartY] = useState(0)
-  const [pulling, setPulling] = useState(false)
   const [homeWaitView, setHomeWaitView] = useState<HomeWaitView | null>(null)
   const [isCancellingHomeWait, setIsCancellingHomeWait] = useState(false)
   const isOutsideOperatingHours = useMemo(
@@ -865,21 +863,6 @@ export default function Home() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!menuOpen) {
-      return
-    }
-
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setMenuOpen(false)
-      }
-    }
-
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
-  }, [menuOpen])
-
   const displayName = user?.username ?? null
   const isLoggedIn = Boolean(displayName)
 
@@ -933,13 +916,6 @@ export default function Home() {
     void loadHomeWaitStatus(token)
   }, [pathname, loadHomeWaitStatus])
 
-  // 등록 유형과 탭을 맞춰 하차 알림·자리 찾기가 어긋나 보이지 않게 합니다.
-  useEffect(() => {
-    if (!homeWaitView) {
-      return
-    }
-    setActiveTab(homeWaitView.registrationKind === 'leave' ? 'leave' : 'seek')
-  }, [homeWaitView])
   const homeZoomPercentLabel = `${Math.round(homeZoomScale * 100)}%`
 
   async function pushBoardingPage(
@@ -975,7 +951,6 @@ export default function Home() {
     }
 
     setSelectedTransferStation(stationName)
-    setActiveTab('seek')
     setToastMessage(`${stationName}을 목적지로 설정했어요 📍`)
     setTimeout(() => {
       setToastMessage(null)
@@ -1068,10 +1043,6 @@ export default function Home() {
     })
   }
 
-  function closeMenu() {
-    setMenuOpen(false)
-  }
-
   async function handleCancelHomeWaitRequest() {
     if (!homeWaitView?.requestId) {
       return
@@ -1132,32 +1103,6 @@ export default function Home() {
     }
 
     router.push('/waiting')
-  }
-
-  async function handleLogout() {
-    closeMenu()
-    const token = localStorage.getItem('token')
-
-    try {
-      if (token) {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        })
-      }
-    } catch {
-      // 로컬 로그아웃은 토큰 삭제로 처리
-    } finally {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      sessionStorage.removeItem('boardingDraft')
-      sessionStorage.removeItem('providerRegistered')
-      setUser(null)
-      router.replace('/login')
-    }
   }
 
   // function handleBackToModeStep() {
@@ -1338,11 +1283,6 @@ export default function Home() {
       className="mx-auto flex h-dvh max-h-dvh w-full max-w-[480px] flex-col overflow-hidden bg-[#f5f5f0]"
       style={{ zoom: homeZoomScale }}
     >
-      {pulling ? (
-        <div className="text-center py-2 text-sm text-[#6b9e3f] font-medium">
-          ↓ 당기면 새로고침
-        </div>
-      ) : null}
       <CongestionHaltModal
         open={showCongestionModal}
         onClose={() => setShowCongestionModal(false)}
@@ -1350,238 +1290,182 @@ export default function Home() {
       />
 
       {toastMessage ? (
-        <p className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-4 py-2 rounded-full">
+        <p className="fixed bottom-[4.5rem] left-1/2 z-30 -translate-x-1/2 rounded-full bg-gray-800 px-4 py-2 text-sm text-white">
           {toastMessage}
         </p>
       ) : null}
 
-      {menuOpen ? (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-40 bg-black/30"
-            aria-label="메뉴 닫기"
-            onClick={closeMenu}
-          />
-          <nav
-            className="fixed left-0 top-0 z-50 flex h-full w-64 flex-col bg-white pt-[max(3.5rem,env(safe-area-inset-top))] shadow-xl"
-            aria-label="메인 메뉴"
-          >
-            <div className="border-b border-[#EBEBEB] px-4 pb-4">
-              <p className="text-[17px] font-bold text-[#1A1A1A]">메뉴</p>
-            </div>
-            <div className="flex flex-col px-2 py-3">
-              <Link
-                href={isLoggedIn ? '/profile' : '/login'}
-                onClick={closeMenu}
-                className="rounded-lg px-3 py-3 text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
-              >
-                {isLoggedIn ? '프로필' : '로그인'}
-              </Link>
-              {isLoggedIn ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleLogout()
-                  }}
-                  className="rounded-lg px-3 py-3 text-left text-[15px] font-semibold text-[#1A1A1A] transition hover:bg-[#f5f5f0]"
-                >
-                  로그아웃
-                </button>
-              ) : null}
-            </div>
-          </nav>
-        </>
-      ) : null}
-
-      <header className="flex shrink-0 items-center justify-between border-b border-[#EBEBEB] bg-white px-4 py-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-        <button
-          type="button"
-          className="flex h-9 w-9 items-center justify-center text-[#1A1A1A]"
-          aria-label="메뉴"
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen(true)}
+      <header className="zeb-app-header justify-between">
+        <Link
+          href={isLoggedIn ? '/profile' : '/login'}
+          className="zeb-touch-target flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#EBEBEB] bg-[#f5f5f0] text-sm font-bold text-[#1A1A1A]"
+          aria-label={isLoggedIn ? '내 정보' : '로그인'}
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        </button>
+          {isLoggedIn ? displayName!.slice(0, 1).toUpperCase() : 'L'}
+        </Link>
 
         <p className="min-w-0 flex-1 truncate px-1 text-center text-[17px] font-bold text-[#1A1A1A]">
           빈자리, 잽싸게
         </p>
 
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            disabled={isHomeRefreshing}
-            onClick={() => {
-              void handleHomeRefresh()
-            }}
-            className="flex h-9 w-9 items-center justify-center text-[#1A1A1A] transition active:scale-95 disabled:opacity-45"
-            aria-label={isHomeRefreshing ? '새로고침 중' : '새로고침'}
-            aria-busy={isHomeRefreshing}
-          >
-            <span className={isHomeRefreshing ? 'animate-spin' : undefined}>
-              <RefreshIcon />
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={handleHomeZoomCycle}
-            className="flex h-9 w-9 items-center justify-center text-[#1A1A1A] transition active:scale-95"
-            aria-label={`화면 확대, 현재 ${homeZoomPercentLabel}`}
-          >
-            <ZoomInIcon />
-          </button>
-          <Link
-            href={isLoggedIn ? '/profile' : '/login'}
-            className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-[#EBEBEB] bg-[#f5f5f0] text-sm font-bold text-[#1A1A1A]"
-            aria-label={isLoggedIn ? '프로필' : '로그인'}
-          >
-            {isLoggedIn ? displayName!.slice(0, 1).toUpperCase() : 'L'}
-          </Link>
-        </div>
+        <span className="zeb-touch-target w-9 shrink-0" aria-hidden />
       </header>
 
       <main
-        ref={mainScrollRef}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain"
-        onTouchStart={(e) => setPullStartY(e.touches[0].clientY)}
-        onTouchEnd={(e) => {
-          const diff = e.changedTouches[0].clientY - pullStartY
-          if (diff > 80 && (mainScrollRef.current?.scrollTop ?? 0) <= 0) {
-            window.location.reload()
-          }
-          setPulling(false)
-        }}
-        onTouchMove={(e) => {
-          if ((mainScrollRef.current?.scrollTop ?? 0) > 0) {
-            setPulling(false)
-            return
-          }
-          const diff = e.touches[0].clientY - pullStartY
-          if (diff > 30) setPulling(true)
-        }}
+        className="zeb-no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain"
       >
         <div className="w-full">
           <img
             src={`/images/subway-hero.png?v=${HOME_UI_VERSION}`}
             alt="지하철 7호선 실내"
-            className="max-h-[260px] w-full object-contain"
+            className="max-h-[200px] w-full object-contain"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none'
             }}
           />
         </div>
 
-        {/* 탭 */}
-        <section className="mx-4 mt-2 flex border-b border-[#E8E8E8]">
+        {/* 등록 액션 — 바로 앉기(7호선) / 내릴게요(톤온톤) */}
+        <section className="mx-4 mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setActiveTab('seek')}
-            className={`flex-1 pb-2.5 text-center text-base font-bold transition ${
-              activeTab === 'seek'
-                ? 'border-b-2 border-[#747F00] text-[#1A1A1A]'
-                : 'text-[#888888]'
-            }`}
+            disabled={
+              isMatchingPaused ||
+              isOutsideOperatingHours ||
+              homeWaitView?.phase === 'waiting_seek'
+            }
+            onClick={() => handleModeSelect('seek')}
+            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-start justify-center rounded-xl px-3.5 py-3 text-left disabled:cursor-not-allowed disabled:opacity-45"
+            style={{
+              backgroundColor: LINE7_COLOR,
+              boxShadow: '0 2px 10px rgba(116, 127, 0, 0.16)',
+            }}
           >
-            자리 찾기
+            <span className="text-[15px] font-bold leading-tight text-white">바로 앉기</span>
+            <span className="mt-0.5 text-[11px] font-medium text-white/80">빈자리 매칭</span>
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('leave')}
-            className={`flex-1 pb-2.5 text-center text-base font-bold transition ${
-              activeTab === 'leave'
-                ? 'border-b-2 border-[#747F00] text-[#1A1A1A]'
-                : 'text-[#888888]'
-            }`}
+            disabled={
+              isMatchingPaused ||
+              isOutsideOperatingHours ||
+              homeWaitView?.phase === 'waiting_leave'
+            }
+            onClick={() => handleModeSelect('leave')}
+            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-start justify-center rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3.5 py-3 text-left disabled:cursor-not-allowed disabled:opacity-45"
           >
-            내릴게요
+            <span
+              className="text-[15px] font-bold leading-tight"
+              style={{ color: LINE7_COLOR_DARK }}
+            >
+              내릴게요
+            </span>
+            <span className="mt-0.5 text-[11px] font-medium text-[#8A9A5B]">하차 알림</span>
           </button>
         </section>
 
-        {/* 액션 버튼 */}
-        <section className="mx-4 mt-2">
-          {activeTab === 'seek' ? (
-            <button
-              type="button"
-              disabled={
-                isMatchingPaused ||
-                isOutsideOperatingHours ||
-                homeWaitView?.phase === 'waiting_seek'
-              }
-              onClick={() => handleModeSelect('seek')}
-              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-xl font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+        {isOutsideOperatingHours ? (
+          <p
+            className="mx-4 mt-2 rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3 py-2.5 text-xs font-bold text-[#5F6B2E]"
+            role="alert"
+          >
+            {SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE}
+          </p>
+        ) : null}
+
+        {isMatchingPaused ? (
+          <p
+            className="mx-4 mt-2 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
+            role="alert"
+          >
+            현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
+          </p>
+        ) : null}
+
+        {homeWaitView ? (
+          <section className="mx-4 mt-3" aria-label="내 등록 상태">
+            {(() => {
+              const card = resolveHomeMyRegistrationCard(homeWaitView)
+              const showCancelButton =
+                (homeWaitView.phase === 'waiting_seek' ||
+                  homeWaitView.phase === 'waiting_leave') &&
+                Boolean(homeWaitView.requestId)
+              const isMatchAlert = homeWaitView.phase === 'match_alert'
+
+              return (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={handleHomeWaitStatusClick}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      handleHomeWaitStatusClick()
+                    }
+                  }}
+                  className={`w-full cursor-pointer rounded-2xl border px-4 py-4 text-left transition active:opacity-90 ${
+                    isMatchAlert
+                      ? 'border-[#FDBA74] bg-[#FFF7ED]'
+                      : 'border-[#D5DDB8] bg-[#F7F8F2]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <span
+                        className={`inline-block rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white ${
+                          isMatchAlert
+                            ? 'bg-[#E85D04]'
+                            : homeWaitView.phase === 'match_done'
+                              ? 'bg-[#8A9A5B]'
+                              : 'bg-[#747F00]'
+                        }`}
+                      >
+                        {card.statusBadge}
+                      </span>
+                      <p className="mt-2 text-[16px] font-extrabold text-[#1A1A1A]">
+                        {card.purposeLine}
+                      </p>
+                      <p
+                        className={`mt-1 text-[14px] font-semibold ${
+                          isMatchAlert ? 'text-[#C2410C]' : 'text-[#5F6B2E]'
+                        }`}
+                      >
+                        {isMatchAlert ? '탭해서 매칭 확인하기' : card.progressLine}
+                      </p>
+                    </div>
+                    {showCancelButton ? (
+                      <button
+                        type="button"
+                        disabled={isCancellingHomeWait}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void handleCancelHomeWaitRequest()
+                        }}
+                        className="shrink-0 text-xs font-medium text-red-400 disabled:opacity-50"
+                      >
+                        취소
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })()}
+          </section>
+        ) : null}
+
+        <details className="group mx-4 mt-4">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-bold text-[#1A1A1A] marker:content-none [&::-webkit-details-marker]:hidden">
+            <span
+              className="inline-block text-[10px] leading-none text-[#888888] transition-transform group-open:rotate-90"
+              aria-hidden
             >
-              바로 앉기 등록
-            </button>
-          ) : null}
-
-          {activeTab === 'seek' &&
-          homeWaitView?.phase === 'waiting_seek' &&
-          !isMatchingPaused &&
-          !isOutsideOperatingHours ? (
-            <p className="mt-2 text-center text-xs font-semibold leading-relaxed text-[#5F6B2E]">
-              이미 등록 중이에요. 아래에서 대기 상태를 확인해 주세요.
-            </p>
-          ) : null}
-
-          {activeTab === 'leave' ? (
-            <button
-              type="button"
-              disabled={
-                isMatchingPaused ||
-                isOutsideOperatingHours ||
-                homeWaitView?.phase === 'waiting_leave'
-              }
-              onClick={() => handleModeSelect('leave')}
-              className="zeb-touch-target flex w-full items-center justify-center rounded-xl bg-[#747F00] py-4 text-xl font-bold text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              내릴게요 등록
-            </button>
-          ) : null}
-
-          {activeTab === 'leave' &&
-          homeWaitView?.phase === 'waiting_leave' &&
-          !isMatchingPaused &&
-          !isOutsideOperatingHours ? (
-            <p className="mt-2 text-center text-xs font-semibold leading-relaxed text-[#5F6B2E]">
-              이미 등록 중이에요. 아래에서 대기 상태를 확인해 주세요.
-            </p>
-          ) : null}
-
-          {homeWaitView?.phase === 'match_alert' ? (
-            <button
-              type="button"
-              onClick={handleHomeWaitStatusClick}
-              className="zeb-touch-target mt-2 flex w-full items-center justify-center rounded-xl bg-[#E85D04] py-3.5 text-lg font-bold text-white transition active:scale-[0.98]"
-            >
-              매칭 확인하기
-            </button>
-          ) : null}
-
-          {isOutsideOperatingHours ? (
-            <p
-              className="mt-3 rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3 py-2.5 text-xs font-bold text-[#5F6B2E]"
-              role="alert"
-            >
-              {SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE}
-            </p>
-          ) : null}
-
-          {isMatchingPaused ? (
-            <p
-              className="mt-3 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
-              role="alert"
-            >
-              현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
-            </p>
-          ) : null}
-        </section>
+              ▶
+            </span>
+            더 보기
+          </summary>
 
         {/* 환승 많은 역 */}
-        <section className="mx-4 mt-4" aria-label="환승 많은 역">
+        <section className="mt-4" aria-label="환승 많은 역">
           <div className="mb-1 flex items-center justify-between">
             <h2 className="text-base font-bold text-[#1A1A1A]">환승 많은 역</h2>
             <div className="flex items-center gap-2">
@@ -1652,75 +1536,18 @@ export default function Home() {
           </div>
         </section>
 
-        <div className="mx-4 mt-4 mb-4 rounded-2xl bg-white px-4 py-4">
-          <p className="text-base font-bold text-gray-800 mb-1">🚇 왜 7호선인가?</p>
-          <p className="mb-3 text-[12px] font-medium text-[#888888]">서울 7호선 단독 운영</p>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-start gap-2">
-              <span className="text-[#747F00] mt-0.5">•</span>
-              <p className="text-base text-gray-600">서울교통공사 혼잡도 데이터 분석 결과</p>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-[#747F00] mt-0.5">•</span>
-              <p className="text-base text-gray-600">착석 수요·장거리 이용 최적 노선</p>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-[#747F00] mt-0.5">•</span>
-              <p className="text-base text-gray-600">환승역 66개, 평균 착석 시간 30분</p>
-            </div>
-          </div>
+        <div className="mt-4">
+          <p className="mb-1 text-sm font-bold text-gray-800">왜 7호선인가?</p>
+          <p className="mb-2 text-[12px] font-medium text-[#888888]">서울 7호선 단독 운영</p>
+          <ul className="flex flex-col gap-1.5 text-[13px] leading-snug text-gray-600">
+            <li>서울교통공사 혼잡도 데이터 분석 결과</li>
+            <li>착석 수요·장거리 이용 최적 노선</li>
+            <li>환승역 66개, 평균 착석 시간 30분</li>
+          </ul>
         </div>
+        </details>
 
-        {homeWaitView ? (
-          <section
-            className="mx-4 mb-16 rounded-2xl border border-[#D5DDB8] bg-[#F7F8F2] px-4 py-4"
-            aria-label="내 등록 상태"
-          >
-            {(() => {
-              const card = resolveHomeMyRegistrationCard(homeWaitView)
-              const showCancelButton =
-                (homeWaitView.phase === 'waiting_seek' ||
-                  homeWaitView.phase === 'waiting_leave') &&
-                Boolean(homeWaitView.requestId)
-
-              return (
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <span
-                      className={`inline-block rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white ${
-                        homeWaitView.phase === 'match_done'
-                          ? 'bg-[#8A9A5B]'
-                          : 'bg-[#747F00]'
-                      }`}
-                    >
-                      {card.statusBadge}
-                    </span>
-                    <p className="mt-2 text-[16px] font-extrabold text-[#1A1A1A]">
-                      {card.purposeLine}
-                    </p>
-                    <p className="mt-1 text-[14px] font-semibold text-[#5F6B2E]">
-                      {card.progressLine}
-                    </p>
-                  </div>
-                  {showCancelButton ? (
-                    <button
-                      type="button"
-                      disabled={isCancellingHomeWait}
-                      onClick={() => {
-                        void handleCancelHomeWaitRequest()
-                      }}
-                      className="shrink-0 text-xs text-red-400 font-medium disabled:opacity-50"
-                    >
-                      취소
-                    </button>
-                  ) : null}
-                </div>
-              )
-            })()}
-          </section>
-        ) : (
-          <div className="mb-16" aria-hidden />
-        )}
+        <div className="h-3 shrink-0" aria-hidden />
 
         {/* 단독 노선 — 노선 선택 UI (복원 시 homeStep === 'line' 분기로 되돌리기)
         ) : (
