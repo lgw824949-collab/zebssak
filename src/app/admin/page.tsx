@@ -5,6 +5,28 @@ import { useCallback, useEffect, useState } from 'react'
 const ADMIN_KEY_STORAGE = 'adminApiKey'
 const ADMIN_KEY_COOKIE = 'zebssak_admin_key'
 const REFRESH_INTERVAL_MS = 4000
+/** 서울 7호선 — DB congestion_logs line_number 버킷 */
+const SERVICE_LINE_NUMBER = 2
+
+type MatchPeriodFilter = 'today' | '7d' | 'all'
+type MatchStatusFilter = 'pending' | 'active' | 'completed' | 'expired' | 'all'
+type UserCategoryFilter =
+  | 'all'
+  | 'real'
+  | 'new'
+  | 'test'
+  | 'vulnerable'
+  | 'suspended'
+  | 'warning'
+  | 'risk'
+
+type AdminUserCategory =
+  | 'new'
+  | 'test'
+  | 'vulnerable'
+  | 'suspended'
+  | 'warning'
+  | 'risk'
 
 interface AdminUser {
   id: string
@@ -15,6 +37,13 @@ interface AdminUser {
   suspended_until: string | null
   total_points: number
   created_at: string
+  categories?: AdminUserCategory[]
+}
+
+interface AdminUserMeta {
+  category: UserCategoryFilter
+  total_fetched: number
+  counts: Record<AdminUserCategory | 'real', number>
 }
 
 interface MatchRequestUser {
@@ -81,6 +110,56 @@ function formatDateTime(value: string | null): string {
     return new Date(value).toLocaleString('ko-KR')
   } catch {
     return value
+  }
+}
+
+/**
+ * 매칭 상태 뱃지 스타일
+ */
+const USER_CATEGORY_LABELS: Record<AdminUserCategory, string> = {
+  new: '신규',
+  test: '테스트',
+  vulnerable: '교통약자',
+  suspended: '정지',
+  warning: '주의',
+  risk: '위험',
+}
+
+/**
+ * 유저 분류 뱃지 스타일
+ */
+function userCategoryBadgeClass(category: AdminUserCategory): string {
+  switch (category) {
+    case 'new':
+      return 'bg-sky-100 text-sky-800'
+    case 'test':
+      return 'bg-slate-100 text-slate-500'
+    case 'vulnerable':
+      return 'bg-violet-100 text-violet-800'
+    case 'suspended':
+      return 'bg-red-100 text-red-800'
+    case 'warning':
+      return 'bg-amber-100 text-amber-800'
+    case 'risk':
+      return 'bg-red-200 text-red-900'
+    default:
+      return 'bg-slate-100 text-slate-600'
+  }
+}
+
+function matchStatusBadgeClass(status: string): string {
+  switch (status) {
+    case 'pending':
+      return 'bg-blue-100 text-blue-800'
+    case 'accepted':
+      return 'bg-amber-100 text-amber-800'
+    case 'completed':
+      return 'bg-emerald-100 text-emerald-800'
+    case 'expired':
+    case 'cancelled':
+      return 'bg-slate-100 text-slate-400'
+    default:
+      return 'bg-slate-100 text-slate-600'
   }
 }
 
@@ -175,11 +254,15 @@ export default function AdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [congestion, setCongestion] = useState<CongestionData | null>(null)
 
-  const [lineNumber, setLineNumber] = useState<1 | 2>(1)
   const [congestionLevel, setCongestionLevel] = useState(3)
+  const [matchPeriod, setMatchPeriod] = useState<MatchPeriodFilter>('today')
+  const [matchStatus, setMatchStatus] = useState<MatchStatusFilter>('pending')
+  const [userCategory, setUserCategory] = useState<UserCategoryFilter>('real')
+  const [userMeta, setUserMeta] = useState<AdminUserMeta | null>(null)
   const [unsuspendLoadingId, setUnsuspendLoadingId] = useState<string | null>(
     null
   )
+  const [deleteTestLoading, setDeleteTestLoading] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -232,15 +315,28 @@ export default function AdminPage() {
 
     try {
       const headers = adminHeaders(currentKey)
+      const matchQuery = new URLSearchParams({
+        period: matchPeriod,
+        status: matchStatus,
+      })
+      const userQuery = new URLSearchParams({ category: userCategory })
 
       const [matchesRes, usersRes, congestionRes] = await Promise.all([
-        fetch('/api/admin/matches', { headers, cache: 'no-store' }),
-        fetch('/api/admin/users', { headers, cache: 'no-store' }),
+        fetch(`/api/admin/matches?${matchQuery.toString()}`, {
+          headers,
+          cache: 'no-store',
+        }),
+        fetch(`/api/admin/users?${userQuery.toString()}`, {
+          headers,
+          cache: 'no-store',
+        }),
         fetch('/api/admin/congestion', { headers, cache: 'no-store' }),
       ])
 
       const matchesJson = (await matchesRes.json()) as ApiResult<AdminMatch[]>
-      const usersJson = (await usersRes.json()) as ApiResult<AdminUser[]>
+      const usersJson = (await usersRes.json()) as ApiResult<AdminUser[]> & {
+        meta?: AdminUserMeta
+      }
       const congestionJson = (await congestionRes.json()) as ApiResult<CongestionData>
 
       if (
@@ -267,13 +363,14 @@ export default function AdminPage() {
 
       setMatches(matchesJson.data ?? [])
       setUsers(usersJson.data ?? [])
+      setUserMeta(usersJson.meta ?? null)
       setCongestion(congestionJson.data ?? null)
     } catch (err) {
       setError(err instanceof Error ? err.message : '데이터를 불러올 수 없습니다.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [matchPeriod, matchStatus, userCategory])
 
   useEffect(() => {
     if (!isHydrated || !isAuthed) {
@@ -356,6 +453,58 @@ export default function AdminPage() {
     }
   }
 
+  async function handleDeleteTestUsers() {
+    const currentKey = getStoredAdminKey()
+    if (!currentKey) {
+      setIsAuthed(false)
+      return
+    }
+
+    const testCount = userMeta?.counts.test ?? 0
+    const confirmed = window.confirm(
+      `테스트 계정 ${testCount}명을 삭제합니다.\n` +
+        '매칭·요청 기록도 함께 제거되며 되돌릴 수 없습니다. 계속할까요?'
+    )
+    if (!confirmed) {
+      return
+    }
+
+    setDeleteTestLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch('/api/admin/users/delete-test', {
+        method: 'POST',
+        headers: adminHeaders(currentKey),
+        cache: 'no-store',
+      })
+      const result = (await response.json()) as ApiResult<{
+        deleted: number
+        failed: number
+        targeted: number
+        errors?: string[]
+      }>
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error ?? '테스트 계정 삭제에 실패했습니다.')
+      }
+
+      const deleted = result.data?.deleted ?? 0
+      const failed = result.data?.failed ?? 0
+      if (failed > 0) {
+        setError(`테스트 계정 ${deleted}명 삭제, ${failed}명 실패`)
+      }
+
+      await fetchDashboard()
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : '테스트 계정 삭제에 실패했습니다.'
+      )
+    } finally {
+      setDeleteTestLoading(false)
+    }
+  }
+
   async function handleCongestionSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const currentKey = getStoredAdminKey()
@@ -372,7 +521,7 @@ export default function AdminPage() {
         headers: adminHeaders(currentKey),
         cache: 'no-store',
         body: JSON.stringify({
-          line_number: lineNumber,
+          line_number: SERVICE_LINE_NUMBER,
           congestion_level: congestionLevel,
         }),
       })
@@ -433,8 +582,9 @@ export default function AdminPage() {
     )
   }
 
-  const latestLine1 = congestion?.latest_by_line?.['1'] ?? congestion?.latest_by_line?.[1]
-  const latestLine2 = congestion?.latest_by_line?.['2'] ?? congestion?.latest_by_line?.[2]
+  const latestLine7 =
+    congestion?.latest_by_line?.[String(SERVICE_LINE_NUMBER)] ??
+    congestion?.latest_by_line?.[SERVICE_LINE_NUMBER]
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -475,28 +625,19 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* 혼잡도 */}
+        {/* 혼잡도 — 서울 7호선 */}
         <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6">
           <h2 className="text-lg font-bold text-slate-900">혼잡도 모니터링</h2>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <p className="mt-1 text-sm text-slate-500">서울 7호선 · 7 이상 시 매칭 정지</p>
+          <div className="mt-4 max-w-sm">
             <div className="rounded-xl border border-slate-200 p-4">
-              <p className="text-sm text-slate-500">인천 1호선 (최신)</p>
+              <p className="text-sm text-slate-500">서울 7호선 (최신)</p>
               <p className="mt-2 text-3xl font-bold text-slate-900">
-                {latestLine1?.congestion_level ?? '—'}
+                {latestLine7?.congestion_level ?? '—'}
                 <span className="text-lg font-normal text-slate-400">/10</span>
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                {formatDateTime(latestLine1?.recorded_at ?? null)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 p-4">
-              <p className="text-sm text-slate-500">인천 2호선 (최신)</p>
-              <p className="mt-2 text-3xl font-bold text-slate-900">
-                {latestLine2?.congestion_level ?? '—'}
-                <span className="text-lg font-normal text-slate-400">/10</span>
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                {formatDateTime(latestLine2?.recorded_at ?? null)}
+                {formatDateTime(latestLine7?.recorded_at ?? null)}
               </p>
             </div>
           </div>
@@ -505,17 +646,6 @@ export default function AdminPage() {
             onSubmit={handleCongestionSubmit}
             className="mt-6 flex flex-wrap items-end gap-4 border-t border-slate-100 pt-6"
           >
-            <div>
-              <label className="block text-sm font-medium text-slate-700">호선</label>
-              <select
-                value={lineNumber}
-                onChange={(e) => setLineNumber(Number(e.target.value) as 1 | 2)}
-                className="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              >
-                <option value={1}>1호선</option>
-                <option value={2}>2호선</option>
-              </select>
-            </div>
             <div>
               <label className="block text-sm font-medium text-slate-700">
                 혼잡도 (1~10)
@@ -551,7 +681,7 @@ export default function AdminPage() {
                 <tbody>
                   {congestion.recent.map((row) => (
                     <tr key={row.id} className="border-b border-slate-50">
-                      <td className="py-2 pr-4">{row.line_number}호선</td>
+                      <td className="py-2 pr-4">서울 7호선</td>
                       <td className="py-2 pr-4 font-medium">{row.congestion_level}</td>
                       <td className="py-2 text-slate-500">
                         {formatDateTime(row.recorded_at)}
@@ -566,12 +696,38 @@ export default function AdminPage() {
 
         {/* 매칭 현황 */}
         <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6">
-          <h2 className="text-lg font-bold text-slate-900">
-            매칭 현황
-            <span className="ml-2 text-sm font-normal text-slate-400">
-              ({matches.length}건)
-            </span>
-          </h2>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <h2 className="text-lg font-bold text-slate-900">
+              매칭 현황
+              <span className="ml-2 text-sm font-normal text-slate-400">
+                ({matches.length}건)
+              </span>
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={matchPeriod}
+                onChange={(e) => setMatchPeriod(e.target.value as MatchPeriodFilter)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+                aria-label="기간 필터"
+              >
+                <option value="today">오늘</option>
+                <option value="7d">최근 7일</option>
+                <option value="all">전체</option>
+              </select>
+              <select
+                value={matchStatus}
+                onChange={(e) => setMatchStatus(e.target.value as MatchStatusFilter)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+                aria-label="상태 필터"
+              >
+                <option value="pending">진행 중 (pending)</option>
+                <option value="active">진행 중 전체</option>
+                <option value="completed">완료</option>
+                <option value="expired">만료</option>
+                <option value="all">전체 상태</option>
+              </select>
+            </div>
+          </div>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-sm text-left min-w-[720px]">
               <thead className="text-slate-500 border-b">
@@ -597,10 +753,18 @@ export default function AdminPage() {
                     const seekerUser = unwrapEmbed(seeker?.user ?? null)
                     const providerUser = unwrapEmbed(provider?.user ?? null)
 
+                    const isStale =
+                      match.status === 'expired' || match.status === 'cancelled'
+
                     return (
-                      <tr key={match.id} className="border-b border-slate-50">
+                      <tr
+                        key={match.id}
+                        className={`border-b border-slate-50 ${isStale ? 'text-slate-400' : ''}`}
+                      >
                         <td className="py-3 pr-3">
-                          <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium">
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${matchStatusBadgeClass(match.status)}`}
+                          >
                             {match.status}
                           </span>
                         </td>
@@ -636,17 +800,59 @@ export default function AdminPage() {
 
         {/* 유저 · 노쇼 */}
         <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-6">
-          <h2 className="text-lg font-bold text-slate-900">
-            유저 · 노쇼 패널티
-            <span className="ml-2 text-sm font-normal text-slate-400">
-              ({users.length}명)
-            </span>
-          </h2>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                유저 · 노쇼 패널티
+                <span className="ml-2 text-sm font-normal text-slate-400">
+                  ({users.length}명 표시)
+                </span>
+              </h2>
+              {userMeta && (
+                <p className="mt-1 text-xs text-slate-500">
+                  실사용자 {userMeta.counts.real}명 · 테스트 {userMeta.counts.test}
+                  명 · 신규(7일) {userMeta.counts.new}명 · 주의 {userMeta.counts.warning}
+                  명 · 위험 {userMeta.counts.risk}명
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={userCategory}
+                onChange={(e) => setUserCategory(e.target.value as UserCategoryFilter)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+                aria-label="유저 분류 필터"
+              >
+                <option value="real">실사용자</option>
+                <option value="new">신규 (7일)</option>
+                <option value="test">테스트 계정</option>
+                <option value="vulnerable">교통약자</option>
+                <option value="warning">노쇼 주의</option>
+                <option value="risk">노쇼 위험</option>
+                <option value="suspended">이용 정지</option>
+                <option value="all">전체</option>
+              </select>
+              {(userMeta?.counts.test ?? 0) > 0 && (
+                <button
+                  type="button"
+                  disabled={deleteTestLoading}
+                  onClick={() => void handleDeleteTestUsers()}
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+                >
+                  {deleteTestLoading
+                    ? '삭제 중…'
+                    : `테스트 ${userMeta?.counts.test ?? 0}명 삭제`}
+                </button>
+              )}
+            </div>
+          </div>
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm text-left min-w-[640px]">
+            <table className="w-full text-sm text-left min-w-[760px]">
               <thead className="text-slate-500 border-b">
                 <tr>
+                  <th className="py-2 pr-3">분류</th>
                   <th className="py-2 pr-3">아이디</th>
+                  <th className="py-2 pr-3">가입일</th>
                   <th className="py-2 pr-3">노쇼</th>
                   <th className="py-2 pr-3">정지 해제일</th>
                   <th className="py-2 pr-3">포인트</th>
@@ -654,14 +860,45 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => {
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                      해당 분류의 유저가 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                users.map((user) => {
                   const isSuspended =
                     user.suspended_until != null &&
                     new Date(user.suspended_until) > new Date()
+                  const categories = user.categories ?? []
+                  const isTestUser = categories.includes('test')
 
                   return (
-                    <tr key={user.id} className="border-b border-slate-50">
+                    <tr
+                      key={user.id}
+                      className={`border-b border-slate-50 ${isTestUser ? 'text-slate-400' : ''}`}
+                    >
+                      <td className="py-3 pr-3">
+                        <div className="flex flex-wrap gap-1">
+                          {categories.length === 0 ? (
+                            <span className="text-xs text-slate-300">—</span>
+                          ) : (
+                            categories.map((category) => (
+                              <span
+                                key={category}
+                                className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${userCategoryBadgeClass(category)}`}
+                              >
+                                {USER_CATEGORY_LABELS[category]}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3 pr-3 font-medium">{user.username}</td>
+                      <td className="py-3 pr-3 text-slate-500 text-xs whitespace-nowrap">
+                        {formatDateTime(user.created_at)}
+                      </td>
                       <td className="py-3 pr-3">
                         <span
                           className={
@@ -701,7 +938,8 @@ export default function AdminPage() {
                       </td>
                     </tr>
                   )
-                })}
+                })
+                )}
               </tbody>
             </table>
           </div>

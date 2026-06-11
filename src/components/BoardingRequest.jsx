@@ -2689,12 +2689,6 @@ async function fetchTrainsForVoicePanel({
   }
 }
 
-/** 음성 등록용 첫 번째 열차 조회 */
-async function fetchFirstTrainForVoiceSeek(params) {
-  const trains = await fetchTrainsForVoicePanel({ ...params, limit: 1 });
-  return trains[0] ?? null;
-}
-
 /** 음성 열차 카드 도착 문구 */
 function formatVoiceTrainArrival(train, boardingStation) {
   const atBoarding =

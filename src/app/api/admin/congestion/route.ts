@@ -7,8 +7,11 @@ interface CongestionBody {
   congestion_level?: unknown
 }
 
+/** 어드민·매칭 API 공통 — 서울 7호선 (DB line_number 버킷 2) */
+const SERVICE_LINE_NUMBER = 2
+
 /**
- * GET /api/admin/congestion — 호선별 최신 혼잡도
+ * GET /api/admin/congestion — 서울 7호선 최신 혼잡도
  */
 export async function GET(request: Request) {
   try {
@@ -18,28 +21,26 @@ export async function GET(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient()
-    const lines = [1, 2] as const
     const latestByLine: Record<number, unknown> = {}
 
-    for (const lineNumber of lines) {
-      const { data, error } = await supabase
-        .from('congestion_logs')
-        .select('id, line_number, congestion_level, recorded_at')
-        .eq('line_number', lineNumber)
-        .order('recorded_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+    const { data: latest, error } = await supabase
+      .from('congestion_logs')
+      .select('id, line_number, congestion_level, recorded_at')
+      .eq('line_number', SERVICE_LINE_NUMBER)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-      if (error) {
-        return adminErrorResponse('혼잡도 정보를 불러올 수 없습니다.', 500)
-      }
-
-      latestByLine[lineNumber] = data
+    if (error) {
+      return adminErrorResponse('혼잡도 정보를 불러올 수 없습니다.', 500)
     }
+
+    latestByLine[SERVICE_LINE_NUMBER] = latest
 
     const { data: recent, error: recentError } = await supabase
       .from('congestion_logs')
       .select('id, line_number, congestion_level, recorded_at')
+      .eq('line_number', SERVICE_LINE_NUMBER)
       .order('recorded_at', { ascending: false })
       .limit(20)
 
@@ -76,18 +77,20 @@ export async function POST(request: Request) {
       return adminErrorResponse('요청 본문이 올바른 JSON이 아닙니다.', 400)
     }
 
-    const lineNumber =
-      typeof body.line_number === 'number'
-        ? body.line_number
-        : Number(body.line_number)
+    const lineNumberRaw = body.line_number
+    if (
+      lineNumberRaw !== undefined &&
+      lineNumberRaw !== null &&
+      lineNumberRaw !== '' &&
+      Number(lineNumberRaw) !== SERVICE_LINE_NUMBER
+    ) {
+      return adminErrorResponse('현재 서울 7호선만 입력할 수 있습니다.', 400)
+    }
+
     const congestionLevel =
       typeof body.congestion_level === 'number'
         ? body.congestion_level
         : Number(body.congestion_level)
-
-    if (!Number.isInteger(lineNumber) || (lineNumber !== 1 && lineNumber !== 2)) {
-      return adminErrorResponse('line_number는 1 또는 2여야 합니다.', 400)
-    }
 
     if (
       !Number.isInteger(congestionLevel) ||
@@ -102,7 +105,7 @@ export async function POST(request: Request) {
     const { data, error } = await supabase
       .from('congestion_logs')
       .insert({
-        line_number: lineNumber,
+        line_number: SERVICE_LINE_NUMBER,
         congestion_level: congestionLevel,
       })
       .select('id, line_number, congestion_level, recorded_at')
