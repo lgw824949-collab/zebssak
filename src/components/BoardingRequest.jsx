@@ -496,6 +496,13 @@ function extractModeFromVoiceTranscript(transcript) {
 
 const VOICE_CONVERSATIONAL_LETTERS = ["A", "B", "C", "D", "E", "F"];
 
+/** TTS용 — 모든 숫자-숫자 형식을 숫자다시숫자로 변환 (예: 출1-2 → 출 1다시2) */
+function formatTextForKoreanTts(text) {
+  return String(text || "")
+    .replace(/(\d+)\s*[-–—]\s*(\d+)/g, "$1다시$2")
+    .replace(/출\s*(\d)/g, "출 $1");
+}
+
 /** TTS로 한국어 멘트 재생 */
 function speakKorean(text, onEnd) {
   if (typeof window === "undefined") {
@@ -508,7 +515,7 @@ function speakKorean(text, onEnd) {
     return;
   }
   synth.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
+  const utterance = new SpeechSynthesisUtterance(formatTextForKoreanTts(text));
   utterance.lang = "ko-KR";
   utterance.rate = 0.95;
   utterance.onend = () => onEnd?.();
@@ -565,21 +572,20 @@ function extractDirectionFromTranscript(transcript) {
   return null;
 }
 
-/** 음성 문장에서 좌석 열(A~F) 추출 */
+/** 음성 문장에서 좌석 열(A~F) 추출 — 한글 발음·영문 단일 문자 모두 지원 */
 function extractSeatLetterFromTranscript(transcript) {
   const raw = (transcript || "").trim();
   if (!raw) return null;
 
-  const upper = raw.toUpperCase();
-  const letterMatch = upper.match(/(?:^|[^A-Z])([A-F])(?:열|열?)?(?:[^A-Z]|$)/);
-  if (letterMatch?.[1] && VOICE_CONVERSATIONAL_LETTERS.includes(letterMatch[1])) {
-    return letterMatch[1];
+  const compactUpper = raw.replace(/\s+/g, "").toUpperCase();
+  if (/^[A-F]$/.test(compactUpper)) {
+    return compactUpper;
   }
 
-  const normalized = raw.replace(/\s+/g, "").toLowerCase();
+  const compactLower = raw.replace(/\s+/g, "").toLowerCase();
   const koreanLetterMap = [
-    ["에이", "A"],
     ["에프", "F"],
+    ["에이", "A"],
     ["비", "B"],
     ["씨", "C"],
     ["시", "C"],
@@ -587,9 +593,20 @@ function extractSeatLetterFromTranscript(transcript) {
     ["이", "E"],
   ];
   for (const [spoken, letter] of koreanLetterMap) {
-    if (normalized.includes(spoken)) {
+    if (compactLower.includes(spoken)) {
       return letter;
     }
+  }
+
+  const upper = raw.toUpperCase();
+  const letterMatch = upper.match(/(?:^|[^A-Z])([A-F])(?:열)?(?:[^A-Z]|$)/);
+  if (letterMatch?.[1] && VOICE_CONVERSATIONAL_LETTERS.includes(letterMatch[1])) {
+    return letterMatch[1];
+  }
+
+  const isolated = upper.match(/\b([A-F])\b/);
+  if (isolated?.[1]) {
+    return isolated[1];
   }
 
   return null;
@@ -1184,16 +1201,26 @@ function StepStation({
     try {
       const recognition = new SpeechRecognition();
       recognition.lang = "ko-KR";
-      recognition.interimResults = false;
+      recognition.interimResults = true;
+      recognition.continuous = false;
       recognition.maxAlternatives = 1;
       recognitionRef.current = recognition;
       setIsListening(true);
       setVoiceError("");
 
       recognition.onresult = (event) => {
-        const transcript = event.results?.[0]?.[0]?.transcript?.trim();
-        if (transcript) {
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const result = event.results[i];
+          if (!result.isFinal) {
+            continue;
+          }
+          const transcript = result[0]?.transcript?.trim();
+          if (!transcript) {
+            continue;
+          }
+          stopVoiceRecognition();
           onTranscript(transcript);
+          return;
         }
       };
       recognition.onerror = () => {
