@@ -1334,10 +1334,17 @@ function StepStation({
       return;
     }
 
+    if (!boardingStationName?.trim()) {
+      setVoiceError(
+        "출발역을 먼저 선택해 주세요.\n직접 입력으로 전환해 출발지를 설정할 수 있습니다."
+      );
+      return;
+    }
+
     if (onVoiceSeekRegister) {
       setIsParsingVoice(true);
       try {
-        await onVoiceSeekRegister({
+        const outcome = await onVoiceSeekRegister({
           stationName,
           car,
           door,
@@ -1348,6 +1355,13 @@ function StepStation({
         });
         setQuery(stationName);
         setSelected(stationName);
+        if (outcome === "need_train") {
+          closeVoicePanel();
+          return;
+        }
+        if (outcome === "matched" || outcome === "waiting") {
+          return;
+        }
         closeVoicePanel();
       } catch (err) {
         const message =
@@ -2285,7 +2299,7 @@ function StepStation({
                   cursor: isParsingVoice ? "default" : "pointer",
                 }}
               >
-                {isParsingVoice ? "등록 중..." : "확인"}
+                {isParsingVoice ? "매칭 등록 중..." : "확인 · 매칭 등록"}
               </button>
             ) : null}
             {voiceError ? (
@@ -4294,22 +4308,21 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     };
   }, [normalizedLine]);
 
-  async function submitSeekRequest(info) {
+  async function submitSeekRequest(info, { afterVoice = false } = {}) {
     const stopSubmitting = (message) => {
       if (message) {
         setSubmitError(message);
       }
       setIsSubmitting(false);
+      return false;
     };
 
     const token = localStorage.getItem("token");
     if (!token) {
-      stopSubmitting("로그인이 필요합니다.");
-      return;
+      return stopSubmitting("로그인이 필요합니다.");
     }
     if (!trainId || !info?.doorLabel || !station) {
-      stopSubmitting("열차, 출입문, 어디까지 가세요?을 확인해 주세요.");
-      return;
+      return stopSubmitting("열차, 출입문, 어디까지 가세요?을 확인해 주세요.");
     }
 
     const mapped =
@@ -4323,8 +4336,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
           }
         : mapSeekDoorToSubmission(info.doorLabel, normalizedLine);
     if (!mapped?.seatSide || !mapped?.seatNumber) {
-      stopSubmitting("위치 정보를 변환할 수 없습니다.");
-      return;
+      return stopSubmitting("위치 정보를 변환할 수 없습니다.");
     }
 
     const seatApi = {
@@ -4338,8 +4350,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       const stations = await fetchStationsForLine(normalizedLine);
       const destinationMeta = await lookupStationMeta(station, normalizedLine);
       if (!destinationMeta?.stationCode) {
-        stopSubmitting("어디까지 가세요? 정보를 찾을 수 없습니다.");
-        return;
+        return stopSubmitting("어디까지 가세요? 정보를 찾을 수 없습니다.");
       }
 
       const boardingName = trainCurrentStation || currentStationName || "현재역";
@@ -4385,27 +4396,24 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       try {
         payload = await response.json();
       } catch {
-        stopSubmitting("서버 응답을 처리할 수 없습니다.");
-        return;
+        return stopSubmitting("서버 응답을 처리할 수 없습니다.");
       }
 
       if (handleUnauthorizedResponse(response)) {
         setIsSubmitting(false);
-        return;
+        return false;
       }
 
       if (!response.ok || payload?.success === false) {
-        stopSubmitting(
+        return stopSubmitting(
           typeof payload?.error === "string" && payload.error.trim()
             ? payload.error
             : "착석 요청 등록에 실패했습니다."
         );
-        return;
       }
 
       if (!payload?.data?.match_request_id) {
-        stopSubmitting("착석 요청 응답이 올바르지 않습니다.");
-        return;
+        return stopSubmitting("착석 요청 응답이 올바르지 않습니다.");
       }
 
       const draft = {
@@ -4445,13 +4453,19 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
           // sessionStorage 실패 시 완료 화면으로 폴백합니다.
         }
         window.location.href = "/matching";
-        return;
+        return "matched";
+      }
+
+      if (afterVoice) {
+        window.location.href = "/waiting";
+        return "waiting";
       }
 
       setSeatInfo(info);
       setStep(4);
+      return "done";
     } catch {
-      stopSubmitting("네트워크 오류가 발생했습니다.");
+      return stopSubmitting("네트워크 오류가 발생했습니다.");
     } finally {
       setIsSubmitting(false);
     }
@@ -4687,6 +4701,10 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       throw new Error("음성 등록 정보가 올바르지 않습니다.");
     }
 
+    if (!currentStationName?.trim()) {
+      throw new Error("출발역을 먼저 선택해 주세요. 직접 입력으로 전환해 출발지를 설정할 수 있습니다.");
+    }
+
     setStation(draft.stationName);
     setSubmitError("");
     setIsSubmitting(true);
@@ -4700,9 +4718,10 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
 
       if (!train?.id) {
         setVoiceSeekDraft(draft);
+        setStation(draft.stationName);
         setStep(2);
         setSubmitError("열차를 자동으로 찾지 못했습니다. 열차를 선택해 주세요.");
-        return;
+        return "need_train";
       }
 
       setTrainId(train.id);
@@ -4716,7 +4735,11 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       }
 
       setVoiceSeekDraft(null);
-      await submitSeekRequest(info);
+      const outcome = await submitSeekRequest(info, { afterVoice: true });
+      if (outcome === false) {
+        throw new Error("매칭 등록에 실패했습니다.");
+      }
+      return outcome;
     } finally {
       setIsSubmitting(false);
     }
