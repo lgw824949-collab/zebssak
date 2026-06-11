@@ -496,18 +496,12 @@ function extractModeFromVoiceTranscript(transcript) {
 
 const VOICE_CONVERSATIONAL_LETTERS = ["A", "B", "C", "D", "E", "F"];
 
-const VOICE_SENTENCE_GUIDE_INTRO =
-  "플랫폼 바닥 출입문 번호 확인 후, 한 문장으로 말씀해 주세요.";
+const VOICE_SENTENCE_GUIDE_TITLE = "플랫폼에서 한 번에 말해 주세요";
 
-const VOICE_SENTENCE_GUIDE_ITEMS = [
-  "목적지 역",
-  "출입문 번호 (1-1 ~ 1-4)",
-  "방향 (좌측 / 우측)",
-  "열 (A~F, 선택)",
-];
+const VOICE_SENTENCE_GUIDE_SUB = "목적지 · 출입문(1-1~1-4) · 방향 · 열(선택)";
 
 const VOICE_SENTENCE_GUIDE_TTS =
-  "플랫폼에서 목적지, 출입문 번호, 방향, 열을 한 문장으로 말씀해 주세요.";
+  "플랫폼에서 한 번에 말씀해 주세요. 목적지, 출입문, 방향, 열 순으로 말해 주세요.";
 
 const VOICE_SENTENCE_RETRY_TEXT =
   "인식에 실패했습니다.\n목적지 · 출입문 · 방향을 다시 말씀해 주세요.";
@@ -1289,6 +1283,8 @@ function StepStation({
         side,
         seatLetter: seatLetter || null,
       });
+      setQuery(stationName);
+      setSelected(stationName);
       setVoiceError("");
     } catch {
       setVoiceError(VOICE_SENTENCE_RETRY_TEXT);
@@ -1612,6 +1608,7 @@ function StepStation({
   const destinationBoxClass = selected ? "bg-[#f0f5e8] border-gray-200" : "bg-white border-gray-200";
   const showLeaveVoicePanel =
     mode === "leave" && (isVoiceExpanded || isListening || isParsingVoice);
+  const showSeekVoiceOverlay = voiceSentenceActive && mode === "seek";
 
   return (
     <div
@@ -1673,24 +1670,190 @@ function StepStation({
             {lineDisplayName}
           </span>
           <div style={{ fontSize: 16, fontWeight: 700, color: C.text, textAlign: "left" }}>
-            어디까지 가세요?
+            {showSeekVoiceOverlay ? "음성으로 등록" : "어디까지 가세요?"}
           </div>
         </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: lineColor,
-            fontWeight: 700,
-            background: lineColorLight,
-            borderRadius: 20,
-            padding: "4px 10px",
-            flexShrink: 0,
-          }}
-        >
-          1 / 3
-        </div>
+        {showSeekVoiceOverlay ? (
+          <button
+            type="button"
+            className="zeb-touch-target"
+            onClick={() => {
+              setVoiceError("");
+              closeVoicePanel();
+            }}
+            disabled={isParsingVoice}
+            aria-label="음성 등록 닫기"
+            style={{
+              width: MOBILE.touchMin,
+              height: MOBILE.touchMin,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              color: C.muted,
+              fontSize: 22,
+              lineHeight: 1,
+              cursor: isParsingVoice ? "default" : "pointer",
+              flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
+        ) : (
+          <div
+            style={{
+              fontSize: 11,
+              color: lineColor,
+              fontWeight: 700,
+              background: lineColorLight,
+              borderRadius: 20,
+              padding: "4px 10px",
+              flexShrink: 0,
+            }}
+          >
+            1 / 3
+          </div>
+        )}
       </div>
 
+      {showSeekVoiceOverlay ? (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            padding: `20px ${MOBILE.pageX}px 0`,
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
+              padding: "8px 0 16px",
+            }}
+          >
+            <span
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: "50%",
+                background: lineColor,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                boxShadow: isListening ? `0 0 0 8px ${lineColorLight}` : "none",
+                transition: "box-shadow 0.2s ease",
+              }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#fff"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+              </svg>
+            </span>
+            <p
+              style={{
+                margin: "16px 0 0",
+                fontSize: 16,
+                fontWeight: 700,
+                color: C.text,
+                lineHeight: 1.45,
+              }}
+            >
+              {VOICE_SENTENCE_GUIDE_TITLE}
+            </p>
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
+              {VOICE_SENTENCE_GUIDE_SUB}
+            </p>
+            {isListening ? (
+              <p style={{ margin: "14px 0 0", fontSize: 14, color: lineColor, fontWeight: 600 }}>
+                듣는 중…
+              </p>
+            ) : null}
+            {isParsingVoice ? (
+              <p style={{ margin: "14px 0 0", fontSize: 14, color: C.muted, fontWeight: 600 }}>
+                분석 중…
+              </p>
+            ) : null}
+            {voiceParseResult ? (
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    justifyContent: "center",
+                    marginTop: 20,
+                    maxWidth: "100%",
+                  }}
+                >
+                  {[
+                    formatStationDisplayName(voiceParseResult.stationName),
+                    voiceParseResult.doorLabel,
+                    voiceParseResult.side,
+                    voiceParseResult.seatLetter
+                      ? `${voiceParseResult.seatLetter}열`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .map((label) => (
+                      <span
+                        key={label}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          padding: "6px 12px",
+                          borderRadius: 999,
+                          background: LINE_OLIVE_LIGHT_BG,
+                          border: `1px solid ${C.primaryBorder}`,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: C.text,
+                        }}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                </div>
+                <p style={{ margin: "10px 0 0", fontSize: 12, color: C.muted }}>
+                  맞으면 확인을 눌러 주세요
+                </p>
+              </>
+            ) : null}
+            {voiceError ? (
+              <p
+                style={{
+                  margin: "16px 0 0",
+                  fontSize: 13,
+                  color: "#DC2626",
+                  lineHeight: 1.5,
+                  whiteSpace: "pre-line",
+                  maxWidth: 280,
+                }}
+              >
+                {voiceError}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : (
       <div
         className="zeb-no-scrollbar"
         style={{
@@ -2046,177 +2209,6 @@ function StepStation({
           </button>
         ) : null}
 
-        {voiceSentenceActive ? (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="음성 등록"
-            style={{
-              marginTop: 14,
-              padding: 16,
-              borderRadius: 14,
-              border: `1px solid ${C.border}`,
-              background: C.card,
-            }}
-          >
-            <p
-              style={{
-                margin: "0 0 10px",
-                fontSize: 14,
-                fontWeight: 600,
-                color: C.text,
-                lineHeight: 1.5,
-              }}
-            >
-              {VOICE_SENTENCE_GUIDE_INTRO}
-            </p>
-            <p
-              style={{
-                margin: "0 0 6px",
-                fontSize: 12,
-                fontWeight: 700,
-                color: lineColor,
-              }}
-            >
-              말할 내용
-            </p>
-            <ul
-              style={{
-                margin: "0 0 12px",
-                padding: "0 0 0 18px",
-                fontSize: 13,
-                color: C.text,
-                lineHeight: 1.6,
-              }}
-            >
-              {VOICE_SENTENCE_GUIDE_ITEMS.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-            {isListening ? (
-              <p style={{ margin: "0 0 12px", fontSize: 13, color: lineColor, fontWeight: 600 }}>
-                듣는 중…
-              </p>
-            ) : null}
-            {isParsingVoice ? (
-              <p style={{ margin: "0 0 12px", fontSize: 13, color: C.muted, fontWeight: 600 }}>
-                분석 중…
-              </p>
-            ) : null}
-            {voiceParseResult ? (
-              <div
-                style={{
-                  marginBottom: 12,
-                  padding: "12px 14px",
-                  borderRadius: 12,
-                  background: LINE_OLIVE_LIGHT_BG,
-                  border: `1px solid ${C.border}`,
-                }}
-              >
-                <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: lineColor }}>
-                  인식 결과
-                </p>
-                <p style={{ margin: "0 0 4px", fontSize: 14, color: C.text }}>
-                  목적지: {formatStationDisplayName(voiceParseResult.stationName)}
-                </p>
-                <p style={{ margin: "0 0 4px", fontSize: 14, color: C.text }}>
-                  출입문: {voiceParseResult.doorLabel}
-                </p>
-                <p style={{ margin: "0 0 4px", fontSize: 14, color: C.text }}>
-                  방향: {voiceParseResult.side}
-                </p>
-                <p style={{ margin: 0, fontSize: 14, color: C.text }}>
-                  열: {voiceParseResult.seatLetter ? `${voiceParseResult.seatLetter}열` : "미입력"}
-                </p>
-              </div>
-            ) : null}
-            {voiceParseResult ? (
-              <button
-                type="button"
-                className="zeb-touch-target"
-                onClick={() => {
-                  void handleVoiceSentenceConfirm();
-                }}
-                disabled={isParsingVoice}
-                style={{
-                  width: "100%",
-                  minHeight: MOBILE.touchMin,
-                  marginBottom: 8,
-                  padding: "12px 0",
-                  background: isParsingVoice ? "#D1D5DB" : lineColor,
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 12,
-                  fontSize: 16,
-                  fontWeight: 700,
-                  cursor: isParsingVoice ? "default" : "pointer",
-                }}
-              >
-                {isParsingVoice ? "등록 중..." : "확인"}
-              </button>
-            ) : null}
-            {voiceError ? (
-              <p
-                style={{
-                  margin: "0 0 10px",
-                  fontSize: 13,
-                  color: "#DC2626",
-                  lineHeight: 1.5,
-                  whiteSpace: "pre-line",
-                }}
-              >
-                {voiceError}
-              </p>
-            ) : null}
-            {voiceError ? (
-              <button
-                type="button"
-                className="zeb-touch-target"
-                onClick={retryVoiceSentence}
-                disabled={isListening || isParsingVoice}
-                style={{
-                  width: "100%",
-                  minHeight: MOBILE.touchMin,
-                  marginBottom: 8,
-                  padding: "10px 0",
-                  background: "#fff",
-                  color: lineColor,
-                  border: `1.5px solid ${lineColor}`,
-                  borderRadius: 12,
-                  fontSize: 15,
-                  fontWeight: 700,
-                  cursor: isListening || isParsingVoice ? "default" : "pointer",
-                }}
-              >
-                다시 말하기
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="zeb-touch-target"
-              onClick={() => {
-                setVoiceError("");
-                closeVoicePanel();
-              }}
-              disabled={isParsingVoice}
-              style={{
-                width: "100%",
-                minHeight: MOBILE.touchMin,
-                padding: "10px 0",
-                background: "transparent",
-                color: C.muted,
-                border: "none",
-                fontSize: 14,
-                fontWeight: 600,
-                textDecoration: "underline",
-                cursor: isParsingVoice ? "default" : "pointer",
-              }}
-            >
-              직접 입력으로 전환
-            </button>
-          </div>
-        ) : null}
-
         {voiceError && !voiceSentenceActive ? (
           <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{voiceError}</p>
         ) : null}
@@ -2260,6 +2252,7 @@ function StepStation({
           ) : null}
         </div>
       </div>
+      )}
 
       <div
         style={{
@@ -2268,32 +2261,110 @@ function StepStation({
           borderTop: `1px solid ${C.border}`,
         }}
       >
-        {proceedHint ? (
-          <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: lineColor, textAlign: "center" }}>
-            {proceedHint}
-          </p>
-        ) : null}
-        <button
-          type="button"
-          className="zeb-touch-target"
-          onClick={() => onNext(selected)}
-          disabled={!canProceedToTrainStep}
-          style={{
-            width: "100%",
-            minHeight: MOBILE.touchMin,
-            padding: "12px 0",
-            background: canProceedToTrainStep ? lineColor : "#D1D5DB",
-            color: "#fff",
-            border: "none",
-            borderRadius: 12,
-            fontSize: 16,
-            fontWeight: 700,
-            cursor: canProceedToTrainStep ? "pointer" : "default",
-            transition: "background 0.2s",
-          }}
-        >
-          다음 — 열차 선택
-        </button>
+        {showSeekVoiceOverlay ? (
+          <>
+            {voiceParseResult ? (
+              <button
+                type="button"
+                className="zeb-touch-target"
+                onClick={() => {
+                  void handleVoiceSentenceConfirm();
+                }}
+                disabled={isParsingVoice}
+                style={{
+                  width: "100%",
+                  minHeight: MOBILE.touchMin,
+                  marginBottom: 10,
+                  padding: "12px 0",
+                  background: isParsingVoice ? "#D1D5DB" : lineColor,
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 12,
+                  fontSize: 16,
+                  fontWeight: 700,
+                  cursor: isParsingVoice ? "default" : "pointer",
+                }}
+              >
+                {isParsingVoice ? "등록 중..." : "확인"}
+              </button>
+            ) : null}
+            {voiceError ? (
+              <button
+                type="button"
+                className="zeb-touch-target"
+                onClick={retryVoiceSentence}
+                disabled={isListening || isParsingVoice}
+                style={{
+                  width: "100%",
+                  minHeight: MOBILE.touchMin,
+                  marginBottom: 10,
+                  padding: "12px 0",
+                  background: "#fff",
+                  color: lineColor,
+                  border: `1.5px solid ${lineColor}`,
+                  borderRadius: 12,
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: isListening || isParsingVoice ? "default" : "pointer",
+                }}
+              >
+                다시 말하기
+              </button>
+            ) : null}
+            <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
+              <button
+                type="button"
+                className="zeb-touch-target"
+                onClick={() => {
+                  setVoiceError("");
+                  closeVoicePanel();
+                }}
+                disabled={isParsingVoice}
+                style={{
+                  padding: "8px 4px",
+                  background: "transparent",
+                  color: C.muted,
+                  border: "none",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  textDecoration: "underline",
+                  cursor: isParsingVoice ? "default" : "pointer",
+                }}
+              >
+                직접 입력으로 전환
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {proceedHint ? (
+              <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: lineColor, textAlign: "center" }}>
+                {proceedHint}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              className="zeb-touch-target"
+              onClick={() => onNext(selected)}
+              disabled={!canProceedToTrainStep}
+              style={{
+                width: "100%",
+                minHeight: MOBILE.touchMin,
+                padding: "12px 0",
+                background: canProceedToTrainStep ? lineColor : "#D1D5DB",
+                color: "#fff",
+                border: "none",
+                borderRadius: 12,
+                fontSize: 16,
+                fontWeight: 700,
+                cursor: canProceedToTrainStep ? "pointer" : "default",
+                transition: "background 0.2s",
+              }}
+            >
+              다음 — 열차 선택
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
