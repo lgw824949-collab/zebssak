@@ -26,7 +26,7 @@ interface StoredUser {
 /** 홈 GPS 프리페치 — 탑승 화면 캐시와 동일한 1km 기준 */
 const GPS_MAX_RADIUS_KM = 1
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
-const HOME_UI_VERSION = '2026-06-04-mobile-refresh-v28'
+const HOME_UI_VERSION = '2026-06-11-scroll-touch-v29'
 /** 홈 2단계 — 현재 서울 7호선만 노출 */
 const HOME_LINE_OPTIONS = [
   // {
@@ -1214,7 +1214,7 @@ export default function Home() {
 
   return (
     <div
-      className="mx-auto flex min-h-0 w-full max-w-[480px] flex-1 flex-col overflow-hidden bg-[#f5f5f0]"
+      className="mx-auto flex w-full max-w-[480px] flex-col bg-[#f5f5f0]"
       style={{ zoom: homeZoomScale }}
     >
       <CongestionHaltModal
@@ -1245,11 +1245,11 @@ export default function Home() {
         <span className="zeb-touch-target w-9 shrink-0" aria-hidden />
       </header>
 
-      <main className="zeb-no-scrollbar zeb-scroll-y flex min-h-0 flex-1 flex-col pb-4">
+      <main className="flex flex-col pb-4">
         {/* 객실 일러스트 — 높이를 키워 3~4명이 보이게, 나머지는 좌우 스크롤 */}
         <section className="w-full shrink-0 bg-[#f5f5f0]" aria-label="지하철 객실 안내">
           <div
-            className="zeb-no-scrollbar overflow-x-auto overflow-y-hidden [touch-action:pan-x_pan-y]"
+            className="zeb-no-scrollbar overflow-x-auto overflow-y-hidden"
             aria-label="객실 이미지 가로 스크롤"
           >
             <img
