@@ -145,7 +145,7 @@ function MatchingForm() {
   const goToHome = useCallback(() => {
     clearActiveMatchSession()
     setIsNavigatingHome(true)
-    window.location.replace('/')
+    window.location.href = '/'
   }, [clearActiveMatchSession])
 
   const goToMatched = useCallback(
@@ -427,7 +427,10 @@ function MatchingForm() {
       setActionError('')
 
       if (action === 'reject') {
-        goToHome()
+        clearActiveMatchSession()
+        sessionStorage.removeItem('activeMatchRequestId')
+        actionHandledRef.current = true
+        setIsDismissed(true)
         void fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
           method: 'PATCH',
           headers: {
@@ -436,9 +439,8 @@ function MatchingForm() {
           },
           body: JSON.stringify({ action }),
           keepalive: true,
-        }).catch(() => {
-          // 거절 API 실패 시에도 홈 이동은 유지합니다.
-        })
+        }).catch(() => {})
+        window.location.href = '/'
         return
       }
 
