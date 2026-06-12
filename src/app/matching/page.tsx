@@ -128,6 +128,7 @@ function MatchingForm() {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDismissed, setIsDismissed] = useState(false)
+  const [isNavigatingToMatched, setIsNavigatingToMatched] = useState(false)
   const expireRequestedRef = useRef(false)
   const actionHandledRef = useRef(false)
   const acceptNavigateScheduledRef = useRef(false)
@@ -156,6 +157,7 @@ function MatchingForm() {
         return
       }
       acceptNavigateScheduledRef.current = true
+      setIsNavigatingToMatched(true)
       sessionStorage.setItem('activeMatchId', matchId)
       router.replace('/matched')
     },
@@ -505,6 +507,10 @@ function MatchingForm() {
 
   function handleReject() {
     void submitMatchAction('reject')
+  }
+
+  if (isNavigatingToMatched) {
+    return null
   }
 
   if (isDismissed) {

@@ -516,6 +516,9 @@ export default function MatchedPage() {
 
   return (
     <div className="min-h-dvh bg-[#f6f7f2] pb-8">
+      <p className="mx-4 mt-4 rounded-xl bg-[#f0f5e8] px-4 py-3 text-center text-sm font-medium text-[#4a7c3f]">
+        매칭이 완료됐어요! 아래 좌석으로 이동해주세요 🚇
+      </p>
       {/* 상단 히어로 */}
       <div
         className="relative overflow-hidden px-5 pb-8 pt-10"
