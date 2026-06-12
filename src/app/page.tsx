@@ -68,11 +68,23 @@ const HOME_LINE_OPTIONS = [
 /** 단독 운영 노선 — 노선 선택 단계 생략 시 사용 */
 const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
 
+/** 서울 7호선 홈 팔레트 — 올리브 그린 계열 통일 */
+const LINE7_PRIMARY = '#747F00'
+const LINE7_PRIMARY_DARK = '#5F6B2E'
+const LINE7_PRIMARY_DEEP = '#4A5520'
+const LINE7_SOFT_BG = '#F3F5E8'
+const LINE7_MUTED_BG = '#EDF0DC'
+const LINE7_SUCCESS_BG = '#E8EDCF'
+const LINE7_BORDER = '#D5DDB8'
+const LINE7_BORDER_STRONG = '#C4CE8F'
+const LINE7_TEXT_MUTED = '#7A8460'
+const LINE7_ACCENT = '#8A9A5B'
 /** 홈 탭 — 빈자리 찾기 / 자리 넘기기 */
-const SEEK_TAB_ACTIVE_COLOR = '#4B7F52'
-const LEAVE_TAB_ACTIVE_COLOR = '#F97316'
-const TAB_INACTIVE_TEXT_COLOR = '#6B7280'
-const TAB_OUTLINE_BORDER_COLOR = '#D1D5DB'
+const SEEK_TAB_ACTIVE_COLOR = LINE7_PRIMARY
+const LEAVE_TAB_ACTIVE_COLOR = LINE7_PRIMARY_DARK
+const TAB_INACTIVE_TEXT_COLOR = LINE7_TEXT_MUTED
+const TAB_OUTLINE_BORDER_COLOR = LINE7_BORDER
+const TAB_ACTIVE_SHADOW = '0 2px 10px rgba(116, 127, 0, 0.14)'
 
 /** 홈 노선 라벨 → API line 파라미터 */
 function resolveHomeApiLine(lineLabel: string): string {
@@ -175,9 +187,9 @@ function resolveHomeMatchStatusBox(view: HomeWaitView | null): HomeMatchStatusBo
     return {
       kind: 'completed',
       label: '매칭 완료',
-      emoji: '✅',
-      backgroundColor: '#DCFCE7',
-      textColor: '#166534',
+      emoji: '✓',
+      backgroundColor: LINE7_SUCCESS_BG,
+      textColor: LINE7_PRIMARY_DEEP,
     }
   }
 
@@ -185,9 +197,9 @@ function resolveHomeMatchStatusBox(view: HomeWaitView | null): HomeMatchStatusBo
     return {
       kind: 'failed',
       label: '매칭 실패',
-      emoji: '❌',
-      backgroundColor: '#FEE2E2',
-      textColor: '#B91C1C',
+      emoji: '✕',
+      backgroundColor: '#F0EBE6',
+      textColor: '#7D5A52',
     }
   }
 
@@ -200,9 +212,9 @@ function resolveHomeMatchStatusBox(view: HomeWaitView | null): HomeMatchStatusBo
     return {
       kind: 'waiting',
       label: '매칭 대기중',
-      emoji: '🟡',
-      backgroundColor: '#FEF9C3',
-      textColor: '#854D0E',
+      emoji: '●',
+      backgroundColor: LINE7_MUTED_BG,
+      textColor: LINE7_PRIMARY_DARK,
     }
   }
 
@@ -1250,9 +1262,7 @@ export default function Home() {
             style={{
               backgroundColor: isSeekTabActive ? SEEK_TAB_ACTIVE_COLOR : '#FFFFFF',
               borderColor: isSeekTabActive ? SEEK_TAB_ACTIVE_COLOR : TAB_OUTLINE_BORDER_COLOR,
-              boxShadow: isSeekTabActive
-                ? '0 2px 10px rgba(75, 127, 82, 0.16)'
-                : 'none',
+              boxShadow: isSeekTabActive ? TAB_ACTIVE_SHADOW : 'none',
             }}
           >
             <span
@@ -1282,9 +1292,7 @@ export default function Home() {
             style={{
               backgroundColor: isLeaveTabActive ? LEAVE_TAB_ACTIVE_COLOR : '#FFFFFF',
               borderColor: isLeaveTabActive ? LEAVE_TAB_ACTIVE_COLOR : TAB_OUTLINE_BORDER_COLOR,
-              boxShadow: isLeaveTabActive
-                ? '0 2px 10px rgba(249, 115, 22, 0.16)'
-                : 'none',
+              boxShadow: isLeaveTabActive ? TAB_ACTIVE_SHADOW : 'none',
             }}
           >
             <span
@@ -1325,13 +1333,17 @@ export default function Home() {
         {homeMatchStatusBox ? (
           <section className="mx-4 mt-3" aria-label="매칭 상태">
             <p
-              className="rounded-xl px-4 py-3 text-center text-sm font-bold"
+              className="rounded-xl border px-4 py-3 text-center text-sm font-bold"
               style={{
                 backgroundColor: homeMatchStatusBox.backgroundColor,
+                borderColor: LINE7_BORDER,
                 color: homeMatchStatusBox.textColor,
               }}
             >
-              {homeMatchStatusBox.emoji} {homeMatchStatusBox.label}
+              <span aria-hidden className="mr-1 opacity-80">
+                {homeMatchStatusBox.emoji}
+              </span>
+              {homeMatchStatusBox.label}
             </p>
           </section>
         ) : null}
@@ -1397,7 +1409,7 @@ export default function Home() {
                     className={`shrink-0 rounded-full px-3 py-1 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${
                       isSelected
                         ? 'bg-[#747F00] text-white'
-                        : 'border border-gray-200 bg-white text-gray-600'
+                        : 'border border-[#D5DDB8] bg-white text-[#7A8460]'
                     }`}
                   >
                     {station.label}
@@ -1429,33 +1441,37 @@ export default function Home() {
                       handleHomeWaitStatusClick()
                     }
                   }}
-                  className={`w-full cursor-pointer rounded-2xl border px-4 py-4 text-left transition active:opacity-90 ${
+                  className="w-full cursor-pointer rounded-2xl border px-4 py-4 text-left transition active:opacity-90"
+                  style={
                     isMatchAlert
-                      ? 'border-[#FDBA74] bg-[#FFF7ED]'
-                      : 'border-[#D5DDB8] bg-[#F7F8F2]'
-                  }`}
+                      ? {
+                          borderColor: LINE7_BORDER_STRONG,
+                          backgroundColor: LINE7_SOFT_BG,
+                        }
+                      : {
+                          borderColor: LINE7_BORDER,
+                          backgroundColor: '#F7F8F2',
+                        }
+                  }
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white ${
-                          isMatchAlert
-                            ? 'bg-[#E85D04]'
+                        className="inline-block rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white"
+                        style={{
+                          backgroundColor: isMatchAlert
+                            ? LINE7_PRIMARY
                             : homeWaitView.phase === 'match_done'
-                              ? 'bg-[#8A9A5B]'
-                              : 'bg-[#747F00]'
-                        }`}
+                              ? LINE7_ACCENT
+                              : LINE7_PRIMARY,
+                        }}
                       >
                         {card.statusBadge}
                       </span>
                       <p className="mt-2 text-[16px] font-extrabold text-[#1A1A1A]">
                         {card.purposeLine}
                       </p>
-                      <p
-                        className={`mt-1 text-[14px] font-semibold ${
-                          isMatchAlert ? 'text-[#C2410C]' : 'text-[#5F6B2E]'
-                        }`}
-                      >
+                      <p className="mt-1 text-[14px] font-semibold text-[#5F6B2E]">
                         {isMatchAlert ? '탭해서 매칭 확인하기' : card.progressLine}
                       </p>
                     </div>
