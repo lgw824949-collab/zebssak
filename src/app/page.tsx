@@ -480,7 +480,7 @@ async function cancelHomeMatchRequest(
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ request_id: requestId }),
+      body: JSON.stringify({ request_id: requestId, status: 'cancelled' }),
       cache: 'no-store',
     })
 
@@ -1426,16 +1426,7 @@ export default function Home() {
 
               return (
                 <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={handleHomeWaitStatusClick}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      handleHomeWaitStatusClick()
-                    }
-                  }}
-                  className="w-full cursor-pointer rounded-2xl border px-4 py-4 text-left transition active:opacity-90"
+                  className="w-full rounded-2xl border px-4 py-4 text-left"
                   style={
                     isMatchAlert
                       ? {
@@ -1449,7 +1440,18 @@ export default function Home() {
                   }
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={handleHomeWaitStatusClick}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          handleHomeWaitStatusClick()
+                        }
+                      }}
+                      className="min-w-0 flex-1 cursor-pointer transition active:opacity-90"
+                    >
                       <span
                         className="inline-block rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white"
                         style={{
@@ -1473,11 +1475,10 @@ export default function Home() {
                       <button
                         type="button"
                         disabled={isCancellingHomeWait}
-                        onClick={(event) => {
-                          event.stopPropagation()
+                        onClick={() => {
                           void handleCancelHomeWaitRequest()
                         }}
-                        className="shrink-0 text-xs font-medium text-red-400 disabled:opacity-50"
+                        className="zeb-touch-target shrink-0 px-1 text-xs font-medium text-red-400 disabled:opacity-50"
                       >
                         취소
                       </button>
