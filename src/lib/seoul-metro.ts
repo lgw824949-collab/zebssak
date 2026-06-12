@@ -1,7 +1,7 @@
 import http from 'node:http'
 
 const SEOUL_METRO_DIRECT_HOST = 'http://swopenAPI.seoul.go.kr'
-const SEOUL_METRO_FETCH_TIMEOUT_MS = 15000
+const SEOUL_METRO_FETCH_TIMEOUT_MS = 4500
 
 const SEOUL_SUBWAY_ID_BY_LINE: Record<string, string> = {
   seoul1: '1001',
@@ -161,38 +161,43 @@ function fetchSeoulMetroHttpText(directUrl: string): Promise<string> {
   })
 }
 
+async function fetchSeoulMetroJsonFromUrl<T>(url: string): Promise<T | null> {
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(SEOUL_METRO_FETCH_TIMEOUT_MS),
+    })
+    if (!response.ok) return null
+    return (await response.json()) as T
+  } catch {
+    return null
+  }
+}
+
+/** 프록시·직접 URL을 병렬 호출해 먼저 성공한 응답을 사용합니다. */
 export async function fetchSeoulMetroJson<T>(
   primaryUrl: string,
   fallbackUrl?: string | null
 ): Promise<T | null> {
-  for (const url of [primaryUrl, fallbackUrl].filter(Boolean) as string[]) {
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        cache: 'no-store',
-        signal: AbortSignal.timeout(SEOUL_METRO_FETCH_TIMEOUT_MS),
-      })
-      if (!response.ok) continue
-      return (await response.json()) as T
-    } catch {
-      // 다음 URL 시도
-    }
+  const urls = [primaryUrl, fallbackUrl].filter(Boolean) as string[]
+  if (urls.length === 0) return null
+
+  const results = await Promise.all(urls.map((url) => fetchSeoulMetroJsonFromUrl<T>(url)))
+  for (const result of results) {
+    if (result) return result
   }
 
-  const directUrl = [fallbackUrl, primaryUrl].find((url) =>
-    url?.startsWith(SEOUL_METRO_DIRECT_HOST)
-  )
-  if (directUrl) {
-    try {
-      const text = await fetchSeoulMetroHttpText(directUrl)
-      return JSON.parse(text) as T
-    } catch {
-      return null
-    }
-  }
+  const directUrl = urls.find((url) => url.startsWith(SEOUL_METRO_DIRECT_HOST))
+  if (!directUrl) return null
 
-  return null
+  try {
+    const text = await fetchSeoulMetroHttpText(directUrl)
+    return JSON.parse(text) as T
+  } catch {
+    return null
+  }
 }
 
 /** swopenAPI 직접 HTTP → 앱 프록시 순으로 호출 */
@@ -201,29 +206,31 @@ export async function fetchSeoulMetroUpstream(
   pathAfterKey: string
 ): Promise<string | null> {
   const directUrl = buildSeoulMetroDirectUrl(pathAfterKey)
-  if (directUrl) {
-    try {
-      return await fetchSeoulMetroHttpText(directUrl)
-    } catch {
-      // node:http 실패 시 fetch 프록시 시도
-    }
-  }
-
   const proxyUrl = buildSeoulMetroApiUrl(request, pathAfterKey)
-  if (!proxyUrl) return null
 
-  try {
-    const response = await fetch(proxyUrl, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(SEOUL_METRO_FETCH_TIMEOUT_MS),
-    })
-    if (!response.ok) return null
-    return await response.text()
-  } catch {
-    return null
+  const tasks: Promise<string | null>[] = []
+  if (directUrl) {
+    tasks.push(
+      fetchSeoulMetroHttpText(directUrl).catch(() => null)
+    )
   }
+  if (proxyUrl) {
+    tasks.push(
+      fetch(proxyUrl, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(SEOUL_METRO_FETCH_TIMEOUT_MS),
+      })
+        .then((response) => (response.ok ? response.text() : null))
+        .catch(() => null)
+    )
+  }
+
+  if (tasks.length === 0) return null
+
+  const results = await Promise.all(tasks)
+  return results.find((value) => Boolean(value)) ?? null
 }
 
 export function extractResultCode(payload: {

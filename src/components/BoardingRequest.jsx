@@ -157,6 +157,52 @@ const VOICE_PARSE_PENDING_KEY = "voiceParsePending";
 const GPS_MAX_RADIUS_KM = 1;
 const BOARDING_GPS_CACHE_TTL_MS = 5 * 60 * 1000;
 const TRAIN_LIST_REFRESH_MS = 30000;
+const TRAIN_LIST_FETCH_TIMEOUT_MS = 8000;
+/** @type {Map<string, { apiTrains: unknown[], stationOrder: unknown[], fetchedAt: number }>} */
+const trainListPrefetchCache = new Map();
+
+function buildTrainListCacheKey(apiLine, destination, currentStation) {
+  return `${apiLine}|${(destination || "").trim()}|${(currentStation || "").trim()}`;
+}
+
+/** 목적지 선택 직후 열차 목록을 미리 받아 step 2 진입 지연을 줄입니다. */
+async function prefetchTrainListForBoarding({ apiLine, destination, boardingStation }) {
+  if (!apiLine || !destination?.trim() || !isSubwayOperatingHours(apiLine)) {
+    return;
+  }
+
+  const cacheKey = buildTrainListCacheKey(apiLine, destination, boardingStation);
+  const cached = trainListPrefetchCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < TRAIN_LIST_REFRESH_MS) {
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams({
+      line: apiLine,
+      station: destination.trim(),
+    });
+    if (boardingStation?.trim()) {
+      params.set("current_station", boardingStation.trim());
+    }
+
+    const response = await fetch(`/api/trains?${params.toString()}`, {
+      method: "GET",
+      cache: "no-store",
+      signal: AbortSignal.timeout(TRAIN_LIST_FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) return;
+
+    const payload = await response.json();
+    trainListPrefetchCache.set(cacheKey, {
+      apiTrains: Array.isArray(payload?.trains) ? payload.trains : [],
+      stationOrder: Array.isArray(payload?.station_order) ? payload.station_order : [],
+      fetchedAt: Date.now(),
+    });
+  } catch {
+    // 프리페치 실패 시 step 2에서 다시 조회합니다.
+  }
+}
 /** seek 모드 출입문 라벨(2-1 등) → API 제출용 car / seat_side / seat_number */
 function mapSeekDoorToSubmission(doorLabel, lineLabel) {
   const match = String(doorLabel || "").match(/^출?(\d+)-(\d+)$/);
@@ -1198,6 +1244,15 @@ function StepStation({
   const destinationResultsRef = useRef(null);
   const recognitionRef = useRef(null);
   const apiLine = resolveApiLineFromLineProp(line);
+  useEffect(() => {
+    if (!selected || !apiLine) return;
+    void prefetchTrainListForBoarding({
+      apiLine,
+      destination: selected,
+      boardingStation: boardingStationName,
+    });
+  }, [selected, apiLine, boardingStationName]);
+
   useEffect(() => {
     if (needsManualBoardingStation) {
       boardingInputRef.current?.focus();
@@ -2830,7 +2885,6 @@ function StepTrain({
     Math.floor(TRAIN_LIST_REFRESH_MS / 1000)
   );
   const [travelDirectionKey, setTravelDirectionKey] = useState(null);
-  const [stationIndexDebug, setStationIndexDebug] = useState(null);
   const [seoulStationOrder, setSeoulStationOrder] = useState([]);
   const [isOutsideOperatingHours, setIsOutsideOperatingHours] = useState(false);
   const apiLine = resolveApiLineFromLineProp(line);
@@ -2863,16 +2917,18 @@ function StepTrain({
     const resolveTravelDirection = async () => {
       if (!currentStation?.trim() || !station?.trim()) {
         setTravelDirectionKey(null);
-        setStationIndexDebug(null);
         return;
       }
 
-      const stations = await fetchStationsForLine(line);
+      const cachedStations = stationListCache.get(apiLine)?.stations;
+      const stations =
+        Array.isArray(cachedStations) && cachedStations.length > 0
+          ? cachedStations
+          : await fetchStationsForLine(line);
       if (!active) return;
 
       if (!Array.isArray(stations) || stations.length === 0) {
         setTravelDirectionKey(null);
-        setStationIndexDebug(null);
         return;
       }
 
@@ -2883,15 +2939,6 @@ function StepTrain({
 
       const fromIdx = findIndex(currentStation);
       const toIdx = findIndex(station);
-      const indexDebug = {
-        currentStation,
-        station,
-        fromIdx,
-        toIdx,
-        stationCount: stations.length,
-      };
-      setStationIndexDebug(indexDebug);
-      console.log("[StepTrain] 역 index 비교", indexDebug);
 
       if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) {
         setTravelDirectionKey(null);
@@ -2912,11 +2959,6 @@ function StepTrain({
         dirKey = "up";
       }
 
-      console.log("[StepTrain] 계산된 travelDirectionKey", {
-        layoutKey,
-        dirKey,
-        label: dirKey === "up" ? "상행/내선" : "하행/외선",
-      });
       setTravelDirectionKey(dirKey);
     };
 
@@ -2929,29 +2971,11 @@ function StepTrain({
   const directionFilteredTrains = (() => {
     if (travelDirectionKey == null) return trains;
 
-    console.log("[StepTrain] 필터 전 열차 목록", trains.map((train) => ({
-      id: train.id,
-      direction: train.direction,
-      directionCode: train.directionCode,
-      updnLine: train.updnLine,
-      resolvedKey: resolveTrainDirectionKey(train),
-    })));
-
     const filtered = trains.filter(
       (train) => resolveTrainDirectionKey(train) === travelDirectionKey
     );
 
-    console.log("[StepTrain] 방향 필터 결과", {
-      travelDirectionKey,
-      before: trains.length,
-      after: filtered.length,
-    });
-
     if (filtered.length === 0 && trains.length > 0) {
-      console.warn("[StepTrain] 방향 필터링 실패 - 전체 열차 표시", {
-        travelDirectionKey,
-        stationIndexDebug,
-      });
       return trains;
     }
 
@@ -3168,10 +3192,57 @@ function StepTrain({
       return day === 0 || day === 6 ? "holiday" : "weekday";
     };
 
+    const mapSeoulApiTrains = (apiTrains, stationOrder) =>
+      apiTrains
+        .map((row) => {
+          const barvlDt = resolveSeoulBarvlDtForTrain(
+            row?.station_name,
+            currentStation,
+            stationOrder,
+            apiLine,
+            row?.barvl_dt ?? row?.barvlDt ?? null
+          );
+
+          const arvlMsg2 =
+            (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
+            (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
+            null;
+          const bstatnNm = String(row?.bstatn_nm ?? row?.bstatnNm ?? "").trim() || null;
+
+          return {
+            id: row?.train_no ?? "",
+            current: row?.station_name?.trim() || "정보 없음",
+            eta: resolveTrainDirectionEta(row),
+            direction: row?.direction?.trim() || "하행",
+            directionCode:
+              row?.direction_code ?? row?.updnLine ?? row?.directionCode ?? null,
+            updnLine: row?.updnLine ?? row?.direction_code ?? null,
+            barvlDt,
+            arvlMsg2,
+            bstatnNm,
+          };
+        })
+        .filter((row) => row.id);
+
     const loadTrains = async ({ silent = false } = {}) => {
       const seq = ++requestSeq;
+      const cacheKey = buildTrainListCacheKey(apiLine, station, currentStation);
+
       if (!silent) {
-        setIsLoading(true);
+        const prefetched = trainListPrefetchCache.get(cacheKey);
+        if (
+          prefetched &&
+          Date.now() - prefetched.fetchedAt < TRAIN_LIST_REFRESH_MS &&
+          apiLine?.startsWith("seoul")
+        ) {
+          setSeoulStationOrder(prefetched.stationOrder);
+          setIsOutsideOperatingHours(false);
+          setTrains(mapSeoulApiTrains(prefetched.apiTrains, prefetched.stationOrder));
+          setLastUpdatedAt(prefetched.fetchedAt);
+          setIsLoading(false);
+        } else {
+          setIsLoading(true);
+        }
       }
       try {
         if (!apiLine) {
@@ -3272,6 +3343,7 @@ function StepTrain({
           const response = await fetch(`/api/trains?${params.toString()}`, {
             method: "GET",
             cache: "no-store",
+            signal: AbortSignal.timeout(TRAIN_LIST_FETCH_TIMEOUT_MS),
           });
           if (!response.ok) {
             throw new Error("열차 API 호출 실패");
@@ -3284,39 +3356,13 @@ function StepTrain({
           setSeoulStationOrder(stationOrder);
           setIsOutsideOperatingHours(payload?.is_operating_hours === false);
 
-          mapped = apiTrains
-            .map((row) => {
-              const barvlDt = resolveSeoulBarvlDtForTrain(
-                row?.station_name,
-                currentStation,
-                stationOrder,
-                apiLine,
-                row?.barvl_dt ?? row?.barvlDt ?? null
-              );
+          trainListPrefetchCache.set(cacheKey, {
+            apiTrains,
+            stationOrder,
+            fetchedAt: Date.now(),
+          });
 
-              const arvlMsg2 =
-                (typeof row?.arvl_msg2 === "string" && row.arvl_msg2.trim()) ||
-                (typeof row?.arvlMsg2 === "string" && row.arvlMsg2.trim()) ||
-                null;
-              const bstatnNm = String(row?.bstatn_nm ?? row?.bstatnNm ?? "").trim() || null;
-
-              return {
-                id: row?.train_no ?? "",
-                current: row?.station_name?.trim() || "정보 없음",
-                eta: resolveTrainDirectionEta(row),
-                direction: row?.direction?.trim() || "하행",
-                directionCode:
-                  row?.direction_code ??
-                  row?.updnLine ??
-                  row?.directionCode ??
-                  null,
-                updnLine: row?.updnLine ?? row?.direction_code ?? null,
-                barvlDt,
-                arvlMsg2,
-                bstatnNm,
-              };
-            })
-            .filter((row) => row.id);
+          mapped = mapSeoulApiTrains(apiTrains, stationOrder);
         }
 
         if (!active || seq !== requestSeq) return;
@@ -3327,13 +3373,9 @@ function StepTrain({
 
         setTrains(mapped);
         setLastUpdatedAt(Date.now());
-      } catch (err) {
+      } catch {
         if (!active || seq !== requestSeq) return;
-        console.error("[StepTrain] loadTrains failed", err);
         setIsOutsideOperatingHours(false);
-        if (!silent) {
-          setTrains([]);
-        }
       } finally {
         if (active && !silent) {
           setIsLoading(false);
