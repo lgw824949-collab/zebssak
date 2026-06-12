@@ -60,7 +60,7 @@ const HOME_LINE_OPTIONS = [
     label: '서울 7호선',
     shortLabel: '7호선',
     badge: '7',
-    color: '#747F00',
+    color: '#6b9e3f',
     stationExamples: '장암 · 논현 · 석남',
   },
 ] as const
@@ -69,9 +69,11 @@ const HOME_LINE_OPTIONS = [
 const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
 
 /** 서울 7호선 홈 팔레트 — 올리브 그린 계열 통일 */
-const LINE7_PRIMARY = '#747F00'
-const LINE7_PRIMARY_DARK = '#5F6B2E'
-const LINE7_PRIMARY_DEEP = '#4A5520'
+const LINE7_BRAND = '#6b9e3f'
+const LINE7_BRAND_DARK = '#4a7c3f'
+const LINE7_PRIMARY = LINE7_BRAND
+const LINE7_PRIMARY_DARK = LINE7_BRAND_DARK
+const LINE7_PRIMARY_DEEP = '#3d5c32'
 const LINE7_SOFT_BG = '#F3F5E8'
 const LINE7_MUTED_BG = '#EDF0DC'
 const LINE7_SUCCESS_BG = '#E8EDCF'
@@ -1171,6 +1173,8 @@ export default function Home() {
   }
 
   const homeMatchStatusBox = resolveHomeMatchStatusBox(homeWaitView)
+  const isSeekRegistering = homeWaitView?.phase === 'waiting_seek'
+  const isLeaveRegistering = homeWaitView?.phase === 'waiting_leave'
 
   return (
     <div className="mx-auto flex w-full max-w-[480px] flex-col bg-[#f5f5f0]">
@@ -1210,6 +1214,8 @@ export default function Home() {
         <div className="min-w-0 flex-1 px-1 text-center">
           <p className="truncate text-[17px] font-bold text-[#1A1A1A]">빈자리, 잽싸게</p>
           <p className="mt-0.5 text-[13px] font-medium leading-snug text-[#6B7280]">
+            <span className="font-bold text-[#6b9e3f]">서울 7호선</span>
+            <span className="text-[#9CA3AF]"> · </span>
             곧 비어질 좌석을 미리 확인하세요
           </p>
         </div>
@@ -1233,22 +1239,34 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 등록 액션 — 빈자리 찾기 / 자리 넘기기 (클릭 시에만 활성 스타일) */}
+        {/* 등록 액션 — 빈자리 찾기 / 자리 넘기기 */}
         <section className="mx-4 mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
             disabled={
               isMatchingPaused ||
               isOutsideOperatingHours ||
-              homeWaitView?.phase === 'waiting_seek'
+              isSeekRegistering
             }
             onClick={() => handleModeSelect('seek')}
-            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border border-[#6b9e3f] bg-[#6b9e3f] px-3 py-3 text-center text-white transition-colors duration-150 hover:bg-[#4a7c3f] active:bg-[#4a7c3f] disabled:cursor-not-allowed disabled:opacity-45"
+            className={`zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border px-3 py-3 text-center transition-colors duration-150 disabled:cursor-not-allowed ${
+              isSeekRegistering
+                ? 'border-[#4a7c3f] bg-[#4a7c3f] text-white disabled:opacity-100'
+                : 'border-[#6b9e3f] bg-white text-[#6b9e3f] hover:border-[#6b9e3f] hover:bg-[#6b9e3f] hover:text-white active:border-[#4a7c3f] active:bg-[#4a7c3f] active:text-white disabled:opacity-45'
+            }`}
           >
-            <span className="text-[18px] font-bold leading-snug">
-              {homeWaitView?.phase === 'waiting_seek' ? '등록 중…' : '빈자리 찾기'}
-            </span>
-            {homeWaitView?.phase === 'waiting_seek' ? (
+            {isSeekRegistering ? (
+              <span className="flex items-center justify-center gap-1.5 text-[18px] font-bold leading-snug">
+                <span
+                  className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-white"
+                  aria-hidden
+                />
+                등록 중…
+              </span>
+            ) : (
+              <span className="text-[18px] font-bold leading-snug">빈자리 찾기</span>
+            )}
+            {isSeekRegistering ? (
               <span className="mt-1 text-[12px] font-medium text-white/85">
                 아래 카드에서 확인
               </span>
@@ -1259,15 +1277,27 @@ export default function Home() {
             disabled={
               isMatchingPaused ||
               isOutsideOperatingHours ||
-              homeWaitView?.phase === 'waiting_leave'
+              isLeaveRegistering
             }
             onClick={() => handleModeSelect('leave')}
-            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border border-[#f97316] bg-[#f97316] px-3 py-3 text-center text-white transition-colors duration-150 hover:bg-[#ea6c0a] active:bg-[#ea6c0a] disabled:cursor-not-allowed disabled:opacity-45"
+            className={`zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border px-3 py-3 text-center transition-colors duration-150 disabled:cursor-not-allowed ${
+              isLeaveRegistering
+                ? 'border-[#ea6c0a] bg-[#ea6c0a] text-white disabled:opacity-100'
+                : 'border-[#f97316] bg-white text-[#f97316] hover:border-[#f97316] hover:bg-[#f97316] hover:text-white active:border-[#ea6c0a] active:bg-[#ea6c0a] active:text-white disabled:opacity-45'
+            }`}
           >
-            <span className="text-[18px] font-bold leading-snug">
-              {homeWaitView?.phase === 'waiting_leave' ? '등록 중…' : '자리 넘기기'}
-            </span>
-            {homeWaitView?.phase === 'waiting_leave' ? (
+            {isLeaveRegistering ? (
+              <span className="flex items-center justify-center gap-1.5 text-[18px] font-bold leading-snug">
+                <span
+                  className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-white"
+                  aria-hidden
+                />
+                등록 중…
+              </span>
+            ) : (
+              <span className="text-[18px] font-bold leading-snug">자리 넘기기</span>
+            )}
+            {isLeaveRegistering ? (
               <span className="mt-1 text-[12px] font-medium text-white/85">
                 아래 카드에서 확인
               </span>
@@ -1293,24 +1323,6 @@ export default function Home() {
           </p>
         ) : null}
 
-        {homeMatchStatusBox ? (
-          <section className="mx-4 mt-3" aria-label="매칭 상태">
-            <p
-              className="rounded-xl border px-4 py-3 text-center text-sm font-bold"
-              style={{
-                backgroundColor: homeMatchStatusBox.backgroundColor,
-                borderColor: LINE7_BORDER,
-                color: homeMatchStatusBox.textColor,
-              }}
-            >
-              <span aria-hidden className="mr-1 opacity-80">
-                {homeMatchStatusBox.emoji}
-              </span>
-              {homeMatchStatusBox.label}
-            </p>
-          </section>
-        ) : null}
-
         {/* 환승 많은 역 */}
         <section className="mx-4 mt-3" aria-label="환승 많은 역">
           <div className="mb-1 flex items-center justify-between">
@@ -1318,7 +1330,7 @@ export default function Home() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="text-[#AAAAAA]"
+                className="text-[#7A8460] transition-colors hover:text-[#6b9e3f]"
                 aria-label="이전"
                 onClick={() => scrollTransferStations('prev')}
               >
@@ -1328,7 +1340,7 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                className="text-[#AAAAAA]"
+                className="text-[#7A8460] transition-colors hover:text-[#6b9e3f]"
                 aria-label="다음"
                 onClick={() => scrollTransferStations('next')}
               >
@@ -1371,7 +1383,7 @@ export default function Home() {
                     onClick={() => handleTransferStationClick(station)}
                     className={`shrink-0 rounded-full px-3 py-1 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${
                       isSelected
-                        ? 'bg-[#747F00] text-white'
+                        ? 'bg-[#6b9e3f] text-white'
                         : 'border border-[#D5DDB8] bg-white text-[#7A8460]'
                     }`}
                   >
@@ -1383,8 +1395,26 @@ export default function Home() {
           </div>
         </section>
 
+        {homeMatchStatusBox ? (
+          <section className="mx-4 mt-3" aria-label="매칭 상태">
+            <p
+              className="rounded-xl border px-4 py-3 text-center text-sm font-bold"
+              style={{
+                backgroundColor: homeMatchStatusBox.backgroundColor,
+                borderColor: LINE7_BORDER,
+                color: homeMatchStatusBox.textColor,
+              }}
+            >
+              <span aria-hidden className="mr-1 opacity-80">
+                {homeMatchStatusBox.emoji}
+              </span>
+              {homeMatchStatusBox.label}
+            </p>
+          </section>
+        ) : null}
+
         {homeWaitView ? (
-          <section className="mx-4 mt-3" aria-label="내 등록 상태">
+          <section className="mx-4 mt-2" aria-label="내 등록 상태">
             {(() => {
               const card = resolveHomeMyRegistrationCard(homeWaitView)
               const showCancelButton =
@@ -1458,7 +1488,7 @@ export default function Home() {
           </section>
         ) : null}
 
-        <details className="group mx-4 mt-4">
+        <details className="group mx-4 mt-3">
           <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-bold text-[#1A1A1A] marker:content-none [&::-webkit-details-marker]:hidden">
             <span
               className="inline-block text-[10px] leading-none text-[#888888] transition-transform group-open:rotate-90"
@@ -1483,7 +1513,7 @@ export default function Home() {
           </section>
         </details>
 
-        <div className="h-3 shrink-0" aria-hidden />
+        <div className="h-1 shrink-0" aria-hidden />
 
         {/* 단독 노선 — 노선 선택 UI (복원 시 homeStep === 'line' 분기로 되돌리기)
         ) : (
