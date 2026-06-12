@@ -60,7 +60,7 @@ const HOME_LINE_OPTIONS = [
     label: '서울 7호선',
     shortLabel: '7호선',
     badge: '7',
-    color: '#6b9e3f',
+    color: '#747F00',
     stationExamples: '장암 · 논현 · 석남',
   },
 ] as const
@@ -68,18 +68,27 @@ const HOME_LINE_OPTIONS = [
 /** 단독 운영 노선 — 노선 선택 단계 생략 시 사용 */
 const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
 
-/** 서울 7호선 홈 팔레트 — 올리브 그린 계열 통일 */
-const LINE7_BRAND = '#6b9e3f'
-const LINE7_BRAND_DARK = '#4a7c3f'
-const LINE7_PRIMARY = LINE7_BRAND
-const LINE7_PRIMARY_DARK = LINE7_BRAND_DARK
-const LINE7_PRIMARY_DEEP = '#3d5c32'
+/** 서울 7호선 공식 색상 — 앱 전역과 동일 (#747F00) */
+const LINE7_PRIMARY = '#747F00'
+const LINE7_PRIMARY_DARK = '#5F6B2E'
+const LINE7_PRIMARY_DEEP = '#4A5520'
 const LINE7_SOFT_BG = '#F3F5E8'
 const LINE7_MUTED_BG = '#EDF0DC'
 const LINE7_SUCCESS_BG = '#E8EDCF'
 const LINE7_BORDER = '#D5DDB8'
 const LINE7_BORDER_STRONG = '#C4CE8F'
 const LINE7_ACCENT = '#8A9A5B'
+
+const HOME_ACTION_BTN_BASE =
+  'zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border px-3 py-3 text-center transition-colors duration-150 disabled:cursor-not-allowed'
+
+/** 빈자리 찾기·자리 넘기기 공통 — 7호선 색상 */
+function resolveHomeActionButtonClass(isRegistering: boolean): string {
+  if (isRegistering) {
+    return `${HOME_ACTION_BTN_BASE} border-[#5F6B2E] bg-[#5F6B2E] text-white disabled:opacity-100`
+  }
+  return `${HOME_ACTION_BTN_BASE} border-[#747F00] bg-white text-[#747F00] hover:border-[#747F00] hover:bg-[#747F00] hover:text-white active:border-[#5F6B2E] active:bg-[#5F6B2E] active:text-white disabled:opacity-45`
+}
 
 /** 홈 노선 라벨 → API line 파라미터 */
 function resolveHomeApiLine(lineLabel: string): string {
@@ -1214,7 +1223,7 @@ export default function Home() {
         <div className="min-w-0 flex-1 px-1 text-center">
           <p className="truncate text-[17px] font-bold text-[#1A1A1A]">빈자리, 잽싸게</p>
           <p className="mt-0.5 text-[13px] font-medium leading-snug text-[#6B7280]">
-            <span className="font-bold text-[#6b9e3f]">서울 7호선</span>
+            <span className="font-bold text-[#747F00]">서울 7호선</span>
             <span className="text-[#9CA3AF]"> · </span>
             곧 비어질 좌석을 미리 확인하세요
           </p>
@@ -1249,11 +1258,7 @@ export default function Home() {
               isSeekRegistering
             }
             onClick={() => handleModeSelect('seek')}
-            className={`zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border px-3 py-3 text-center transition-colors duration-150 disabled:cursor-not-allowed ${
-              isSeekRegistering
-                ? 'border-[#4a7c3f] bg-[#4a7c3f] text-white disabled:opacity-100'
-                : 'border-[#6b9e3f] bg-white text-[#6b9e3f] hover:border-[#6b9e3f] hover:bg-[#6b9e3f] hover:text-white active:border-[#4a7c3f] active:bg-[#4a7c3f] active:text-white disabled:opacity-45'
-            }`}
+            className={resolveHomeActionButtonClass(isSeekRegistering)}
           >
             {isSeekRegistering ? (
               <span className="flex items-center justify-center gap-1.5 text-[18px] font-bold leading-snug">
@@ -1280,11 +1285,7 @@ export default function Home() {
               isLeaveRegistering
             }
             onClick={() => handleModeSelect('leave')}
-            className={`zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border px-3 py-3 text-center transition-colors duration-150 disabled:cursor-not-allowed ${
-              isLeaveRegistering
-                ? 'border-[#ea6c0a] bg-[#ea6c0a] text-white disabled:opacity-100'
-                : 'border-[#f97316] bg-white text-[#f97316] hover:border-[#f97316] hover:bg-[#f97316] hover:text-white active:border-[#ea6c0a] active:bg-[#ea6c0a] active:text-white disabled:opacity-45'
-            }`}
+            className={resolveHomeActionButtonClass(isLeaveRegistering)}
           >
             {isLeaveRegistering ? (
               <span className="flex items-center justify-center gap-1.5 text-[18px] font-bold leading-snug">
@@ -1330,7 +1331,7 @@ export default function Home() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="text-[#7A8460] transition-colors hover:text-[#6b9e3f]"
+                className="text-[#7A8460] transition-colors hover:text-[#747F00]"
                 aria-label="이전"
                 onClick={() => scrollTransferStations('prev')}
               >
@@ -1340,7 +1341,7 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                className="text-[#7A8460] transition-colors hover:text-[#6b9e3f]"
+                className="text-[#7A8460] transition-colors hover:text-[#747F00]"
                 aria-label="다음"
                 onClick={() => scrollTransferStations('next')}
               >
@@ -1383,7 +1384,7 @@ export default function Home() {
                     onClick={() => handleTransferStationClick(station)}
                     className={`shrink-0 rounded-full px-3 py-1 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${
                       isSelected
-                        ? 'bg-[#6b9e3f] text-white'
+                        ? 'bg-[#747F00] text-white'
                         : 'border border-[#D5DDB8] bg-white text-[#7A8460]'
                     }`}
                   >

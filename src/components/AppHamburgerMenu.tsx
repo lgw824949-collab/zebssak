@@ -3,8 +3,6 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 
-const LINE7_COLOR = '#747F00'
-
 const MENU_ITEMS = [
   { href: '/guide', label: '이용 방법', description: '빈자리 찾기·자리 넘기기 안내' },
   { href: '/points', label: '포인트 내역', description: '서비스 예정 · 미리보기' },
@@ -155,10 +153,6 @@ export default function AppHamburgerMenu() {
               >
                 개인정보 처리방침
               </Link>
-              <p className="mt-2 text-center text-[12px] font-medium text-[#9CA3AF]">
-                서울 7호선 ·{' '}
-                <span style={{ color: LINE7_COLOR }}>잽싸게</span>
-              </p>
             </div>
           </nav>
         </div>
