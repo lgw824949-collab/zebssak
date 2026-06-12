@@ -139,6 +139,15 @@ function MatchingForm() {
     router.replace('/waiting')
   }, [router])
 
+  const goAfterReject = useCallback(() => {
+    clearActiveMatchSession()
+    if (viewerRole === 'provider') {
+      router.replace('/')
+      return
+    }
+    goToWaiting()
+  }, [clearActiveMatchSession, goToWaiting, router, viewerRole])
+
   const goToMatched = useCallback(
     (matchId: string) => {
       if (acceptNavigateScheduledRef.current) {
@@ -203,15 +212,22 @@ function MatchingForm() {
               line_label?: string | null
               destination_station_name?: string
             }
+            self?: {
+              car_number?: number | null
+              car_door_short?: string | null
+              line_label?: string | null
+              destination_station_name?: string
+            }
           }
         }
 
-        if (!response.ok || !result.success || !result.data?.partner) {
+        if (!response.ok || !result.success || !result.data) {
           return
         }
 
-        if (result.data.viewer_role === 'seeker' || result.data.viewer_role === 'provider') {
-          setViewerRole(result.data.viewer_role)
+        const role = result.data.viewer_role
+        if (role === 'seeker' || role === 'provider') {
+          setViewerRole(role)
         }
 
         if (result.data.status === 'accepted') {
@@ -219,19 +235,24 @@ function MatchingForm() {
           return
         }
 
-        const partner = result.data.partner
+        const guideSource =
+          role === 'provider' ? result.data.self : result.data.partner
+        if (!guideSource) {
+          return
+        }
+
         setGuide({
           carNumber:
-            typeof partner.car_number === 'number' ? partner.car_number : null,
+            typeof guideSource.car_number === 'number' ? guideSource.car_number : null,
           carDoorShort:
-            typeof partner.car_door_short === 'string'
-              ? partner.car_door_short
+            typeof guideSource.car_door_short === 'string'
+              ? guideSource.car_door_short
               : null,
           lineLabel:
-            typeof partner.line_label === 'string' ? partner.line_label : null,
+            typeof guideSource.line_label === 'string' ? guideSource.line_label : null,
           destinationName:
-            typeof partner.destination_station_name === 'string'
-              ? partner.destination_station_name
+            typeof guideSource.destination_station_name === 'string'
+              ? guideSource.destination_station_name
               : null,
         })
       } catch {
@@ -426,13 +447,13 @@ function MatchingForm() {
         }
 
         if (action === 'reject') {
-          clearActiveMatchSession()
-          goToWaiting()
+          goAfterReject()
           return
         }
 
         if (!response.ok || !result.success) {
           actionHandledRef.current = false
+          setIsDismissed(false)
           setActionError(result.error ?? '요청 처리에 실패했습니다.')
           return
         }
@@ -440,8 +461,7 @@ function MatchingForm() {
         goToMatched(result.data?.match_id ?? matchId)
       } catch {
         if (action === 'reject') {
-          clearActiveMatchSession()
-          goToWaiting()
+          goAfterReject()
           return
         }
         actionHandledRef.current = false
@@ -453,9 +473,8 @@ function MatchingForm() {
       }
     },
     [
-      clearActiveMatchSession,
+      goAfterReject,
       goToMatched,
-      goToWaiting,
       isDismissed,
       isSubmitting,
       router,
@@ -524,15 +543,15 @@ function MatchingForm() {
           <p className="zeb-page-desc mt-3">
             {viewerRole === 'provider' ? (
               <>
-                착석 희망자의 수락을 기다리고 있습니다.
+                착석 희망자와 매칭되었습니다.
                 <br />
-                수락되면 완료 화면으로 이동합니다.
+                자리를 넘기려면 승낙을 눌러주세요.
               </>
             ) : (
               <>
                 하차 예정 승객과 매칭되었습니다.
                 <br />
-                아래 칸으로 이동해주세요.
+                아래 칸으로 이동한 뒤 승낙해주세요.
               </>
             )}
           </p>
@@ -567,15 +586,15 @@ function MatchingForm() {
               className="font-semibold zeb-text-line1"
               style={{ fontSize: 'var(--font-size-base)' }}
             >
-              이동 안내 (하차 예정 승객)
+              {viewerRole === 'provider'
+                ? '내 자리 (양보 예정)'
+                : '이동 안내 (하차 예정 승객)'}
             </p>
             {guide.lineLabel ? (
               <p className="zeb-caption mt-2">{guide.lineLabel}</p>
             ) : null}
             {guide.destinationName ? (
-              <p className="zeb-caption mt-1">
-                하차 역 · {guide.destinationName}
-              </p>
+              <p className="zeb-caption mt-1">하차 역 · {guide.destinationName}</p>
             ) : null}
             <p
               className="zeb-text-line1 mt-2"
@@ -654,30 +673,24 @@ function MatchingForm() {
           {actionError && (
             <div className="zeb-alert zeb-alert--danger">{actionError}</div>
           )}
-          {viewerRole === 'provider' ? (
-            <p className="text-center text-sm font-medium text-[#6B7280]">
-              착석 희망자가 수락하면 알려드립니다.
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={handleReject}
-                disabled={isSubmitting || partnerAcceptedNotice || isDismissed}
-                className="zeb-btn zeb-btn--secondary"
-              >
-                {isSubmitting ? '처리 중...' : '거절'}
-              </button>
-              <button
-                type="button"
-                onClick={handleAccept}
-                disabled={isSubmitting || partnerAcceptedNotice || isDismissed}
-                className="zeb-btn zeb-btn--line1"
-              >
-                {isSubmitting ? '처리 중...' : '수락'}
-              </button>
-            </div>
-          )}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={handleReject}
+              disabled={isSubmitting || partnerAcceptedNotice || isDismissed}
+              className="zeb-btn zeb-btn--secondary"
+            >
+              {isSubmitting ? '처리 중...' : '거절'}
+            </button>
+            <button
+              type="button"
+              onClick={handleAccept}
+              disabled={isSubmitting || partnerAcceptedNotice || isDismissed}
+              className="zeb-btn zeb-btn--line1"
+            >
+              {isSubmitting ? '처리 중...' : '승낙'}
+            </button>
+          </div>
         </div>
       </footer>
       <style jsx global>{`

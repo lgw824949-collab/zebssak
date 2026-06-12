@@ -123,28 +123,6 @@ async function isMatchParticipant(
 }
 
 /**
- * 착석 희망 요청자(seat_seek) 여부 — 수락/거절은 희망자만 가능
- */
-async function isSeatSeekerForMatch(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  match: MatchRow,
-  userId: string
-): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('match_requests')
-    .select('user_id, request_type')
-    .eq('id', match.seat_seek_request_id)
-    .maybeSingle()
-
-  if (error || !data) {
-    return false
-  }
-
-  const row = data as { user_id: string; request_type: string }
-  return row.user_id === userId && row.request_type === 'seat_seek'
-}
-
-/**
  * 수락(accepted) 완료 SSE — 상대 수락 시 type: accepted 이벤트 전송
  */
 function createMatchAcceptSseResponse(
@@ -408,7 +386,7 @@ export async function GET(
 }
 
 /**
- * PATCH /api/matches/[id] — 수락(accepted) / 거절 처리
+ * PATCH /api/matches/[id] — 수락(accepted) / 거절 처리 (매칭 당사자 모두 가능)
  * 참고: 스키마(matches.status)에 rejected 값이 없어 거절은 cancelled로 저장합니다.
  */
 export async function PATCH(
@@ -459,11 +437,6 @@ export async function PATCH(
     const participant = await isMatchParticipant(supabase, match, userId)
     if (!participant) {
       return errorResponse('이 매칭에 접근할 수 없습니다.', 403)
-    }
-
-    const isSeeker = await isSeatSeekerForMatch(supabase, match, userId)
-    if (!isSeeker) {
-      return errorResponse('수락·거절은 착석 희망 요청자만 할 수 있습니다.', 403)
     }
 
     if (match.status !== 'pending') {
