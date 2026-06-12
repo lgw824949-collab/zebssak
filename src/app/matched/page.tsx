@@ -5,13 +5,12 @@ import { useEffect, useState } from 'react'
 
 const COUNTDOWN_SECONDS = 180
 const HOME_MATCH_COMPLETED_HINT_KEY = 'homeMatchCompletedHint'
-/** 서울 7호선 브랜드 컬러 (홈·좌석맵과 동일) */
+/** 서울 7호선 브랜드 */
 const LINE7_PRIMARY = '#747F00'
-const LINE7_DARK = '#5F6B2E'
-const LINE7_LIGHT = '#F7F8F2'
-const LINE7_SEAT_FILL = '#E4E9D0'
-const LINE7_CAP_FILL = '#D5DDB8'
-const LINE7_STROKE = '#B8C28A'
+const LINE7_DARK = '#4A5219'
+const LINE7_MID = '#5F6B2E'
+const LINE7_GLOW = 'rgba(116, 127, 0, 0.12)'
+
 const SIDE_SEAT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
 interface RequestSummary {
@@ -38,12 +37,12 @@ interface MatchDetail {
 
 function MatchedLoading() {
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center gap-4 bg-[#f5f5f0] px-4">
-      <div className="w-full max-w-[12rem] space-y-2" aria-hidden>
-        <div className="h-2 rounded-full bg-[#E4E9D0]" />
-        <div className="h-2 rounded-full bg-[#D5DDB8]" />
-      </div>
-      <p className="text-sm font-semibold text-[#888888]">로딩 중...</p>
+    <div className="min-h-dvh flex flex-col items-center justify-center gap-5 bg-[#f6f7f2] px-4">
+      <div
+        className="h-11 w-11 animate-spin rounded-full border-[3px] border-[#E4E9D0] border-t-[#747F00]"
+        aria-hidden
+      />
+      <p className="text-sm font-medium text-[#6B7280]">매칭 정보를 불러오는 중</p>
     </div>
   )
 }
@@ -117,29 +116,8 @@ function MatchSeatDiagram({
 }) {
   const isRightSide = travelSide === '우측'
   const isLeftSide = travelSide === '좌측'
-  const doorLabel = `출${carNumber}-${doorNumber}`
-  const sectionKey = `${carNumber}-${doorNumber}`
-  const nextDoorLabel = `출${carNumber}-${Math.min(doorNumber + 1, 4)}`
-
-  const SEAT_FILL = LINE7_SEAT_FILL
-  const CAP_FILL = LINE7_CAP_FILL
-  const BG_FILL = LINE7_LIGHT
-  const STROKE = LINE7_STROKE
-
-  const leftX = 8
-  const aisleX = 78
-  const rightX = 122
-  const seatW = 70
-  const aisleW = 44
-  const topCapH = 10
-  const doorH = 22
-  const rowH = 33
-  const bottomCapH = 28
-
-  const topDoorY = topCapH
-  const rowStartY = topDoorY + doorH
-  const bottomDoorY = rowStartY + rowH * 6
-  const bottomCapY = bottomDoorY + doorH
+  const doorLabel = `${carNumber}-${doorNumber}`
+  const nextDoorLabel = `${carNumber}-${Math.min(doorNumber + 1, 4)}`
 
   const rowLetters = ['A', 'B', 'C', 'D', 'E', 'F']
 
@@ -153,136 +131,191 @@ function MatchSeatDiagram({
     return side === 'right' && isRightSide
   }
 
-  function seatSideFill(side: 'left' | 'right', letter: string): string {
-    return isMatchedSide(side, letter) ? LINE7_PRIMARY : SEAT_FILL
-  }
+  const seatW = 62
+  const seatH = 28
+  const gap = 6
+  const aisleW = 36
+  const padX = 16
+  const padY = 20
+  const doorH = 32
+  const totalW = padX * 2 + seatW * 2 + aisleW
+  const rowBlockH = seatH + gap
+  const bodyH = doorH + gap + rowBlockH * 6 + gap + doorH * 0.6
+  const totalH = padY * 2 + bodyH
 
-  function seatSideLabel(side: 'left' | 'right', letter: string): string {
-    if (isLeftColumn(letter)) {
-      if (side === 'left') {
-        return isMatchedSide('left', letter) ? `${letter} ★` : letter
-      }
-      return ''
-    }
-    if (side === 'right') {
-      return isMatchedSide('right', letter) ? `${letter} ★` : letter
-    }
-    return ''
-  }
-
-  function seatTextColor(side: 'left' | 'right', letter: string): string {
-    return isMatchedSide(side, letter) ? '#ffffff' : LINE7_DARK
-  }
+  const leftX = padX
+  const aisleX = padX + seatW
+  const rightX = padX + seatW + aisleW
+  const topDoorY = padY
 
   return (
-    <svg viewBox="0 0 200 280" className="w-full" role="img" aria-label="좌석 배치도">
-      {/* 1. 객차 배경 */}
-      <rect x="0" y="0" width="200" height="280" fill={BG_FILL} stroke={STROKE} strokeWidth="1.5" />
+    <svg
+      viewBox={`0 0 ${totalW} ${totalH}`}
+      className="mx-auto w-full max-w-[280px]"
+      role="img"
+      aria-label="좌석 배치도"
+    >
+      <defs>
+        <linearGradient id="carBg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#FAFBF7" />
+          <stop offset="100%" stopColor="#F0F3E8" />
+        </linearGradient>
+        <filter id="seatGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={LINE7_PRIMARY} floodOpacity="0.35" />
+        </filter>
+      </defs>
 
-      {/* 2. 상단 캡 */}
-      <rect x="0" y="0" width="200" height={topCapH} fill={CAP_FILL} />
+      <rect
+        x="4"
+        y="4"
+        width={totalW - 8}
+        height={totalH - 8}
+        rx="20"
+        fill="url(#carBg)"
+        stroke="#E2E8D4"
+        strokeWidth="1"
+      />
 
-      {/* 3. 출입문 (상단) */}
-      <rect x={leftX} y={topDoorY} width={seatW} height={doorH} fill="#ffffff" stroke={STROKE} strokeWidth="1" />
-      <text x={leftX + seatW / 2} y={topDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={LINE7_PRIMARY}>
-        {doorLabel}
-      </text>
-      <rect x={rightX} y={topDoorY} width={seatW} height={doorH} fill={LINE7_PRIMARY} stroke={STROKE} strokeWidth="1" />
-      <text x={rightX + seatW / 2} y={topDoorY + 13} textAnchor="middle" fontSize="9" fontWeight="800" fill="#ffffff">
-        {doorLabel}
-      </text>
-      <text x={rightX + seatW / 2} y={topDoorY + 20} textAnchor="middle" fontSize="7" fontWeight="700" fill="#ffffff">
-        ▼ 여기
-      </text>
+      {/* 상단 출입문 */}
+      <g transform={`translate(0, ${topDoorY})`}>
+        <rect
+          x={leftX}
+          y={0}
+          width={seatW}
+          height={doorH}
+          rx="10"
+          fill="#fff"
+          stroke="#D8DFC8"
+          strokeWidth="1"
+        />
+        <rect
+          x={rightX}
+          y={0}
+          width={seatW}
+          height={doorH}
+          rx="10"
+          fill={LINE7_PRIMARY}
+          stroke={LINE7_MID}
+          strokeWidth="1"
+        />
+        <text x={leftX + seatW / 2} y={doorH / 2 + 4} textAnchor="middle" fontSize="10" fontWeight="600" fill="#9CA3AF">
+          {doorLabel}
+        </text>
+        <text x={rightX + seatW / 2} y={doorH / 2 - 1} textAnchor="middle" fontSize="10" fontWeight="700" fill="#fff">
+          {doorLabel}
+        </text>
+        <text x={rightX + seatW / 2} y={doorH / 2 + 10} textAnchor="middle" fontSize="8" fontWeight="600" fill="rgba(255,255,255,0.85)">
+          여기서 탑승
+        </text>
+      </g>
 
-      {/* 4~9. A~F열 (좌우 양쪽, 붙임) */}
       {rowLetters.map((letter, index) => {
-        const y = rowStartY + index * rowH
-        const showSectionBox = letter === 'C'
-        return (
-          <g key={`row-${letter}`}>
-            <rect
-              x={leftX}
-              y={y}
-              width={seatW}
-              height={rowH}
-              fill={seatSideFill('left', letter)}
-              stroke={STROKE}
-              strokeWidth="1"
-            />
-            <text
-              x={leftX + seatW / 2}
-              y={y + rowH / 2 + 5}
-              textAnchor="middle"
-              fontSize="12"
-              fontWeight="900"
-              fill={seatTextColor('left', letter)}
-            >
-              {seatSideLabel('left', letter)}
-            </text>
-            {showSectionBox ? (
-              <>
-                <rect
-                  x={aisleX}
-                  y={y}
-                  width={aisleW}
-                  height={rowH}
-                  fill="#ffffff"
-                  stroke={STROKE}
-                  strokeWidth="1"
-                />
+        const rowY = padY + doorH + gap + index * rowBlockH
+        const showAisleLabel = letter === 'C'
+
+        const renderSeat = (side: 'left' | 'right', x: number) => {
+          const matched = isMatchedSide(side, letter)
+          const showLabel =
+            (isLeftColumn(letter) && side === 'left') || (!isLeftColumn(letter) && side === 'right')
+
+          return (
+            <g key={`${letter}-${side}`}>
+              <rect
+                x={x}
+                y={rowY}
+                width={seatW}
+                height={seatH}
+                rx="9"
+                fill={matched ? LINE7_PRIMARY : '#fff'}
+                stroke={matched ? LINE7_MID : '#E5EAD8'}
+                strokeWidth="1"
+                filter={matched ? 'url(#seatGlow)' : undefined}
+              />
+              {showLabel ? (
                 <text
-                  x={aisleX + aisleW / 2}
-                  y={y + rowH / 2 + 5}
+                  x={x + seatW / 2}
+                  y={rowY + seatH / 2 + 4}
                   textAnchor="middle"
                   fontSize="11"
-                  fontWeight="900"
-                  fill={LINE7_PRIMARY}
+                  fontWeight={matched ? '700' : '500'}
+                  fill={matched ? '#fff' : '#9CA3AF'}
                 >
-                  {sectionKey}
+                  {matched ? `${letter} · 내 자리` : letter}
                 </text>
-              </>
-            ) : (
-              <rect x={aisleX} y={y} width={aisleW} height={rowH} fill={BG_FILL} />
-            )}
-            <rect
-              x={rightX}
-              y={y}
-              width={seatW}
-              height={rowH}
-              fill={seatSideFill('right', letter)}
-              stroke={STROKE}
-              strokeWidth="1"
-            />
-            <text
-              x={rightX + seatW / 2}
-              y={y + rowH / 2 + 5}
-              textAnchor="middle"
-              fontSize="12"
-              fontWeight="900"
-              fill={seatTextColor('right', letter)}
-            >
-              {seatSideLabel('right', letter)}
-            </text>
+              ) : null}
+            </g>
+          )
+        }
+
+        return (
+          <g key={letter}>
+            {renderSeat('left', leftX)}
+            {showAisleLabel ? (
+              <text
+                x={aisleX + aisleW / 2}
+                y={rowY + seatH / 2 + 4}
+                textAnchor="middle"
+                fontSize="9"
+                fontWeight="600"
+                fill="#B8C28A"
+              >
+                통로
+              </text>
+            ) : null}
+            {renderSeat('right', rightX)}
           </g>
         )
       })}
 
-      {/* 10. 출입문 (하단, 흐리게) */}
-      <g opacity="0.35">
-        <rect x={leftX} y={bottomDoorY} width={seatW} height={doorH} fill="#ffffff" stroke={STROKE} strokeWidth="1" />
-        <text x={leftX + seatW / 2} y={bottomDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={LINE7_PRIMARY}>
+      {/* 하단 다음 문 (흐림) */}
+      <g opacity="0.28" transform={`translate(0, ${padY + doorH + gap + rowBlockH * 6 + gap})`}>
+        <rect x={leftX} y={0} width={seatW} height={doorH * 0.65} rx="8" fill="#fff" stroke="#E5EAD8" />
+        <rect x={rightX} y={0} width={seatW} height={doorH * 0.65} rx="8" fill="#fff" stroke="#E5EAD8" />
+        <text x={leftX + seatW / 2} y={doorH * 0.4} textAnchor="middle" fontSize="9" fill="#9CA3AF">
           {nextDoorLabel}
         </text>
-        <rect x={rightX} y={bottomDoorY} width={seatW} height={doorH} fill="#ffffff" stroke={STROKE} strokeWidth="1" />
-        <text x={rightX + seatW / 2} y={bottomDoorY + 15} textAnchor="middle" fontSize="9" fontWeight="800" fill={LINE7_PRIMARY}>
+        <text x={rightX + seatW / 2} y={doorH * 0.4} textAnchor="middle" fontSize="9" fill="#9CA3AF">
           {nextDoorLabel}
         </text>
       </g>
-
-      {/* 11. 하단 캡 */}
-      <rect x="0" y={bottomCapY} width="200" height={bottomCapH} fill={CAP_FILL} />
     </svg>
+  )
+}
+
+function CountdownRing({ secondsLeft, total }: { secondsLeft: number; total: number }) {
+  const radius = 42
+  const circumference = 2 * Math.PI * radius
+  const progress = Math.max(0, Math.min(1, secondsLeft / total))
+  const offset = circumference * (1 - progress)
+  const urgent = secondsLeft <= 60
+
+  return (
+    <div className="relative mx-auto flex h-[104px] w-[104px] items-center justify-center">
+      <svg className="absolute inset-0 -rotate-90" viewBox="0 0 100 100" aria-hidden>
+        <circle cx="50" cy="50" r={radius} fill="none" stroke="#E8EDD4" strokeWidth="6" />
+        <circle
+          cx="50"
+          cy="50"
+          r={radius}
+          fill="none"
+          stroke={urgent ? '#DC2626' : LINE7_PRIMARY}
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className="transition-[stroke-dashoffset] duration-1000 ease-linear"
+        />
+      </svg>
+      <div className="text-center">
+        <p
+          className="font-mono text-[26px] font-bold leading-none tracking-tight"
+          style={{ color: urgent ? '#DC2626' : LINE7_DARK }}
+        >
+          {formatCountdown(secondsLeft)}
+        </p>
+        <p className="mt-1 text-[10px] font-medium text-[#9CA3AF]">남음</p>
+      </div>
+    </div>
   )
 }
 
@@ -446,11 +479,11 @@ export default function MatchedPage() {
 
   if (error) {
     return (
-      <div className="min-h-dvh flex flex-col items-center justify-center bg-[#f5f5f0] p-6">
-        <p className="text-center text-sm font-semibold text-red-600">{error}</p>
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-[#f6f7f2] p-6">
+        <p className="text-center text-sm font-medium text-red-600">{error}</p>
         <button
           type="button"
-          className="mt-6 rounded-2xl bg-[#747F00] px-6 py-3 text-sm font-bold text-white"
+          className="mt-6 rounded-2xl bg-[#747F00] px-6 py-3 text-sm font-semibold text-white shadow-md shadow-[#747F00]/20"
           onClick={() => router.push('/home')}
         >
           홈으로
@@ -472,7 +505,7 @@ export default function MatchedPage() {
   const carLabel = guide.car_number != null ? `${guide.car_number}호차` : '미확인'
   const doorLabel = guide.car_door_short ?? '-'
   const columnLabel = columnLetter !== '-' ? `${columnLetter}열` : '-'
-  const diagramTitle = `${carLabel} · ${doorLabel !== '-' ? doorLabel : `출${diagramCar}-${diagramDoor}`} 구간`
+  const destinationLabel = guide.destination_station_name?.trim() || '목적지'
 
   const infoItems = [
     { label: '호차', value: carLabel },
@@ -482,63 +515,132 @@ export default function MatchedPage() {
   ]
 
   return (
-    <div className="min-h-dvh flex flex-col bg-[#f5f5f0] px-4 py-6">
-      <main className="mx-auto flex w-full max-w-md flex-col gap-4">
-        {/* 1. 상단 배너 */}
-        <div className="relative overflow-hidden rounded-2xl bg-[#747F00] px-4 py-5 text-center">
-          <span
-            className="absolute left-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-white/15 text-[15px] font-extrabold text-white"
-            aria-hidden
-          >
-            7
-          </span>
-          <p className="text-xs font-semibold text-white/85">서울 7호선 · 빈자리를 찾았어요!</p>
-          <h1 className="mt-1 text-2xl font-black text-white">매칭 완료 ✓</h1>
-        </div>
+    <div className="min-h-dvh bg-[#f6f7f2] pb-8">
+      {/* 상단 히어로 */}
+      <div
+        className="relative overflow-hidden px-5 pb-8 pt-10"
+        style={{
+          background: `linear-gradient(155deg, ${LINE7_DARK} 0%, ${LINE7_PRIMARY} 48%, #8A9430 100%)`,
+        }}
+      >
+        <div
+          className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full opacity-20"
+          style={{ background: 'radial-gradient(circle, #fff 0%, transparent 70%)' }}
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute -bottom-16 -left-6 h-32 w-32 rounded-full opacity-10"
+          style={{ background: '#fff' }}
+          aria-hidden
+        />
 
-        {/* 2. 좌석 정보 카드 */}
-        <div className="rounded-2xl border border-[#D5DDB8] bg-white p-4">
-          <div className="grid grid-cols-4 gap-3">
+        <div className="relative mx-auto max-w-md">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-sm font-bold text-white ring-1 ring-white/25 backdrop-blur-sm">
+              7
+            </span>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <p className="text-[13px] font-medium text-white/75">서울 7호선</p>
+              <h1 className="mt-0.5 text-[22px] font-bold leading-tight tracking-tight text-white">
+                빈자리를 찾았어요
+              </h1>
+            </div>
+            <span
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#747F00] shadow-lg shadow-black/10"
+              aria-hidden
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M5 12.5l4.5 4.5L19 7.5"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+          </div>
+
+          <p className="mt-4 text-sm font-medium text-white/90">
+            <span className="font-bold text-white">{destinationLabel}</span>
+            {isSeeker ? ' 향해 이동해 주세요' : ' 방향으로 자리를 넘겨 주세요'}
+          </p>
+        </div>
+      </div>
+
+      <main className="relative z-[1] mx-auto -mt-5 flex w-full max-w-md flex-col gap-3 px-4">
+        {/* 요약 칩 */}
+        <div className="rounded-2xl bg-white p-4 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
+          <div className="grid grid-cols-4 gap-2">
             {infoItems.map((item) => (
-              <div key={item.label} className="text-center">
-                <p className="text-xs font-medium text-[#888888]">{item.label}</p>
-                <p className="mt-1 text-base font-black text-[#747F00]">{item.value}</p>
+              <div
+                key={item.label}
+                className="rounded-xl px-1 py-2.5 text-center"
+                style={{ backgroundColor: LINE7_GLOW }}
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+                  {item.label}
+                </p>
+                <p className="mt-1 text-[15px] font-bold leading-tight text-[#1A1A1A]">
+                  {item.value}
+                </p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* 3. 좌석 배치도 카드 */}
-        <div className="rounded-2xl border border-[#D5DDB8] bg-white p-4">
-          <p className="text-sm font-bold text-[#1A1A1A]">{diagramTitle}</p>
-          <div className="mt-3 overflow-hidden rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] p-2">
-            <MatchSeatDiagram
-              carNumber={diagramCar}
-              doorNumber={diagramDoor}
-              travelSide={travelSideLabel}
-              columnLetter={columnLetter}
-            />
+        {/* 좌석 배치도 */}
+        <div className="rounded-2xl bg-white p-5 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-semibold text-[#9CA3AF]">내 자리 안내</p>
+              <p className="mt-0.5 text-[15px] font-bold text-[#1A1A1A]">
+                {carLabel} · {doorLabel !== '-' ? doorLabel : `출${diagramCar}-${diagramDoor}`}
+              </p>
+            </div>
+            <span
+              className="shrink-0 rounded-full px-3 py-1 text-xs font-bold text-white"
+              style={{ backgroundColor: LINE7_PRIMARY }}
+            >
+              {columnLabel}
+            </span>
+          </div>
+          <MatchSeatDiagram
+            carNumber={diagramCar}
+            doorNumber={diagramDoor}
+            travelSide={travelSideLabel}
+            columnLetter={columnLetter}
+          />
+        </div>
+
+        {/* 타이머 */}
+        <div className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
+          <CountdownRing secondsLeft={secondsLeft} total={COUNTDOWN_SECONDS} />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-[#1A1A1A]">착석까지 남은 시간</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-[#6B7280]">
+              {secondsLeft <= 60
+                ? '곧 시간이 만료됩니다. 빠르게 착석해 주세요.'
+                : '표시된 출입문·열로 이동한 뒤 착석 완료를 눌러 주세요.'}
+            </p>
           </div>
         </div>
 
-        {/* 4. 타이머 */}
-        <div className="rounded-2xl border border-[#D5DDB8] bg-[#F7F8F2] p-4 text-center">
-          <p className="text-xs font-semibold text-[#5F6B2E]">착석까지 남은 시간</p>
-          <p className="mt-2 text-2xl font-black text-[#747F00]">{formatCountdown(secondsLeft)}</p>
-        </div>
-
-        {/* 5. 착석 완료 버튼 */}
+        {/* CTA */}
         <button
           type="button"
           disabled={isSubmittingSeat}
           onClick={() => void handleSeatedComplete()}
-          className="w-full rounded-2xl bg-[#747F00] py-4 text-lg font-black text-white transition active:scale-[0.98] disabled:opacity-60"
+          className="mt-1 w-full rounded-2xl py-4 text-[17px] font-bold text-white shadow-[0_10px_28px_rgba(116,127,0,0.35)] transition active:scale-[0.98] disabled:opacity-60"
+          style={{
+            background: `linear-gradient(180deg, #8A9430 0%, ${LINE7_PRIMARY} 45%, ${LINE7_DARK} 100%)`,
+          }}
         >
           {isSubmittingSeat ? '처리 중...' : '착석 완료'}
         </button>
 
         {seatSubmitError ? (
-          <p className="text-center text-sm font-semibold text-red-600">{seatSubmitError}</p>
+          <p className="text-center text-sm font-medium text-red-600">{seatSubmitError}</p>
         ) : null}
       </main>
     </div>
