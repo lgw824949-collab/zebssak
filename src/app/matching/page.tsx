@@ -4,7 +4,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 const MATCH_TIMEOUT_SECONDS = 30
-const PARTNER_ACCEPT_REDIRECT_MS = 1500
 const PENDING_MATCH_POLL_MS = 2000
 const MATCH_STATUS_CONFLICT_REDIRECT_MS = 1200
 
@@ -142,14 +141,10 @@ function MatchingForm() {
     router.replace('/waiting')
   }, [router])
 
-  const goAfterReject = useCallback(() => {
+  const goToHome = useCallback(() => {
     clearActiveMatchSession()
-    if (viewerRole === 'provider') {
-      router.replace('/')
-      return
-    }
-    goToWaiting()
-  }, [clearActiveMatchSession, goToWaiting, router, viewerRole])
+    router.replace('/')
+  }, [clearActiveMatchSession, router])
 
   const goToMatched = useCallback(
     (matchId: string) => {
@@ -375,13 +370,6 @@ function MatchingForm() {
       matchId,
       token,
       (acceptedMatchId) => {
-        if (viewerRole === 'provider') {
-          setPartnerAcceptedNotice(true)
-          window.setTimeout(() => {
-            goToMatched(acceptedMatchId)
-          }, PARTNER_ACCEPT_REDIRECT_MS)
-          return
-        }
         goToMatched(acceptedMatchId)
       },
       (message) => {
@@ -434,12 +422,26 @@ function MatchingForm() {
       }
 
       actionHandledRef.current = true
-      setIsSubmitting(true)
       setActionError('')
 
       if (action === 'reject') {
-        setIsDismissed(true)
+        goToHome()
+        try {
+          await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ action }),
+          })
+        } catch {
+          // 거절 API 실패 시에도 홈 이동은 유지합니다.
+        }
+        return
       }
+
+      setIsSubmitting(true)
 
       try {
         const res = await fetch(
@@ -464,11 +466,6 @@ function MatchingForm() {
           }
         }
 
-        if (action === 'reject') {
-          goAfterReject()
-          return
-        }
-
         if (!res.ok) {
           handleMatchStatusConflict(
             result.error ?? '처리할 수 없는 매칭 상태입니다.'
@@ -478,20 +475,14 @@ function MatchingForm() {
 
         goToMatched(result.data?.match_id ?? matchId)
       } catch {
-        if (action === 'reject') {
-          goAfterReject()
-          return
-        }
         actionHandledRef.current = false
         setActionError('네트워크 오류가 발생했습니다.')
       } finally {
-        if (action !== 'reject') {
-          setIsSubmitting(false)
-        }
+        setIsSubmitting(false)
       }
     },
     [
-      goAfterReject,
+      goToHome,
       goToMatched,
       handleMatchStatusConflict,
       isDismissed,
