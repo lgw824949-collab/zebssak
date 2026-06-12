@@ -98,6 +98,41 @@ function errorResponse(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status })
 }
 
+/** pending이 아닌 매칭 상태 — 프론트에서 code로 분기합니다 */
+function conflictResponse(code: string, message: string) {
+  return NextResponse.json({ success: false, error: message, code }, { status: 409 })
+}
+
+function matchStatusConflictResponse(status: string) {
+  if (status === 'accepted') {
+    return conflictResponse('already_accepted', '이미 수락된 매칭입니다.')
+  }
+  if (status === 'expired') {
+    return conflictResponse('already_expired', '수락 시간이 만료된 매칭입니다.')
+  }
+  if (status === 'cancelled') {
+    return conflictResponse('already_cancelled', '취소된 매칭입니다.')
+  }
+  return conflictResponse('invalid_status', '처리할 수 없는 매칭 상태입니다.')
+}
+
+async function resolveMatchStatusConflict(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  matchId: string
+) {
+  const { data: latest, error: latestError } = await supabase
+    .from('matches')
+    .select('status')
+    .eq('id', matchId)
+    .maybeSingle()
+
+  if (latestError || !latest) {
+    return errorResponse('매칭 정보를 조회할 수 없습니다.', 500)
+  }
+
+  return matchStatusConflictResponse(String(latest.status))
+}
+
 /**
  * 매칭 당사자 여부 확인
  */
@@ -440,7 +475,7 @@ export async function PATCH(
     }
 
     if (match.status !== 'pending') {
-      return errorResponse('처리할 수 없는 매칭 상태입니다.', 409)
+      return matchStatusConflictResponse(match.status)
     }
 
     if (action === 'accept') {
@@ -471,14 +506,19 @@ export async function PATCH(
       const nextPoints = prevPoints + 10
       const acceptedAt = new Date().toISOString()
 
-      const { error: updateMatchError } = await supabase
+      const { data: acceptedRows, error: updateMatchError } = await supabase
         .from('matches')
         .update({ status: 'accepted', accepted_at: acceptedAt })
         .eq('id', matchId)
         .eq('status', 'pending')
+        .select('id')
 
       if (updateMatchError) {
         return errorResponse('매칭 수락 처리에 실패했습니다.', 500)
+      }
+
+      if (!acceptedRows?.length) {
+        return resolveMatchStatusConflict(supabase, matchId)
       }
 
       const { error: pointsUserError } = await supabase
@@ -538,11 +578,12 @@ export async function PATCH(
       return errorResponse('매칭 요청 복구에 실패했습니다.', 500)
     }
 
-    const { error: rejectMatchError } = await supabase
+    const { data: cancelledRows, error: rejectMatchError } = await supabase
       .from('matches')
       .update({ status: 'cancelled' })
       .eq('id', matchId)
       .eq('status', 'pending')
+      .select('id')
 
     if (rejectMatchError) {
       await supabase
@@ -552,6 +593,10 @@ export async function PATCH(
         .eq('status', 'waiting')
 
       return errorResponse('매칭 거절 처리에 실패했습니다.', 500)
+    }
+
+    if (!cancelledRows?.length) {
+      return resolveMatchStatusConflict(supabase, matchId)
     }
 
     return NextResponse.json({

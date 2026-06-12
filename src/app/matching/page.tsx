@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 const MATCH_TIMEOUT_SECONDS = 30
 const PARTNER_ACCEPT_REDIRECT_MS = 1500
 const PENDING_MATCH_POLL_MS = 2000
+const MATCH_STATUS_CONFLICT_REDIRECT_MS = 1200
 
 interface MatchGuideState {
   carNumber: number | null
@@ -124,6 +125,7 @@ function MatchingForm() {
   const [viewerRole, setViewerRole] = useState<'seeker' | 'provider' | null>(null)
   const [partnerAcceptedNotice, setPartnerAcceptedNotice] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDismissed, setIsDismissed] = useState(false)
   const expireRequestedRef = useRef(false)
@@ -158,6 +160,19 @@ function MatchingForm() {
       router.replace('/matched')
     },
     [router]
+  )
+
+  /** pending이 아닌 매칭 — 토스트 후 대기 화면으로 이동 */
+  const handleMatchStatusConflict = useCallback(
+    (message: string) => {
+      setToastMessage(message)
+      setIsDismissed(true)
+      clearActiveMatchSession()
+      window.setTimeout(() => {
+        goToWaiting()
+      }, MATCH_STATUS_CONFLICT_REDIRECT_MS)
+    },
+    [clearActiveMatchSession, goToWaiting]
   )
 
   const expireMatchOnTimeout = useCallback(async () => {
@@ -425,7 +440,7 @@ function MatchingForm() {
       }
 
       try {
-        const response = await fetch(
+        const res = await fetch(
           `/api/matches/${encodeURIComponent(matchId)}`,
           {
             method: 'PATCH',
@@ -437,9 +452,10 @@ function MatchingForm() {
           }
         )
 
-        const result = (await response.json()) as {
+        const result = (await res.json()) as {
           success?: boolean
           error?: string
+          code?: string
           data?: {
             match_id?: string
             status?: string
@@ -451,10 +467,10 @@ function MatchingForm() {
           return
         }
 
-        if (!response.ok || !result.success) {
-          actionHandledRef.current = false
-          setIsDismissed(false)
-          setActionError(result.error ?? '요청 처리에 실패했습니다.')
+        if (!res.ok) {
+          handleMatchStatusConflict(
+            result.error ?? '처리할 수 없는 매칭 상태입니다.'
+          )
           return
         }
 
@@ -475,6 +491,7 @@ function MatchingForm() {
     [
       goAfterReject,
       goToMatched,
+      handleMatchStatusConflict,
       isDismissed,
       isSubmitting,
       router,
@@ -493,6 +510,11 @@ function MatchingForm() {
   if (isDismissed) {
     return (
       <div className="zeb-page matching-theme flex min-h-dvh items-center justify-center">
+        {toastMessage ? (
+          <p className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-full bg-gray-800 px-4 py-2 text-sm text-white">
+            {toastMessage}
+          </p>
+        ) : null}
         <p className="text-sm font-medium text-[#6B7280]">대기 화면으로 이동 중…</p>
       </div>
     )
@@ -503,6 +525,11 @@ function MatchingForm() {
 
   return (
     <div className="zeb-page matching-theme flex flex-col">
+      {toastMessage ? (
+        <p className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-full bg-gray-800 px-4 py-2 text-sm text-white">
+          {toastMessage}
+        </p>
+      ) : null}
       <header className="zeb-page-header" aria-hidden>
         <div className="space-y-2">
           <div className="zeb-track zeb-track--line1" />
