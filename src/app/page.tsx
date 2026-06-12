@@ -77,14 +77,7 @@ const LINE7_MUTED_BG = '#EDF0DC'
 const LINE7_SUCCESS_BG = '#E8EDCF'
 const LINE7_BORDER = '#D5DDB8'
 const LINE7_BORDER_STRONG = '#C4CE8F'
-const LINE7_TEXT_MUTED = '#7A8460'
 const LINE7_ACCENT = '#8A9A5B'
-/** 홈 탭 — 빈자리 찾기 / 자리 넘기기 */
-const SEEK_TAB_ACTIVE_COLOR = LINE7_PRIMARY
-const LEAVE_TAB_ACTIVE_COLOR = LINE7_PRIMARY_DARK
-const TAB_INACTIVE_TEXT_COLOR = LINE7_TEXT_MUTED
-const TAB_OUTLINE_BORDER_COLOR = LINE7_BORDER
-const TAB_ACTIVE_SHADOW = '0 2px 10px rgba(116, 127, 0, 0.14)'
 
 /** 홈 노선 라벨 → API line 파라미터 */
 function resolveHomeApiLine(lineLabel: string): string {
@@ -1177,14 +1170,6 @@ export default function Home() {
     )
   }
 
-  const resolvedActiveTab: HomeFlowMode | null =
-    homeWaitView?.phase === 'waiting_seek'
-      ? 'seek'
-      : homeWaitView?.phase === 'waiting_leave'
-        ? 'leave'
-        : activeTab
-  const isSeekTabActive = resolvedActiveTab === 'seek'
-  const isLeaveTabActive = resolvedActiveTab === 'leave'
   const homeMatchStatusBox = resolveHomeMatchStatusBox(homeWaitView)
 
   return (
@@ -1258,24 +1243,13 @@ export default function Home() {
               homeWaitView?.phase === 'waiting_seek'
             }
             onClick={() => handleModeSelect('seek')}
-            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border px-3 py-3 text-center disabled:cursor-not-allowed disabled:opacity-45"
-            style={{
-              backgroundColor: isSeekTabActive ? SEEK_TAB_ACTIVE_COLOR : '#FFFFFF',
-              borderColor: isSeekTabActive ? SEEK_TAB_ACTIVE_COLOR : TAB_OUTLINE_BORDER_COLOR,
-              boxShadow: isSeekTabActive ? TAB_ACTIVE_SHADOW : 'none',
-            }}
+            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border border-[#6b9e3f] bg-[#6b9e3f] px-3 py-3 text-center text-white transition-colors duration-150 hover:bg-[#4a7c3f] active:bg-[#4a7c3f] disabled:cursor-not-allowed disabled:opacity-45"
           >
-            <span
-              className="text-[18px] font-bold leading-snug"
-              style={{ color: isSeekTabActive ? '#FFFFFF' : TAB_INACTIVE_TEXT_COLOR }}
-            >
+            <span className="text-[18px] font-bold leading-snug">
               {homeWaitView?.phase === 'waiting_seek' ? '등록 중…' : '빈자리 찾기'}
             </span>
             {homeWaitView?.phase === 'waiting_seek' ? (
-              <span
-                className="mt-1 text-[12px] font-medium"
-                style={{ color: isSeekTabActive ? 'rgba(255,255,255,0.85)' : TAB_INACTIVE_TEXT_COLOR }}
-              >
+              <span className="mt-1 text-[12px] font-medium text-white/85">
                 아래 카드에서 확인
               </span>
             ) : null}
@@ -1288,24 +1262,13 @@ export default function Home() {
               homeWaitView?.phase === 'waiting_leave'
             }
             onClick={() => handleModeSelect('leave')}
-            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border px-3 py-3 text-center disabled:cursor-not-allowed disabled:opacity-45"
-            style={{
-              backgroundColor: isLeaveTabActive ? LEAVE_TAB_ACTIVE_COLOR : '#FFFFFF',
-              borderColor: isLeaveTabActive ? LEAVE_TAB_ACTIVE_COLOR : TAB_OUTLINE_BORDER_COLOR,
-              boxShadow: isLeaveTabActive ? TAB_ACTIVE_SHADOW : 'none',
-            }}
+            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border border-[#f97316] bg-[#f97316] px-3 py-3 text-center text-white transition-colors duration-150 hover:bg-[#ea6c0a] active:bg-[#ea6c0a] disabled:cursor-not-allowed disabled:opacity-45"
           >
-            <span
-              className="text-[18px] font-bold leading-snug"
-              style={{ color: isLeaveTabActive ? '#FFFFFF' : TAB_INACTIVE_TEXT_COLOR }}
-            >
+            <span className="text-[18px] font-bold leading-snug">
               {homeWaitView?.phase === 'waiting_leave' ? '등록 중…' : '자리 넘기기'}
             </span>
             {homeWaitView?.phase === 'waiting_leave' ? (
-              <span
-                className="mt-1 text-[12px] font-medium"
-                style={{ color: isLeaveTabActive ? 'rgba(255,255,255,0.85)' : TAB_INACTIVE_TEXT_COLOR }}
-              >
+              <span className="mt-1 text-[12px] font-medium text-white/85">
                 아래 카드에서 확인
               </span>
             ) : null}
