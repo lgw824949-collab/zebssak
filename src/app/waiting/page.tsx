@@ -569,6 +569,15 @@ export default function WaitingPage() {
           sessionStorage.setItem(WAITING_DRAFT_KEY, JSON.stringify(parsedDraft))
         }
 
+        // 하차 예정(provider) — 등록 직후 API 응답 전에 대기 화면을 먼저 표시
+        if (isProviderRole && parsedDraft && !cancelled) {
+          setDraft(parsedDraft)
+          setIsProviderWaiting(true)
+          setIsSeekerWaiting(false)
+          setWaitingRank(null)
+          setIsReady(true)
+        }
+
         let requestId = existingRequestId
 
         const storedMatchId = sessionStorage.getItem('activeMatchId')?.trim()
@@ -584,72 +593,141 @@ export default function WaitingPage() {
           }
 
           if (isProviderRole) {
-            setError('하차 등록 정보를 찾을 수 없습니다. 다시 등록해 주세요.')
-            setIsReady(true)
-            return
-          }
-
-          const seat = resolveSeatFromDraft(parsedDraft) ?? { seatSide: 'A' as const, seatNumber: 1 }
-
-          const response = await fetch('/api/match-requests', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${authToken}`,
-            },
-            body: JSON.stringify({
-              role: 'seeker',
+            const providerSeat = resolveSeatFromDraft(parsedDraft)
+            const providerBody: Record<string, unknown> = {
+              role: 'provider',
               train_id: parsedDraft.trainNo,
               direction: resolveRequestDirection(parsedDraft),
               car_number: parsedDraft.carNumber,
-              seat_side: seat.seatSide,
-              seat_number: seat.seatNumber,
               destination_id: parsedDraft.destinationId,
               remaining_stops: parsedDraft.remainingStations,
               line_number: parsedDraft.lineNumber,
               destination_name: parsedDraft.destinationName,
-            }),
-            signal: abortController.signal,
-          })
-
-          if (cancelled) return
-
-          if (handleUnauthorizedResponse(response)) {
-            return
-          }
-
-          const result = (await response.json()) as {
-            success: boolean
-            error?: string
-            data?: {
-              queue_position?: number
-              match_request_id?: string
-              match_id?: string | null
-              matched?: boolean
             }
-          }
+            if (parsedDraft.boardingStationId) {
+              providerBody.boarding_station_id = parsedDraft.boardingStationId
+            }
+            if (parsedDraft.boardingStationName) {
+              providerBody.boarding_station_name = parsedDraft.boardingStationName
+            }
+            if (providerSeat) {
+              providerBody.seat_side = providerSeat.seatSide
+              providerBody.seat_number = providerSeat.seatNumber
+            }
 
-          if (!response.ok || !result.success || !result.data?.match_request_id) {
-            setError(result.error ?? '매칭 요청에 실패했습니다.')
-            setIsReady(true)
-            return
-          }
+            const response = await fetch('/api/match-requests', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${authToken}`,
+              },
+              body: JSON.stringify(providerBody),
+              signal: abortController.signal,
+            })
 
-          requestId = result.data.match_request_id
-          sessionStorage.setItem(ACTIVE_REQUEST_KEY, requestId)
-          sessionStorage.setItem(REGISTERED_FLAG_KEY, 'true')
-          sessionStorage.setItem(WAITING_DRAFT_KEY, JSON.stringify(parsedDraft))
+            if (cancelled) return
 
-          if (result.data.matched && result.data.match_id) {
-            sessionStorage.setItem('activeMatchId', result.data.match_id)
-            router.replace('/matching')
-            return
-          }
+            if (handleUnauthorizedResponse(response)) {
+              return
+            }
 
-          if (!cancelled) {
-            setWaitingRank(result.data.queue_position ?? 1)
-            setIsSeekerWaiting(true)
-            setIsProviderWaiting(false)
+            const result = (await response.json()) as {
+              success: boolean
+              error?: string
+              data?: {
+                queue_position?: number
+                match_request_id?: string
+                match_id?: string | null
+                matched?: boolean
+              }
+            }
+
+            if (!response.ok || !result.success || !result.data?.match_request_id) {
+              setError(result.error ?? '하차 등록에 실패했습니다.')
+              setIsReady(true)
+              return
+            }
+
+            requestId = result.data.match_request_id
+            persistWaitingSession(parsedDraft, requestId)
+
+            if (result.data.matched && result.data.match_id) {
+              sessionStorage.setItem('activeMatchId', result.data.match_id)
+              router.replace('/matching')
+              return
+            }
+
+            if (!cancelled) {
+              setIsProviderWaiting(true)
+              setIsSeekerWaiting(false)
+              setWaitingRank(null)
+            }
+          } else {
+            const seat = resolveSeatFromDraft(parsedDraft) ?? {
+              seatSide: 'A' as const,
+              seatNumber: 1,
+            }
+
+            const response = await fetch('/api/match-requests', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${authToken}`,
+              },
+              body: JSON.stringify({
+                role: 'seeker',
+                train_id: parsedDraft.trainNo,
+                direction: resolveRequestDirection(parsedDraft),
+                car_number: parsedDraft.carNumber,
+                seat_side: seat.seatSide,
+                seat_number: seat.seatNumber,
+                destination_id: parsedDraft.destinationId,
+                remaining_stops: parsedDraft.remainingStations,
+                line_number: parsedDraft.lineNumber,
+                destination_name: parsedDraft.destinationName,
+              }),
+              signal: abortController.signal,
+            })
+
+            if (cancelled) return
+
+            if (handleUnauthorizedResponse(response)) {
+              return
+            }
+
+            const result = (await response.json()) as {
+              success: boolean
+              error?: string
+              data?: {
+                queue_position?: number
+                match_request_id?: string
+                match_id?: string | null
+                matched?: boolean
+              }
+            }
+
+            if (!response.ok || !result.success || !result.data?.match_request_id) {
+              setError(result.error ?? '매칭 요청에 실패했습니다.')
+              setIsReady(true)
+              return
+            }
+
+            requestId = result.data.match_request_id
+            sessionStorage.setItem(ACTIVE_REQUEST_KEY, requestId)
+            sessionStorage.setItem(REGISTERED_FLAG_KEY, 'true')
+            sessionStorage.setItem(WAITING_DRAFT_KEY, JSON.stringify(parsedDraft))
+
+            if (result.data.matched && result.data.match_id) {
+              sessionStorage.setItem('activeMatchId', result.data.match_id)
+              router.replace('/matching')
+              return
+            }
+
+            if (!cancelled) {
+              setWaitingRank(result.data.queue_position ?? 1)
+              setIsSeekerWaiting(true)
+              setIsProviderWaiting(false)
+            }
           }
         } else if (requestId) {
           const statusResponse = await fetch(
