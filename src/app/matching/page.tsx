@@ -128,6 +128,7 @@ function MatchingForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDismissed, setIsDismissed] = useState(false)
   const [isNavigatingToMatched, setIsNavigatingToMatched] = useState(false)
+  const [isNavigatingHome, setIsNavigatingHome] = useState(false)
   const expireRequestedRef = useRef(false)
   const actionHandledRef = useRef(false)
   const acceptNavigateScheduledRef = useRef(false)
@@ -143,8 +144,9 @@ function MatchingForm() {
 
   const goToHome = useCallback(() => {
     clearActiveMatchSession()
-    router.replace('/')
-  }, [clearActiveMatchSession, router])
+    setIsNavigatingHome(true)
+    window.location.replace('/')
+  }, [clearActiveMatchSession])
 
   const goToMatched = useCallback(
     (matchId: string) => {
@@ -426,18 +428,17 @@ function MatchingForm() {
 
       if (action === 'reject') {
         goToHome()
-        try {
-          await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ action }),
-          })
-        } catch {
+        void fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ action }),
+          keepalive: true,
+        }).catch(() => {
           // 거절 API 실패 시에도 홈 이동은 유지합니다.
-        }
+        })
         return
       }
 
@@ -500,7 +501,7 @@ function MatchingForm() {
     void submitMatchAction('reject')
   }
 
-  if (isNavigatingToMatched) {
+  if (isNavigatingToMatched || isNavigatingHome) {
     return null
   }
 
