@@ -125,9 +125,15 @@ function MatchingForm() {
   const [partnerAcceptedNotice, setPartnerAcceptedNotice] = useState(false)
   const [actionError, setActionError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDismissed, setIsDismissed] = useState(false)
   const expireRequestedRef = useRef(false)
   const actionHandledRef = useRef(false)
   const acceptNavigateScheduledRef = useRef(false)
+
+  /** 거절·이탈 시 매칭 세션 정리 */
+  const clearActiveMatchSession = useCallback(() => {
+    sessionStorage.removeItem('activeMatchId')
+  }, [])
 
   const goToWaiting = useCallback(() => {
     router.replace('/waiting')
@@ -321,7 +327,7 @@ function MatchingForm() {
   useEffect(() => {
     const token = localStorage.getItem('token')
     const matchId = resolveMatchId(searchParams.get('matchId'))
-    if (!token || !matchId || !viewerRole || actionHandledRef.current) {
+    if (!token || !matchId || !viewerRole || actionHandledRef.current || isDismissed) {
       return
     }
 
@@ -351,10 +357,10 @@ function MatchingForm() {
     return () => {
       abortController.abort()
     }
-  }, [goToMatched, searchParams, viewerRole])
+  }, [goToMatched, isDismissed, searchParams, viewerRole])
 
   useEffect(() => {
-    if (actionHandledRef.current) {
+    if (actionHandledRef.current || isDismissed) {
       return
     }
 
@@ -368,11 +374,11 @@ function MatchingForm() {
     }, 1000)
 
     return () => window.clearInterval(timerId)
-  }, [secondsLeft, expireMatchOnTimeout])
+  }, [secondsLeft, expireMatchOnTimeout, isDismissed])
 
   const submitMatchAction = useCallback(
     async (action: 'accept' | 'reject') => {
-      if (actionHandledRef.current || isSubmitting) {
+      if (actionHandledRef.current || isSubmitting || isDismissed) {
         return
       }
 
@@ -392,6 +398,10 @@ function MatchingForm() {
       actionHandledRef.current = true
       setIsSubmitting(true)
       setActionError('')
+
+      if (action === 'reject') {
+        setIsDismissed(true)
+      }
 
       try {
         const response = await fetch(
@@ -415,25 +425,42 @@ function MatchingForm() {
           }
         }
 
+        if (action === 'reject') {
+          clearActiveMatchSession()
+          goToWaiting()
+          return
+        }
+
         if (!response.ok || !result.success) {
           actionHandledRef.current = false
           setActionError(result.error ?? '요청 처리에 실패했습니다.')
           return
         }
 
-        if (action === 'accept') {
-          goToMatched(result.data?.match_id ?? matchId)
-        } else {
-          goToWaiting()
-        }
+        goToMatched(result.data?.match_id ?? matchId)
       } catch {
+        if (action === 'reject') {
+          clearActiveMatchSession()
+          goToWaiting()
+          return
+        }
         actionHandledRef.current = false
         setActionError('네트워크 오류가 발생했습니다.')
       } finally {
-        setIsSubmitting(false)
+        if (action !== 'reject') {
+          setIsSubmitting(false)
+        }
       }
     },
-    [goToMatched, goToWaiting, isSubmitting, router, searchParams]
+    [
+      clearActiveMatchSession,
+      goToMatched,
+      goToWaiting,
+      isDismissed,
+      isSubmitting,
+      router,
+      searchParams,
+    ]
   )
 
   function handleAccept() {
@@ -442,6 +469,14 @@ function MatchingForm() {
 
   function handleReject() {
     void submitMatchAction('reject')
+  }
+
+  if (isDismissed) {
+    return (
+      <div className="zeb-page matching-theme flex min-h-dvh items-center justify-center">
+        <p className="text-sm font-medium text-[#6B7280]">대기 화면으로 이동 중…</p>
+      </div>
+    )
   }
 
   const progressPercent = (secondsLeft / MATCH_TIMEOUT_SECONDS) * 100
@@ -628,7 +663,7 @@ function MatchingForm() {
               <button
                 type="button"
                 onClick={handleReject}
-                disabled={isSubmitting || partnerAcceptedNotice}
+                disabled={isSubmitting || partnerAcceptedNotice || isDismissed}
                 className="zeb-btn zeb-btn--secondary"
               >
                 {isSubmitting ? '처리 중...' : '거절'}
@@ -636,7 +671,7 @@ function MatchingForm() {
               <button
                 type="button"
                 onClick={handleAccept}
-                disabled={isSubmitting || partnerAcceptedNotice}
+                disabled={isSubmitting || partnerAcceptedNotice || isDismissed}
                 className="zeb-btn zeb-btn--line1"
               >
                 {isSubmitting ? '처리 중...' : '수락'}
