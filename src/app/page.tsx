@@ -71,6 +71,11 @@ const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
 /** 7호선 브랜드 — 홈 등록 버튼 */
 const LINE7_COLOR = '#747F00'
 const LINE7_COLOR_DARK = '#5F6B2E'
+/** 홈 탭 — 빈자리 찾기 / 자리 넘기기 */
+const SEEK_TAB_ACTIVE_COLOR = '#4B7F52'
+const LEAVE_TAB_ACTIVE_COLOR = '#F97316'
+const TAB_INACTIVE_TEXT_COLOR = '#6B7280'
+const TAB_OUTLINE_BORDER_COLOR = '#D1D5DB'
 
 /** 홈 노선 라벨 → API line 파라미터 */
 function resolveHomeApiLine(lineLabel: string): string {
@@ -148,8 +153,63 @@ interface HomeWaitView {
   queuePosition: number | null
   waitingCount: number
   matchId: string | null
+  matchStatus: string | null
   trainNo: string | null
   carNumber: number | null
+}
+
+type HomeMatchStatusBoxKind = 'waiting' | 'completed' | 'failed'
+
+interface HomeMatchStatusBox {
+  kind: HomeMatchStatusBoxKind
+  label: string
+  emoji: string
+  backgroundColor: string
+  textColor: string
+}
+
+/** Supabase 활성 매칭 데이터 기준 — 홈 상태 박스 표시 여부·스타일 */
+function resolveHomeMatchStatusBox(view: HomeWaitView | null): HomeMatchStatusBox | null {
+  if (!view) {
+    return null
+  }
+
+  if (view.phase === 'match_done' || view.matchStatus === 'accepted') {
+    return {
+      kind: 'completed',
+      label: '매칭 완료',
+      emoji: '✅',
+      backgroundColor: '#DCFCE7',
+      textColor: '#166534',
+    }
+  }
+
+  if (view.matchStatus === 'expired' || view.matchStatus === 'cancelled') {
+    return {
+      kind: 'failed',
+      label: '매칭 실패',
+      emoji: '❌',
+      backgroundColor: '#FEE2E2',
+      textColor: '#B91C1C',
+    }
+  }
+
+  if (
+    view.phase === 'waiting_seek' ||
+    view.phase === 'waiting_leave' ||
+    view.phase === 'match_alert' ||
+    view.matchStatus === 'pending'
+  ) {
+    return {
+      kind: 'waiting',
+      label: '매칭 대기중',
+      emoji: '🟡',
+      backgroundColor: '#FEF9C3',
+      textColor: '#854D0E',
+    }
+  }
+
+  return null
 }
 
 /** 내 등록 상태 카드 — ①진행상태 ②무엇·어디까지 ③매칭 여부 */
@@ -330,6 +390,7 @@ function buildHomeMatchDoneView(hint: HomeMatchCompletedHint): HomeWaitView {
     queuePosition: null,
     waitingCount: 0,
     matchId: null,
+    matchStatus: 'accepted',
     trainNo: null,
     carNumber: null,
   }
@@ -350,6 +411,7 @@ async function fetchMatchRequestStatus(
 ): Promise<{
   queuePosition: number | null
   pendingMatchId: string | null
+  matchStatus: string | null
   requestType: string | null
   requestStatus: string | null
 }> {
@@ -374,19 +436,20 @@ async function fetchMatchRequestStatus(
     return {
       queuePosition: null,
       pendingMatchId: null,
+      matchStatus: null,
       requestType: null,
       requestStatus: null,
     }
   }
 
+  const matchStatus = statusPayload.data?.match?.status ?? null
   const pendingMatchId =
-    statusPayload.data?.match?.status === 'pending'
-      ? (statusPayload.data.match?.id ?? null)
-      : null
+    matchStatus === 'pending' ? (statusPayload.data?.match?.id ?? null) : null
 
   return {
     queuePosition: statusPayload.data?.queue_position ?? null,
     pendingMatchId,
+    matchStatus,
     requestType: statusPayload.data?.match_request?.request_type ?? null,
     requestStatus: statusPayload.data?.match_request?.status ?? null,
   }
@@ -434,23 +497,49 @@ function buildHomeWaitView(input: {
   queuePosition: number | null
   waitingCount: number
   pendingMatchId: string | null
+  matchStatus: string | null
   trainNo: string | null
   carNumber: number | null
 }): HomeWaitView | null {
   const registrationKind: 'seek' | 'leave' =
     input.requestType === 'leaving' ? 'leave' : 'seek'
 
+  const baseView = {
+    requestId: input.requestId,
+    registrationKind,
+    destinationName: input.destinationName,
+    queuePosition: input.queuePosition,
+    waitingCount: input.waitingCount,
+    matchStatus: input.matchStatus,
+    trainNo: input.trainNo,
+    carNumber: input.carNumber,
+  }
+
+  if (input.matchStatus === 'accepted') {
+    return {
+      ...baseView,
+      phase: 'match_done',
+      matchId: input.pendingMatchId,
+    }
+  }
+
   if (input.pendingMatchId) {
     return {
-      requestId: input.requestId,
+      ...baseView,
       phase: 'match_alert',
-      registrationKind,
-      destinationName: input.destinationName,
-      queuePosition: input.queuePosition,
-      waitingCount: input.waitingCount,
       matchId: input.pendingMatchId,
-      trainNo: input.trainNo,
-      carNumber: input.carNumber,
+    }
+  }
+
+  if (
+    input.matchStatus === 'expired' ||
+    input.matchStatus === 'cancelled'
+  ) {
+    return {
+      ...baseView,
+      phase:
+        input.requestType === 'leaving' ? 'waiting_leave' : 'waiting_seek',
+      matchId: null,
     }
   }
 
@@ -458,19 +547,10 @@ function buildHomeWaitView(input: {
     return null
   }
 
-  const phase =
-    input.requestType === 'leaving' ? 'waiting_leave' : 'waiting_seek'
-
   return {
-    requestId: input.requestId,
-    phase,
-    registrationKind,
-    destinationName: input.destinationName,
-    queuePosition: input.queuePosition,
-    waitingCount: input.waitingCount,
+    ...baseView,
+    phase: input.requestType === 'leaving' ? 'waiting_leave' : 'waiting_seek',
     matchId: null,
-    trainNo: input.trainNo,
-    carNumber: input.carNumber,
   }
 }
 
@@ -566,6 +646,7 @@ async function fetchHomeWaitView(token: string): Promise<HomeWaitView | null> {
     queuePosition: status.queuePosition,
     waitingCount,
     pendingMatchId: status.pendingMatchId,
+    matchStatus: status.matchStatus,
     trainNo,
     carNumber,
   })
@@ -591,7 +672,7 @@ export default function Home() {
   const [congestionStatus, setCongestionStatus] = useState<CongestionStatus | null>(null)
   const [showCongestionModal, setShowCongestionModal] = useState(false)
   const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 7호선')
-  const [homeMode, setHomeMode] = useState<HomeFlowMode | null>(null)
+  const [activeTab, setActiveTab] = useState<HomeFlowMode | null>(null)
   const [transferStationsLoading, setTransferStationsLoading] = useState(false)
   const [transferStations, setTransferStations] = useState<
     (typeof HOME_TRANSFER_STATIONS)[number][]
@@ -748,7 +829,7 @@ export default function Home() {
 
   function handleModeSelect(mode: HomeFlowMode, destination?: string) {
     clearHomeMatchCompletedHint()
-    setHomeMode(mode)
+    setActiveTab(mode)
     // 단독 노선(서울 7호선) — 노선 선택 단계 생략
     // setHomeStep('line')
     handleLinePick(DEFAULT_HOME_LINE_LABEL, mode, destination)
@@ -916,7 +997,7 @@ export default function Home() {
 
   // function handleBackToModeStep() {
   //   setHomeStep('mode')
-  //   setHomeMode(null)
+  //   setActiveTab(null)
   // }
 
   async function proceedToBoarding(
@@ -924,7 +1005,7 @@ export default function Home() {
     modeOverride?: HomeFlowMode,
     destination?: string
   ) {
-    const mode = modeOverride ?? homeMode
+    const mode = modeOverride ?? activeTab
     if (!mode) return
     if (isLineHalted(congestionStatus, lineLabel)) {
       setSelectedLineLabel(lineLabel)
@@ -944,7 +1025,7 @@ export default function Home() {
     modeOverride?: HomeFlowMode,
     destination?: string
   ) {
-    const mode = modeOverride ?? homeMode
+    const mode = modeOverride ?? activeTab
     if (isMatchingPaused || !mode) return
 
     if (isLineHalted(congestionStatus, lineLabel)) {
@@ -1087,6 +1168,16 @@ export default function Home() {
     )
   }
 
+  const resolvedActiveTab: HomeFlowMode | null =
+    homeWaitView?.phase === 'waiting_seek'
+      ? 'seek'
+      : homeWaitView?.phase === 'waiting_leave'
+        ? 'leave'
+        : activeTab
+  const isSeekTabActive = resolvedActiveTab === 'seek'
+  const isLeaveTabActive = resolvedActiveTab === 'leave'
+  const homeMatchStatusBox = resolveHomeMatchStatusBox(homeWaitView)
+
   return (
     <div className="mx-auto flex w-full max-w-[480px] flex-col bg-[#f5f5f0]">
       <CongestionHaltModal
@@ -1148,7 +1239,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 등록 액션 — 빈자리 찾기(7호선) / 자리 넘기기(톤온톤) */}
+        {/* 등록 액션 — 빈자리 찾기 / 자리 넘기기 (클릭 시에만 활성 스타일) */}
         <section className="mx-4 mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -1158,17 +1249,28 @@ export default function Home() {
               homeWaitView?.phase === 'waiting_seek'
             }
             onClick={() => handleModeSelect('seek')}
-            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl px-3 py-3 text-center disabled:cursor-not-allowed disabled:opacity-45"
+            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border px-3 py-3 text-center disabled:cursor-not-allowed disabled:opacity-45"
             style={{
-              backgroundColor: LINE7_COLOR,
-              boxShadow: '0 2px 10px rgba(116, 127, 0, 0.16)',
+              backgroundColor: isSeekTabActive ? SEEK_TAB_ACTIVE_COLOR : '#FFFFFF',
+              borderColor: isSeekTabActive ? SEEK_TAB_ACTIVE_COLOR : TAB_OUTLINE_BORDER_COLOR,
+              boxShadow: isSeekTabActive
+                ? '0 2px 10px rgba(75, 127, 82, 0.16)'
+                : 'none',
             }}
           >
-            <span className="text-[18px] font-bold leading-snug text-white">
+            <span
+              className="text-[18px] font-bold leading-snug"
+              style={{ color: isSeekTabActive ? '#FFFFFF' : TAB_INACTIVE_TEXT_COLOR }}
+            >
               {homeWaitView?.phase === 'waiting_seek' ? '등록 중…' : '빈자리 찾기'}
             </span>
             {homeWaitView?.phase === 'waiting_seek' ? (
-              <span className="mt-1 text-[12px] font-medium text-white/85">아래 카드에서 확인</span>
+              <span
+                className="mt-1 text-[12px] font-medium"
+                style={{ color: isSeekTabActive ? 'rgba(255,255,255,0.85)' : TAB_INACTIVE_TEXT_COLOR }}
+              >
+                아래 카드에서 확인
+              </span>
             ) : null}
           </button>
           <button
@@ -1179,16 +1281,28 @@ export default function Home() {
               homeWaitView?.phase === 'waiting_leave'
             }
             onClick={() => handleModeSelect('leave')}
-            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3 py-3 text-center disabled:cursor-not-allowed disabled:opacity-45"
+            className="zeb-touch-target flex min-h-[4.5rem] flex-col items-center justify-center rounded-xl border px-3 py-3 text-center disabled:cursor-not-allowed disabled:opacity-45"
+            style={{
+              backgroundColor: isLeaveTabActive ? LEAVE_TAB_ACTIVE_COLOR : '#FFFFFF',
+              borderColor: isLeaveTabActive ? LEAVE_TAB_ACTIVE_COLOR : TAB_OUTLINE_BORDER_COLOR,
+              boxShadow: isLeaveTabActive
+                ? '0 2px 10px rgba(249, 115, 22, 0.16)'
+                : 'none',
+            }}
           >
             <span
               className="text-[18px] font-bold leading-snug"
-              style={{ color: LINE7_COLOR_DARK }}
+              style={{ color: isLeaveTabActive ? '#FFFFFF' : TAB_INACTIVE_TEXT_COLOR }}
             >
               {homeWaitView?.phase === 'waiting_leave' ? '등록 중…' : '자리 넘기기'}
             </span>
             {homeWaitView?.phase === 'waiting_leave' ? (
-              <span className="mt-1 text-[12px] font-medium text-[#8A9A5B]">아래 카드에서 확인</span>
+              <span
+                className="mt-1 text-[12px] font-medium"
+                style={{ color: isLeaveTabActive ? 'rgba(255,255,255,0.85)' : TAB_INACTIVE_TEXT_COLOR }}
+              >
+                아래 카드에서 확인
+              </span>
             ) : null}
           </button>
         </section>
@@ -1209,6 +1323,20 @@ export default function Home() {
           >
             현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
           </p>
+        ) : null}
+
+        {homeMatchStatusBox ? (
+          <section className="mx-4 mt-3" aria-label="매칭 상태">
+            <p
+              className="rounded-xl px-4 py-3 text-center text-sm font-bold"
+              style={{
+                backgroundColor: homeMatchStatusBox.backgroundColor,
+                color: homeMatchStatusBox.textColor,
+              }}
+            >
+              {homeMatchStatusBox.emoji} {homeMatchStatusBox.label}
+            </p>
+          </section>
         ) : null}
 
         {/* 환승 많은 역 */}
@@ -1393,7 +1521,7 @@ export default function Home() {
                 ← 이전
               </button>
               <p className="text-[13px] font-medium text-[#888888]">
-                {homeMode === 'leave' ? '하차 알리기' : '빈자리 찾기'}
+                {activeTab === 'leave' ? '하차 알리기' : '빈자리 찾기'}
               </p>
             </div>
 
