@@ -1,15 +1,42 @@
 import { loadEnvConfig } from '@next/env'
 import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
-import { MOCK_ALL_STATIONS } from '@/lib/mockData'
+import {
+  MOCK_ALL_STATIONS,
+  MOCK_LINE_1_STATIONS,
+  MOCK_LINE_2_STATIONS,
+  MOCK_LINE_S1_STATIONS,
+  MOCK_LINE_S2_STATIONS,
+  MOCK_LINE_S3_STATIONS,
+  MOCK_LINE_S4_STATIONS,
+  MOCK_LINE_S5_STATIONS,
+  MOCK_LINE_S6_STATIONS,
+  MOCK_LINE_S7_STATIONS,
+  MOCK_LINE_S8_STATIONS,
+  MOCK_LINE_S9_STATIONS,
+} from '@/lib/mockData'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 
 loadEnvConfig(process.cwd())
 
 type VoiceMode = 'seek' | 'leave'
 
+type SupportedLine =
+  | 'seoul1'
+  | 'seoul2'
+  | 'seoul3'
+  | 'seoul4'
+  | 'seoul5'
+  | 'seoul6'
+  | 'seoul7'
+  | 'seoul8'
+  | 'seoul9'
+  | 'incheon1'
+  | 'incheon2'
+
 interface VoiceParseBody {
   transcript?: unknown
+  line?: unknown
 }
 
 interface ParsedVoiceIntent {
@@ -27,7 +54,25 @@ const JSON_UTF8_HEADERS = {
 
 const STATION_NAMES_CACHE_TTL_MS = 1000 * 60 * 30
 
+const LINE_STATION_NAMES: Record<SupportedLine, string[]> = {
+  seoul1: MOCK_LINE_S1_STATIONS.map((station) => station.name.trim()),
+  seoul2: MOCK_LINE_S2_STATIONS.map((station) => station.name.trim()),
+  seoul3: MOCK_LINE_S3_STATIONS.map((station) => station.name.trim()),
+  seoul4: MOCK_LINE_S4_STATIONS.map((station) => station.name.trim()),
+  seoul5: MOCK_LINE_S5_STATIONS.map((station) => station.name.trim()),
+  seoul6: MOCK_LINE_S6_STATIONS.map((station) => station.name.trim()),
+  seoul7: MOCK_LINE_S7_STATIONS.map((station) => station.name.trim()),
+  seoul8: MOCK_LINE_S8_STATIONS.map((station) => station.name.trim()),
+  seoul9: MOCK_LINE_S9_STATIONS.map((station) => station.name.trim()),
+  incheon1: MOCK_LINE_1_STATIONS.map((station) => station.name.trim()),
+  incheon2: MOCK_LINE_2_STATIONS.map((station) => station.name.trim()),
+}
+
 let stationNamesCache: { names: string[]; expiresAt: number } | null = null
+const lineStationNamesCache = new Map<
+  SupportedLine,
+  { names: string[]; expiresAt: number }
+>()
 
 function errorResponse(message: string, status: number) {
   return NextResponse.json(
@@ -84,6 +129,35 @@ async function loadAllStationNames(): Promise<string[]> {
   return stationNamesCache.names
 }
 
+function parseSupportedLine(value: unknown): SupportedLine | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const trimmed = value.trim() as SupportedLine
+  return trimmed in LINE_STATION_NAMES ? trimmed : null
+}
+
+/**
+ * 노선별 역명 로드 — 음성 목적지 오인식 방지
+ */
+function loadStationNamesForLine(line: SupportedLine): string[] {
+  const cached = lineStationNamesCache.get(line)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.names
+  }
+
+  const names = Array.from(new Set(LINE_STATION_NAMES[line])).sort(
+    (a, b) => b.length - a.length
+  )
+
+  lineStationNamesCache.set(line, {
+    names,
+    expiresAt: Date.now() + STATION_NAMES_CACHE_TTL_MS,
+  })
+
+  return names
+}
+
 /**
  * 음성 텍스트에 포함된 역명을 찾고, 여러 개면 문장에서 가장 뒤에 나온 역을 목적지로 반환
  */
@@ -129,8 +203,13 @@ function extractModeFromTranscript(transcript: string): VoiceMode | null {
   return null
 }
 
-async function parseVoiceIntent(transcript: string): Promise<ParsedVoiceIntent> {
-  const stationNames = await loadAllStationNames()
+async function parseVoiceIntent(
+  transcript: string,
+  line: SupportedLine | null
+): Promise<ParsedVoiceIntent> {
+  const stationNames = line
+    ? loadStationNamesForLine(line)
+    : await loadAllStationNames()
   return {
     destination: findDestinationFromTranscript(transcript, stationNames),
     mode: extractModeFromTranscript(transcript),
@@ -139,6 +218,7 @@ async function parseVoiceIntent(transcript: string): Promise<ParsedVoiceIntent> 
 
 /**
  * POST /api/voice/parse — 음성 텍스트에서 목적지·모드(seek/leave) 추출
+ * Body: { transcript, line?: seoul7 } — line 지정 시 해당 노선 역만 매칭
  */
 export async function POST(request: Request) {
   try {
@@ -163,7 +243,8 @@ export async function POST(request: Request) {
       return errorResponse('transcript가 너무 깁니다.', 400)
     }
 
-    const data = await parseVoiceIntent(transcript)
+    const line = parseSupportedLine(body.line)
+    const data = await parseVoiceIntent(transcript, line)
 
     return NextResponse.json(
       { success: true, data },
