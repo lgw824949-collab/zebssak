@@ -68,9 +68,6 @@ const HOME_LINE_OPTIONS = [
 /** 단독 운영 노선 — 노선 선택 단계 생략 시 사용 */
 const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
 
-/** 7호선 브랜드 — 홈 등록 버튼 */
-const LINE7_COLOR = '#747F00'
-const LINE7_COLOR_DARK = '#5F6B2E'
 /** 홈 탭 — 빈자리 찾기 / 자리 넘기기 */
 const SEEK_TAB_ACTIVE_COLOR = '#4B7F52'
 const LEAVE_TAB_ACTIVE_COLOR = '#F97316'
