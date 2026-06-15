@@ -1,7 +1,9 @@
 'use client'
 
 import MatchMovementPanel from '@/components/MatchMovementPanel'
+import MatchFlowStepBar from '@/components/MatchFlowStepBar'
 import type { MatchMovementPayload } from '@/lib/match-movement'
+import { resolveAcceptPhaseCopy } from '@/lib/match-flow-steps'
 import { clearMatchClientSession } from '@/lib/match-session'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
@@ -667,6 +669,8 @@ function MatchingForm() {
 
   const progressPercent = (secondsLeft / MATCH_TIMEOUT_SECONDS) * 100
   const isUrgent = secondsLeft <= 10
+  const acceptCopy =
+    viewerRole != null ? resolveAcceptPhaseCopy(viewerRole) : null
 
   return (
     <div className="zeb-page matching-theme flex flex-col">
@@ -683,6 +687,9 @@ function MatchingForm() {
       </header>
 
       <main className="flex flex-1 flex-col items-center justify-center py-4">
+        <div className="mb-4 w-full">
+          <MatchFlowStepBar currentStep="accept" />
+        </div>
         <div className="zeb-card w-full text-center zeb-bg-line1-light">
           <div
             className="mx-auto mb-6 flex items-center justify-center rounded-full"
@@ -710,21 +717,17 @@ function MatchingForm() {
           </div>
 
           <h1 className="zeb-page-title" style={{ fontSize: 'var(--font-size-2xl)' }}>
-            매칭 성공!
+            {acceptCopy?.title ?? '연결됨'}
           </h1>
           <p className="zeb-page-desc mt-3">
-            {viewerRole === 'provider' ? (
+            {acceptCopy ? (
               <>
-                착석 희망자와 매칭되었습니다.
+                {acceptCopy.guide}
                 <br />
-                자리를 넘기려면 승낙을 눌러주세요.
+                <span className="font-semibold text-[#1A1A1A]">{acceptCopy.action}</span>
               </>
             ) : (
-              <>
-                하차 예정 승객과 매칭되었습니다.
-                <br />
-                아래 칸으로 이동한 뒤 승낙해주세요.
-              </>
+              '연결 정보를 불러오는 중입니다'
             )}
           </p>
 
@@ -798,7 +801,7 @@ function MatchingForm() {
 
           <div className="mt-8">
             <p className="zeb-label" style={{ marginBottom: '0.5rem' }}>
-              수락 남은 시간
+              1단계 · 수락 남은 시간
             </p>
             <p
               className="tabular-nums"
@@ -872,7 +875,7 @@ function MatchingForm() {
               disabled={isSubmitting || partnerAcceptedNotice || isDismissed}
               className="zeb-btn zeb-btn--line1"
             >
-              {isSubmitting ? '처리 중...' : '승낙'}
+              {isSubmitting ? '처리 중...' : '수락'}
             </button>
           </div>
         </div>

@@ -1,9 +1,15 @@
 'use client'
 
 import MatchMovementPanel from '@/components/MatchMovementPanel'
+import MatchFlowStepBar from '@/components/MatchFlowStepBar'
 import type { MatchMovementPayload } from '@/lib/match-movement'
+import {
+  resolveMatchFlowStep,
+  resolveMatchedPhaseCopy,
+} from '@/lib/match-flow-steps'
+import { clearMatchClientSession } from '@/lib/match-session'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const COUNTDOWN_SECONDS = 180
 const MATCH_MOVEMENT_POLL_MS = 3000
@@ -336,6 +342,7 @@ export default function MatchedPage() {
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS)
   const [isUpdatingMovement, setIsUpdatingMovement] = useState(false)
   const [movementError, setMovementError] = useState('')
+  const completionHandledRef = useRef(false)
 
   const loadMatchDetail = useCallback(
     async (
@@ -495,12 +502,7 @@ export default function MatchedPage() {
   }
 
   function clearMatchSession() {
-    sessionStorage.removeItem('boardingDraft')
-    sessionStorage.removeItem('waitingDraft')
-    sessionStorage.removeItem('providerRegistered')
-    sessionStorage.removeItem('activeMatchId')
-    sessionStorage.removeItem('activeMatchRequestId')
-    sessionStorage.removeItem('seekerMatchRequestRegistered')
+    clearMatchClientSession()
   }
 
   function handleConfirm() {
@@ -508,6 +510,37 @@ export default function MatchedPage() {
     clearMatchSession()
     router.push('/')
   }
+
+  /** 착석 희망자 확인 후 양보자도 자동 종료합니다. */
+  useEffect(() => {
+    if (!detail || detail.status !== 'completed' || completionHandledRef.current) {
+      return
+    }
+
+    completionHandledRef.current = true
+
+    const timerId = window.setTimeout(() => {
+      try {
+        const kind = detail.viewer_role === 'provider' ? 'leave' : 'seek'
+        const destinationName =
+          detail.self.destination_station_name?.trim() || '목적지'
+        sessionStorage.setItem(
+          HOME_MATCH_COMPLETED_HINT_KEY,
+          JSON.stringify({
+            kind,
+            destinationName,
+            completedAt: Date.now(),
+          })
+        )
+      } catch {
+        // 힌트 저장 실패 시 홈 재등록 안내만 생략합니다.
+      }
+      clearMatchSession()
+      router.replace('/')
+    }, 2200)
+
+    return () => window.clearTimeout(timerId)
+  }, [detail, router])
 
   async function submitSeatConfirmation(seated: boolean): Promise<boolean> {
     const token = localStorage.getItem('token')
@@ -557,7 +590,13 @@ export default function MatchedPage() {
     if (detail?.viewer_role === 'seeker' && seatAnswer === null) {
       const ok = await submitSeatConfirmation(true)
       if (!ok) return
+      setDetail((prev) => (prev ? { ...prev, status: 'completed' } : prev))
+      window.setTimeout(() => {
+        handleConfirm()
+      }, 1200)
+      return
     }
+
     handleConfirm()
   }
 
@@ -581,6 +620,22 @@ export default function MatchedPage() {
   }
 
   const isSeeker = detail.viewer_role === 'seeker'
+  const seatConfirmed =
+    seatAnswer === true || detail.seat_confirmation?.seated === true
+  const flowStep = resolveMatchFlowStep({
+    matchStatus: detail.status,
+    viewerRole: detail.viewer_role,
+    selfMovementStatus: detail.movement?.self.status,
+    partnerMovementStatus: detail.movement?.partner.status,
+    seatConfirmed,
+  })
+  const phaseCopy = resolveMatchedPhaseCopy({
+    viewerRole: detail.viewer_role,
+    step: flowStep,
+    selfMovementStatus: detail.movement?.self.status,
+    partnerMovementStatus: detail.movement?.partner.status,
+  })
+  const isFlowDone = flowStep === 'done'
   const guide = isSeeker ? detail.partner : detail.self
   const seatsPerSection = seatsPerSectionFromStationCode(guide.destination_station_code)
   const travelSideLabel = seatSideToTravelSideLabel(guide.seat_side)
@@ -589,7 +644,6 @@ export default function MatchedPage() {
   const carLabel = guide.car_number != null ? `${guide.car_number}호차` : '미확인'
   const doorLabel = guide.car_door_short ?? '-'
   const columnLabel = columnLetter !== '-' ? `${columnLetter}열` : '-'
-  const destinationLabel = guide.destination_station_name?.trim() || '목적지'
 
   const infoItems = [
     { label: '호차', value: carLabel },
@@ -601,7 +655,7 @@ export default function MatchedPage() {
   return (
     <div className="min-h-dvh bg-[#f6f7f2] pb-8">
       <p className="mx-4 mt-4 rounded-xl bg-[#f0f5e8] px-4 py-3 text-center text-[16px] font-semibold text-[#4a7c3f]">
-        아래 좌석으로 이동해 주세요
+        {phaseCopy.banner}
       </p>
       {/* 상단 히어로 */}
       <div
@@ -629,7 +683,7 @@ export default function MatchedPage() {
             <div className="min-w-0 flex-1 pt-0.5">
               <p className="text-[13px] font-medium text-white/75">서울 7호선</p>
               <h1 className="mt-0.5 text-[22px] font-bold leading-tight tracking-tight text-white">
-                빈자리를 찾았어요
+                {phaseCopy.headline}
               </h1>
             </div>
             <span
@@ -649,13 +703,26 @@ export default function MatchedPage() {
           </div>
 
           <p className="mt-4 text-sm font-medium text-white/90">
-            <span className="font-bold text-white">{destinationLabel}</span>
-            {isSeeker ? ' 향해 이동해 주세요' : ' 방향으로 자리를 넘겨 주세요'}
+            {phaseCopy.subline}
           </p>
         </div>
       </div>
 
       <main className="relative z-[1] mx-auto -mt-5 flex w-full max-w-md flex-col gap-3 px-4">
+        <MatchFlowStepBar currentStep={flowStep} />
+
+        {isFlowDone ? (
+          <div className="rounded-2xl bg-white px-4 py-8 text-center shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
+            <p className="text-[40px]" aria-hidden>
+              ✓
+            </p>
+            <p className="mt-3 text-[20px] font-extrabold text-[#1A1A1A]">이용 완료</p>
+            <p className="mt-2 text-[15px] font-medium text-[#6B7280]">
+              {isSeeker ? '착석이 확인되었어요' : '착석 희망자가 착석했어요'}
+            </p>
+          </div>
+        ) : (
+          <>
         {detail.movement ? (
           <MatchMovementPanel
             viewerRole={detail.viewer_role}
@@ -716,9 +783,11 @@ export default function MatchedPage() {
         <div className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
           <CountdownRing secondsLeft={secondsLeft} total={COUNTDOWN_SECONDS} />
           <div className="min-w-0 flex-1">
-            <p className="text-[16px] font-bold text-[#1A1A1A]">착석 남은 시간</p>
+            <p className="text-[16px] font-bold text-[#1A1A1A]">
+              {flowStep === 'seat' ? '착석 남은 시간' : '이동 남은 시간'}
+            </p>
             <p className="mt-1 text-[14px] font-medium text-[#6B7280]">
-              {secondsLeft <= 60 ? '서둘러 착석해 주세요' : '이동 후 착석 완료를 눌러 주세요'}
+              {phaseCopy.timerHint}
             </p>
           </div>
         </div>
@@ -726,19 +795,21 @@ export default function MatchedPage() {
         {/* CTA */}
         <button
           type="button"
-          disabled={isSubmittingSeat}
+          disabled={isSubmittingSeat || (isSeeker && flowStep === 'move' && detail.movement?.self.status !== 'arrived')}
           onClick={() => void handleSeatedComplete()}
           className="mt-1 w-full rounded-2xl py-4 text-[17px] font-bold text-white shadow-[0_10px_28px_rgba(116,127,0,0.35)] transition active:scale-[0.98] disabled:opacity-60"
           style={{
             background: `linear-gradient(180deg, #8A9430 0%, ${LINE7_PRIMARY} 45%, ${LINE7_DARK} 100%)`,
           }}
         >
-          {isSubmittingSeat ? '처리 중...' : '착석 완료'}
+          {isSubmittingSeat ? '처리 중...' : phaseCopy.ctaLabel}
         </button>
 
         {seatSubmitError ? (
           <p className="text-center text-sm font-medium text-red-600">{seatSubmitError}</p>
         ) : null}
+          </>
+        )}
       </main>
     </div>
   )
