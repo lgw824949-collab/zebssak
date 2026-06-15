@@ -5,6 +5,7 @@ import {
   formatCarDoorPosition,
   formatStationDisplayName,
   lineLabelFromStationCode,
+  resolveDirectionDisplayLabel,
   seatsPerSectionFromStationCode,
 } from '@/lib/match-display'
 import type {
@@ -13,7 +14,7 @@ import type {
   MatchMovementStatus,
   MatchRouteGuide,
 } from '@/lib/match-movement'
-import { resolveLiveHandoffRemainingStations } from '@/lib/match-handoff-remaining-server'
+import { resolveLiveHandoffRouteContext } from '@/lib/match-handoff-remaining-server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
@@ -41,6 +42,7 @@ interface MatchRequestDetailRow {
   seat_side: string | null
   seat_number: number | null
   remaining_stations: number | null
+  direction?: string | null
   train:
     | { train_no?: string; line_number?: number }
     | { train_no?: string; line_number?: number }[]
@@ -154,7 +156,7 @@ async function loadMatchMovementPayload(
 
   const leavingTrain = unwrapRelation(leavingRow.train)
   const leavingDestination = unwrapRelation(leavingRow.destination_station)
-  const handoffRemaining = await resolveLiveHandoffRemainingStations(request, supabase, {
+  const handoffContext = await resolveLiveHandoffRouteContext(request, supabase, {
     trainNo: leavingTrain?.train_no ?? null,
     lineNumber:
       typeof leavingTrain?.line_number === 'number' ? leavingTrain.line_number : null,
@@ -163,15 +165,23 @@ async function loadMatchMovementPayload(
     fallbackRemaining: leavingRow.remaining_stations ?? null,
   })
 
+  const leavingLineLabel = lineLabelFromStationCode(leavingDestination?.station_code ?? null)
+
   const routeGuide: MatchRouteGuide = {
     handoff_station_name:
       formatStationDisplayName(leavingDestination?.station_name) || '양보 역',
-    handoff_remaining_stations: handoffRemaining,
+    handoff_remaining_stations: handoffContext.handoff_remaining_stations,
     self_destination_name:
       formatStationDisplayName(
         unwrapRelation(selfRow.destination_station)?.station_name
       ) || '목적지',
     self_remaining_stations: selfRow.remaining_stations ?? null,
+    train_current_station_name: handoffContext.current_station_name,
+    provider_direction_label: resolveDirectionDisplayLabel(
+      typeof leavingTrain?.line_number === 'number' ? leavingTrain.line_number : null,
+      leavingRow.direction ?? null,
+      leavingLineLabel
+    ),
   }
 
   return {
@@ -426,6 +436,7 @@ export async function GET(
           seat_side,
           seat_number,
           remaining_stations,
+          direction,
           train:trains!train_id(train_no, line_number),
           destination_station:stations!destination_station_id(station_name, station_code)
         ),
@@ -437,6 +448,7 @@ export async function GET(
           seat_side,
           seat_number,
           remaining_stations,
+          direction,
           train:trains!train_id(train_no, line_number),
           destination_station:stations!destination_station_id(station_name, station_code)
         )

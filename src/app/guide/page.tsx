@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { MATCH_STATION_GUIDE } from '@/lib/match-user-guide'
 
 const GUIDE_STEPS = [
   {
@@ -24,8 +25,9 @@ const GUIDE_STEPS = [
   {
     title: '매칭 후',
     lines: [
-      { label: '확인', text: '「내 상태」 탭에서 진행 상황 확인' },
-      { label: '완료', text: '안내에 따라 착석·하차' },
+      { label: '대기', text: '양보자 하차 3역 전까지는 이동 대기' },
+      { label: '이동', text: '3역 전 「지금 이동」 안내 후 호차로 이동' },
+      { label: '착석', text: '문 옆 대기 → 하차 직전 착석' },
     ],
   },
 ] as const
@@ -90,6 +92,40 @@ export default function GuidePage() {
             </li>
           ))}
         </ol>
+
+        <section className="mt-4 rounded-2xl border border-[#D5DDB8] bg-[#F7F8F2] px-4 py-4">
+          <h2 className="text-[15px] font-bold text-[#1A1A1A]">
+            {MATCH_STATION_GUIDE.participationTitle}
+          </h2>
+          <p className="mt-2 text-[14px] leading-relaxed text-[#4B5563]">
+            {MATCH_STATION_GUIDE.participationSummary}
+          </p>
+          <ul className="mt-3 flex flex-col gap-2.5">
+            {MATCH_STATION_GUIDE.participationRules.map((rule) => (
+              <li key={rule.label} className="flex gap-3 text-[14px] leading-snug">
+                <span className="w-14 shrink-0 font-bold text-[#747F00]">{rule.label}</span>
+                <span className="text-[#4B5563]">{rule.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-[#EBEBEB] bg-white px-4 py-4">
+          <h2 className="text-[15px] font-bold text-[#1A1A1A]">
+            {MATCH_STATION_GUIDE.afterMatchTitle}
+          </h2>
+          <ol className="mt-3 flex flex-col gap-2">
+            {MATCH_STATION_GUIDE.afterMatchSteps.map((step, index) => (
+              <li key={step} className="flex gap-3 text-[14px] leading-snug text-[#4B5563]">
+                <span className="w-5 shrink-0 font-bold text-[#747F00]">{index + 1}.</span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-4 rounded-xl bg-[#FFF8F0] px-3 py-2.5 text-[13px] font-medium leading-relaxed text-[#7D6B52]">
+            {MATCH_STATION_GUIDE.seekerNote}
+          </p>
+        </section>
       </main>
     </div>
   )

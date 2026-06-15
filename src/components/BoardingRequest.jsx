@@ -4,6 +4,7 @@ import SubwaySeatMap, { mapSeatIdToApi } from "@/components/SubwaySeatMap";
 import { formatExitDoorDisplayLabel } from "@/lib/match-display";
 import { handleUnauthorizedResponse } from "@/lib/auth-client";
 import { normalizeDirectionForStorage } from "@/lib/match-direction";
+import { resolveParticipationStationHint } from "@/lib/match-user-guide";
 import {
   isSubwayOperatingHours,
   SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE,
@@ -1830,6 +1831,46 @@ function StepStation({
   const canProceedToTrainStep =
     Boolean(selected) && Boolean(boardingStationName) && !isDetectingBoardingStation;
 
+  const participationStationHint = useMemo(() => {
+    if (!selected || !boardingStationName || !stationRows.length) {
+      return null;
+    }
+
+    const findStationIndex = (stationName) => {
+      const searchName = normalizeStationSearchTerm(stationName);
+      if (!searchName) return -1;
+      return stationRows.findIndex(
+        (row) => normalizeStationSearchTerm(row?.name) === searchName
+      );
+    };
+
+    const boardingIndex = findStationIndex(boardingStationName);
+    const destinationIndex = findStationIndex(selected);
+    if (boardingIndex < 0 || destinationIndex < 0 || boardingIndex === destinationIndex) {
+      return null;
+    }
+
+    const boardingMeta = {
+      stationName: boardingStationName,
+      stationOrder: stationRows[boardingIndex]?.order ?? boardingIndex + 1,
+      stationIndex: boardingIndex,
+    };
+    const destinationMeta = {
+      stationName: selected,
+      stationOrder: stationRows[destinationIndex]?.order ?? destinationIndex + 1,
+      stationIndex: destinationIndex,
+    };
+    const remainingStops = resolveRemainingStops(
+      stationRows,
+      boardingMeta,
+      destinationMeta,
+      line,
+      null
+    );
+
+    return resolveParticipationStationHint(remainingStops);
+  }, [selected, boardingStationName, stationRows, line]);
+
   const proceedHint = (() => {
     if (canProceedToTrainStep) return "";
     if (isDetectingBoardingStation) return "위치를 확인하는 중입니다…";
@@ -2428,6 +2469,28 @@ function StepStation({
 
         {destinationSearchError ? (
           <p style={{ marginTop: 8, fontSize: 12, color: "#DC2626" }}>{destinationSearchError}</p>
+        ) : null}
+
+        {participationStationHint ? (
+          <p
+            role="status"
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              borderRadius: 12,
+              fontSize: 13,
+              lineHeight: 1.5,
+              fontWeight: 500,
+              color: participationStationHint.tone === "positive" ? "#4B5A00" : "#7D6B52",
+              background:
+                participationStationHint.tone === "positive" ? "#EEF0E0" : "#FFF8F0",
+              border: `1px solid ${
+                participationStationHint.tone === "positive" ? "#D5DDB8" : "#F0E4D4"
+              }`,
+            }}
+          >
+            {participationStationHint.text}
+          </p>
         ) : null}
 
         {query.length >= 1 &&

@@ -731,6 +731,15 @@ function MatchingForm() {
             )}
           </p>
 
+          {acceptCopy?.footnote ? (
+            <p
+              className="mt-4 rounded-xl bg-[#FFF8F0] px-3 py-2.5 text-left text-[13px] font-medium leading-relaxed text-[#7D6B52]"
+              role="note"
+            >
+              {acceptCopy.footnote}
+            </p>
+          ) : null}
+
           {partnerAcceptedNotice ? (
             <div
               className="mt-4 rounded-[var(--radius-button)] border-2 px-4 py-4"

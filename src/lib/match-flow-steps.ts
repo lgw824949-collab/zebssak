@@ -1,4 +1,5 @@
 import type { MatchMovementStatus } from '@/lib/match-movement'
+import { MATCH_STATION_GUIDE } from '@/lib/match-user-guide'
 import {
   HANDOFF_MOVE_START_THRESHOLD,
   isHandoffMoveDue,
@@ -58,12 +59,14 @@ export function resolveAcceptPhaseCopy(viewerRole: 'seeker' | 'provider'): {
   title: string
   guide: string
   action: string
+  footnote: string | null
 } {
   if (viewerRole === 'provider') {
     return {
       title: '빈자리 매칭됨',
       guide: '착석 희망자와 연결되었어요',
       action: '수락 버튼을 눌러 주세요',
+      footnote: MATCH_STATION_GUIDE.providerNote,
     }
   }
 
@@ -71,6 +74,7 @@ export function resolveAcceptPhaseCopy(viewerRole: 'seeker' | 'provider'): {
     title: '빈자리 연결됨',
     guide: '하차 예정자와 연결되었어요',
     action: `양보 역 ${HANDOFF_MOVE_START_THRESHOLD}역 전에 이동 안내가 옵니다`,
+    footnote: MATCH_STATION_GUIDE.seekerNote,
   }
 }
 

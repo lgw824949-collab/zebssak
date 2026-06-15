@@ -3,9 +3,17 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import {
+  MATCH_STATION_GUIDE,
+  MIN_PARTICIPATION_STATIONS,
+} from '@/lib/match-user-guide'
 
 const MATCHING_RULES = [
-  { label: '참여', text: '목적지 필수 · 3역 이상 남아야 함' },
+  { label: '참여', text: `목적지 필수 · 최소 ${MIN_PARTICIPATION_STATIONS}역 이상 남아야 함` },
+  { label: '권장', text: MATCH_STATION_GUIDE.participationRules[1].text },
+  { label: '매칭', text: MATCH_STATION_GUIDE.participationRules[2].text },
+  { label: '이동', text: '양보자 하차 3역 전에만 착석 희망자 이동 안내' },
+  { label: '착석', text: '양보자가 내리기 전까지 문 옆 서서 대기' },
   { label: '우선순위', text: '교통약자 → 매너포인트 → 남은 역 → 요청 시각' },
   { label: '수락', text: '알림 후 30초 안에 수락' },
 ] as const
@@ -53,6 +61,13 @@ export default function RulesPage() {
               </li>
             ))}
           </ul>
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-[#D5DDB8] bg-[#F7F8F2] px-4 py-4">
+          <h2 className="text-[15px] font-bold text-[#1A1A1A]">양보자 안내</h2>
+          <p className="mt-2 text-[14px] leading-relaxed text-[#4B5563]">
+            {MATCH_STATION_GUIDE.providerNote}
+          </p>
         </section>
 
         <section className="mt-4 rounded-2xl border border-[#EBEBEB] bg-white px-4 py-4">

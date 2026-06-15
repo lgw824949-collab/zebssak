@@ -10,6 +10,10 @@ export interface MatchRouteGuide {
   handoff_remaining_stations: number | null
   self_destination_name: string
   self_remaining_stations: number | null
+  /** 실시간 열차 현재 역 (양보자 열차 기준) */
+  train_current_station_name: string | null
+  /** 양보자(자리 넘기기) 이동 방향 */
+  provider_direction_label: string | null
 }
 
 export interface MatchMovementPayload {

@@ -46,10 +46,34 @@ export default function MatchMovementPanel({
   const isMovePrep = flowStep === 'move' && !moveDue
   const isMoveNow = flowStep === 'move' && moveDue
   const seekerCanMove = viewerRole === 'seeker' && moveDue && flowStep === 'move'
+  const showRouteContext =
+    Boolean(routeGuide.train_current_station_name) ||
+    Boolean(routeGuide.provider_direction_label)
 
   return (
     <div className="rounded-2xl border border-[#D5DDB8] bg-white px-4 py-5 text-left shadow-[0_2px_10px_rgba(26,26,26,0.04)]">
       <h2 className="text-[17px] font-bold text-[#747F00]">이동 안내</h2>
+
+      {showRouteContext ? (
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {routeGuide.train_current_station_name ? (
+            <div className="rounded-xl bg-[#F7F8F2] px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-[#9CA3AF]">열차 위치</p>
+              <p className="mt-1 text-[15px] font-bold text-[#1A1A1A]">
+                {routeGuide.train_current_station_name}
+              </p>
+            </div>
+          ) : null}
+          {routeGuide.provider_direction_label ? (
+            <div className="rounded-xl bg-[#F7F8F2] px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-[#9CA3AF]">양보자 방향</p>
+              <p className="mt-1 text-[15px] font-bold text-[#747F00]">
+                {routeGuide.provider_direction_label}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mt-4 flex items-end justify-between gap-3">
         <div className="min-w-0">
@@ -79,8 +103,14 @@ export default function MatchMovementPanel({
       ) : null}
 
       {isMoveNow && viewerRole === 'seeker' ? (
-        <p className="mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[15px] font-extrabold leading-snug text-[#8B6914]">
-          지금 이동하세요 · {routeGuide.handoff_station_name} {formatRemainingStations(handoffRemaining)} 전
+        <p
+          className="match-move-blink mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[16px] font-extrabold leading-snug text-[#8B6914]"
+          role="alert"
+        >
+          지금 이동하세요
+          <span className="mt-1 block text-[14px] font-bold">
+            {routeGuide.handoff_station_name} {formatRemainingStations(handoffRemaining)} 전
+          </span>
         </p>
       ) : null}
 
@@ -157,6 +187,23 @@ export default function MatchMovementPanel({
           </p>
         </div>
       )}
+
+      <style jsx>{`
+        @keyframes match-move-blink {
+          0%,
+          100% {
+            opacity: 1;
+            box-shadow: 0 0 0 0 rgba(139, 105, 20, 0.35);
+          }
+          50% {
+            opacity: 0.55;
+            box-shadow: 0 0 0 6px rgba(139, 105, 20, 0);
+          }
+        }
+        .match-move-blink {
+          animation: match-move-blink 1s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   )
 }

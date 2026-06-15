@@ -1,4 +1,5 @@
-/** 역 코드 접두사 → 화면용 노선명 */
+import { resolveDirectionBucket } from '@/lib/match-direction'
+
 export function lineLabelFromStationCode(stationCode: string | null | undefined): string | null {
   const code = (stationCode ?? '').trim().toLowerCase()
   if (!code) return null
@@ -50,4 +51,33 @@ export function formatStationDisplayName(name: string | null | undefined): strin
   const trimmed = (name ?? '').trim()
   if (!trimmed) return '미확인'
   return trimmed.endsWith('역') ? trimmed : `${trimmed}역`
+}
+
+/** 노선·방향 코드 → 화면용 방면 표기 (양보자 이동 방향) */
+export function resolveDirectionDisplayLabel(
+  lineNumber: number | null | undefined,
+  direction: string | null | undefined,
+  lineLabel?: string | null
+): string | null {
+  const bucket = resolveDirectionBucket(direction ?? '')
+  const dirKey = bucket === 'up' ? '1' : bucket === 'down' ? '2' : null
+  if (!dirKey) return null
+
+  const compactLabel = (lineLabel ?? '').replace(/\s+/g, '')
+
+  if (lineNumber === 1 || compactLabel === '서울1호선' || compactLabel === '인천1호선') {
+    return dirKey === '1' ? '소요산 방면' : '인천·신창 방면'
+  }
+  if (lineNumber === 2 || compactLabel === '서울2호선' || compactLabel === '인천2호선') {
+    return dirKey === '1' ? '내선순환' : '외선순환'
+  }
+  if (lineNumber === 3) return dirKey === '1' ? '대화 방면' : '오금 방면'
+  if (lineNumber === 4) return dirKey === '1' ? '당고개 방면' : '오이도 방면'
+  if (lineNumber === 5) return dirKey === '1' ? '방화 방면' : '마천 방면'
+  if (lineNumber === 6) return dirKey === '1' ? '응암순환' : null
+  if (lineNumber === 7) return dirKey === '1' ? '장암 방면' : '부천종합운동장 방면'
+  if (lineNumber === 8) return dirKey === '1' ? '암사 방면' : '모란 방면'
+  if (lineNumber === 9) return dirKey === '1' ? '개화 방면' : '중앙보훈병원 방면'
+
+  return null
 }
