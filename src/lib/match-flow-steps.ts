@@ -21,6 +21,55 @@ export function resolveMatchFlowStepIndex(step: MatchFlowStep): number {
   return 4
 }
 
+/** 상세 화면 — 현재 단계 한 줄 안내 (나열 대신 이것만 강조) */
+export function resolveMatchStepFocusInstruction(input: {
+  viewerRole: 'seeker' | 'provider'
+  step: MatchFlowStep
+  handoffRemainingStations?: number | null
+}): { text: string; blink: boolean } {
+  const handoffRemaining = input.handoffRemainingStations
+  const moveDue = isHandoffMoveDue(handoffRemaining)
+
+  if (input.step === 'move') {
+    if (input.viewerRole === 'seeker') {
+      if (moveDue) {
+        return { text: '지금 이동하세요', blink: true }
+      }
+      return {
+        text: `${HANDOFF_MOVE_START_THRESHOLD}역 전까지 아직 이동하지 마세요`,
+        blink: false,
+      }
+    }
+    if (moveDue) {
+      return { text: '착석 희망자에게 이동 안내를 보냈어요', blink: false }
+    }
+    return { text: '목적지 전까지 편히 앉아 주세요', blink: false }
+  }
+
+  if (input.step === 'wait') {
+    if (input.viewerRole === 'seeker') {
+      return { text: '양보자가 내릴 때까지 문 옆에서 서서 기다려 주세요', blink: false }
+    }
+    return { text: '착석 희망자가 문 옆에서 기다리고 있어요', blink: false }
+  }
+
+  if (input.step === 'seat') {
+    if (input.viewerRole === 'seeker') {
+      return { text: '지금 앉아 주세요', blink: true }
+    }
+    return { text: '지금 양보해 주세요', blink: true }
+  }
+
+  if (input.step === 'done') {
+    return {
+      text: input.viewerRole === 'seeker' ? '착석 완료' : '양보 완료',
+      blink: false,
+    }
+  }
+
+  return { text: '연결되었어요', blink: false }
+}
+
 /** 매칭·이동·대기·착석 상태로 현재 단계를 판별합니다. */
 export function resolveMatchFlowStep(input: {
   matchStatus: string

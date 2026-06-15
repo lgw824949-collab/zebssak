@@ -1,23 +1,18 @@
 'use client'
 
-import MatchMovementPanel from '@/components/MatchMovementPanel'
 import MatchFlowStepBar from '@/components/MatchFlowStepBar'
+import MatchFlowScreen from '@/components/MatchFlowScreen'
 import type { MatchMovementPayload } from '@/lib/match-movement'
-import {
-  resolveMatchFlowStep,
-  resolveMatchedPhaseCopy,
-} from '@/lib/match-flow-steps'
-import { isHandoffMoveDue } from '@/lib/match-handoff-remaining'
+import { resolveMatchedUserAction } from '@/lib/match-matched-action'
+import { resolveMatchFlowStep } from '@/lib/match-flow-steps'
 import { clearMatchClientSession } from '@/lib/match-session'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const COUNTDOWN_SECONDS = 180
 const MATCH_MOVEMENT_POLL_MS = 3000
 const HOME_MATCH_COMPLETED_HINT_KEY = 'homeMatchCompletedHint'
 /** 서울 7호선 브랜드 */
 const LINE7_PRIMARY = '#747F00'
-const LINE7_DARK = '#4A5219'
 const LINE7_MID = '#5F6B2E'
 const LINE7_GLOW = 'rgba(116, 127, 0, 0.12)'
 
@@ -95,12 +90,6 @@ function parseDoorParts(
     car: carNumber ?? 1,
     door: 1,
   }
-}
-
-function formatCountdown(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 function resolveMatchId(): string | null {
@@ -293,43 +282,6 @@ function MatchSeatDiagram({
   )
 }
 
-function CountdownRing({ secondsLeft, total }: { secondsLeft: number; total: number }) {
-  const radius = 42
-  const circumference = 2 * Math.PI * radius
-  const progress = Math.max(0, Math.min(1, secondsLeft / total))
-  const offset = circumference * (1 - progress)
-  const urgent = secondsLeft <= 60
-
-  return (
-    <div className="relative mx-auto flex h-[104px] w-[104px] items-center justify-center">
-      <svg className="absolute inset-0 -rotate-90" viewBox="0 0 100 100" aria-hidden>
-        <circle cx="50" cy="50" r={radius} fill="none" stroke="#E8EDD4" strokeWidth="6" />
-        <circle
-          cx="50"
-          cy="50"
-          r={radius}
-          fill="none"
-          stroke={urgent ? '#DC2626' : LINE7_PRIMARY}
-          strokeWidth="6"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="transition-[stroke-dashoffset] duration-1000 ease-linear"
-        />
-      </svg>
-      <div className="text-center">
-        <p
-          className="font-mono text-[26px] font-bold leading-none tracking-tight"
-          style={{ color: urgent ? '#DC2626' : LINE7_DARK }}
-        >
-          {formatCountdown(secondsLeft)}
-        </p>
-        <p className="mt-1 text-[10px] font-medium text-[#9CA3AF]">남음</p>
-      </div>
-    </div>
-  )
-}
-
 /**
  * 매칭 완료 화면
  */
@@ -340,7 +292,7 @@ export default function MatchedPage() {
   const [seatAnswer, setSeatAnswer] = useState<boolean | null>(null)
   const [isSubmittingSeat, setIsSubmittingSeat] = useState(false)
   const [seatSubmitError, setSeatSubmitError] = useState('')
-  const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS)
+  const [transitionMessage, setTransitionMessage] = useState<string | null>(null)
   const [isUpdatingMovement, setIsUpdatingMovement] = useState(false)
   const [movementError, setMovementError] = useState('')
   const completionHandledRef = useRef(false)
@@ -415,12 +367,12 @@ export default function MatchedPage() {
   }, [loadMatchDetail, router])
 
   const submitMovementStatus = useCallback(
-    async (status: 'moving' | 'arrived') => {
+    async (status: 'moving' | 'arrived'): Promise<boolean> => {
       const token = localStorage.getItem('token')
       const matchId = resolveMatchId()
 
       if (!token || !matchId || detail?.viewer_role !== 'seeker') {
-        return
+        return false
       }
 
       setIsUpdatingMovement(true)
@@ -445,7 +397,7 @@ export default function MatchedPage() {
 
         if (!response.ok || !result.success || !result.data?.status) {
           setMovementError('이동 상태 전송에 실패했습니다.')
-          return
+          return false
         }
 
         setDetail((prev) =>
@@ -463,21 +415,16 @@ export default function MatchedPage() {
             : prev
         )
         setMovementError('')
+        return true
       } catch {
         setMovementError('이동 상태 전송 중 오류가 발생했습니다.')
+        return false
       } finally {
         setIsUpdatingMovement(false)
       }
     },
     [detail?.viewer_role]
   )
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0))
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [])
 
   function saveHomeMatchCompletedHint() {
     if (!detail) {
@@ -587,6 +534,35 @@ export default function MatchedPage() {
     }
   }
 
+  async function handlePrimaryAction(
+    userAction: ReturnType<typeof resolveMatchedUserAction>
+  ) {
+    if (userAction.kind === 'move_start') {
+      const ok = await submitMovementStatus('moving')
+      if (ok && userAction.afterClickMessage) {
+        setTransitionMessage(userAction.afterClickMessage)
+      }
+      return
+    }
+
+    if (userAction.kind === 'move_arrive') {
+      const ok = await submitMovementStatus('arrived')
+      if (ok && userAction.afterClickMessage) {
+        setTransitionMessage(userAction.afterClickMessage)
+      }
+      return
+    }
+
+    if (userAction.kind === 'seat_confirm') {
+      await handleSeatedComplete()
+      return
+    }
+
+    if (userAction.kind === 'yield_confirm' || userAction.kind === 'go_home') {
+      handleConfirm()
+    }
+  }
+
   async function handleSeatedComplete() {
     if (detail?.viewer_role === 'seeker' && seatAnswer === null) {
       const ok = await submitSeatConfirmation(true)
@@ -625,24 +601,6 @@ export default function MatchedPage() {
     seatAnswer === true || detail.seat_confirmation?.seated === true
   const handoffRemaining = detail.movement?.route_guide.handoff_remaining_stations ?? null
   const handoffStationName = detail.movement?.route_guide.handoff_station_name
-  const flowStep = resolveMatchFlowStep({
-    matchStatus: detail.status,
-    viewerRole: detail.viewer_role,
-    selfMovementStatus: detail.movement?.self.status,
-    partnerMovementStatus: detail.movement?.partner.status,
-    handoffRemainingStations: handoffRemaining,
-    seatConfirmed,
-  })
-  const phaseCopy = resolveMatchedPhaseCopy({
-    viewerRole: detail.viewer_role,
-    step: flowStep,
-    handoffStationName,
-    handoffRemainingStations: handoffRemaining,
-    selfMovementStatus: detail.movement?.self.status,
-    partnerMovementStatus: detail.movement?.partner.status,
-  })
-  const moveDue = isHandoffMoveDue(handoffRemaining)
-  const isFlowDone = flowStep === 'done'
   const guide = isSeeker ? detail.partner : detail.self
   const seatsPerSection = seatsPerSectionFromStationCode(guide.destination_station_code)
   const travelSideLabel = seatSideToTravelSideLabel(guide.seat_side)
@@ -651,6 +609,31 @@ export default function MatchedPage() {
   const carLabel = guide.car_number != null ? `${guide.car_number}호차` : '미확인'
   const doorLabel = guide.car_door_short ?? '-'
   const columnLabel = columnLetter !== '-' ? `${columnLetter}열` : '-'
+  const locationLine =
+    carLabel !== '미확인' && doorLabel !== '-'
+      ? `${carLabel} · ${doorLabel}`
+      : carLabel !== '미확인'
+        ? carLabel
+        : undefined
+
+  const flowStep = resolveMatchFlowStep({
+    matchStatus: detail.status,
+    viewerRole: detail.viewer_role,
+    selfMovementStatus: detail.movement?.self.status,
+    partnerMovementStatus: detail.movement?.partner.status,
+    handoffRemainingStations: handoffRemaining,
+    seatConfirmed,
+  })
+  const userAction = resolveMatchedUserAction({
+    viewerRole: detail.viewer_role,
+    step: flowStep,
+    handoffStationName,
+    handoffRemainingStations: handoffRemaining,
+    selfMovementStatus: detail.movement?.self.status,
+    locationLine,
+  })
+  const isFlowDone = flowStep === 'done'
+  const isSubmitting = isSubmittingSeat || isUpdatingMovement
 
   const infoItems = [
     { label: '호차', value: carLabel },
@@ -661,61 +644,7 @@ export default function MatchedPage() {
 
   return (
     <div className="min-h-dvh bg-[#f6f7f2] pb-8">
-      <p className="mx-4 mt-4 rounded-xl bg-[#f0f5e8] px-4 py-3 text-center text-[16px] font-semibold text-[#4a7c3f]">
-        {phaseCopy.banner}
-      </p>
-      {/* 상단 히어로 */}
-      <div
-        className="relative overflow-hidden px-5 pb-8 pt-10"
-        style={{
-          background: `linear-gradient(155deg, ${LINE7_DARK} 0%, ${LINE7_PRIMARY} 48%, #8A9430 100%)`,
-        }}
-      >
-        <div
-          className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full opacity-20"
-          style={{ background: 'radial-gradient(circle, #fff 0%, transparent 70%)' }}
-          aria-hidden
-        />
-        <div
-          className="pointer-events-none absolute -bottom-16 -left-6 h-32 w-32 rounded-full opacity-10"
-          style={{ background: '#fff' }}
-          aria-hidden
-        />
-
-        <div className="relative mx-auto max-w-md">
-          <div className="flex items-start gap-3">
-            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-sm font-bold text-white ring-1 ring-white/25 backdrop-blur-sm">
-              7
-            </span>
-            <div className="min-w-0 flex-1 pt-0.5">
-              <p className="text-[13px] font-medium text-white/75">서울 7호선</p>
-              <h1 className="mt-0.5 text-[22px] font-bold leading-tight tracking-tight text-white">
-                {phaseCopy.headline}
-              </h1>
-            </div>
-            <span
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#747F00] shadow-lg shadow-black/10"
-              aria-hidden
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M5 12.5l4.5 4.5L19 7.5"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-          </div>
-
-          <p className="mt-4 text-sm font-medium text-white/90">
-            {phaseCopy.subline}
-          </p>
-        </div>
-      </div>
-
-      <main className="relative z-[1] mx-auto -mt-5 flex w-full max-w-md flex-col gap-3 px-4">
+      <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pt-5">
         <MatchFlowStepBar currentStep={flowStep} />
 
         {isFlowDone ? (
@@ -730,96 +659,54 @@ export default function MatchedPage() {
           </div>
         ) : (
           <>
-        {detail.movement ? (
-          <MatchMovementPanel
-            viewerRole={detail.viewer_role}
-            movement={detail.movement}
-            flowStep={flowStep}
-            isUpdating={isUpdatingMovement}
-            onStartMoving={() => void submitMovementStatus('moving')}
-            onArrived={() => void submitMovementStatus('arrived')}
-          />
-        ) : null}
-        {movementError ? (
-          <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-sm text-red-700">
-            {movementError}
-          </p>
-        ) : null}
-        {/* 요약 칩 */}
-        <div className="rounded-2xl bg-white p-4 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
-          <div className="grid grid-cols-4 gap-2">
-            {infoItems.map((item) => (
-              <div
-                key={item.label}
-                className="rounded-xl px-1 py-3 text-center"
-                style={{ backgroundColor: LINE7_GLOW }}
-              >
-                <p className="text-[12px] font-bold text-[#6B7280]">{item.label}</p>
-                <p className="mt-1.5 text-[18px] font-extrabold leading-tight text-[#1A1A1A]">
-                  {item.value}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 좌석 배치도 */}
-        <div className="rounded-2xl bg-white p-5 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <div>
-              <p className="text-[11px] font-semibold text-[#9CA3AF]">내 자리 안내</p>
-              <p className="mt-0.5 text-[15px] font-bold text-[#1A1A1A]">
-                {carLabel} · {doorLabel !== '-' ? doorLabel : `출${diagramCar}-${diagramDoor}`}
-              </p>
-            </div>
-            <span
-              className="shrink-0 rounded-full px-3 py-1 text-xs font-bold text-white"
-              style={{ backgroundColor: LINE7_PRIMARY }}
+            <MatchFlowScreen
+              flowStep={flowStep}
+              action={userAction}
+              handoffRemaining={handoffRemaining}
+              transitionMessage={transitionMessage}
+              isSubmitting={isSubmitting}
+              onPrimaryAction={() => void handlePrimaryAction(userAction)}
             >
-              {columnLabel}
-            </span>
-          </div>
-          <MatchSeatDiagram
-            carNumber={diagramCar}
-            doorNumber={diagramDoor}
-            travelSide={travelSideLabel}
-            columnLetter={columnLetter}
-          />
-        </div>
+              <details className="rounded-2xl bg-white shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
+                <summary className="cursor-pointer list-none px-4 py-3.5 text-[15px] font-bold text-[#747F00] marker:content-none [&::-webkit-details-marker]:hidden">
+                  자리 위치 보기
+                </summary>
+                <div className="border-t border-[#F0F0F0] px-4 pb-4 pt-3">
+                  <div className="grid grid-cols-4 gap-2">
+                    {infoItems.map((item) => (
+                      <div
+                        key={item.label}
+                        className="rounded-xl px-1 py-2.5 text-center"
+                        style={{ backgroundColor: LINE7_GLOW }}
+                      >
+                        <p className="text-[11px] font-bold text-[#6B7280]">{item.label}</p>
+                        <p className="mt-1 text-[16px] font-extrabold leading-tight text-[#1A1A1A]">
+                          {item.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4">
+                    <MatchSeatDiagram
+                      carNumber={diagramCar}
+                      doorNumber={diagramDoor}
+                      travelSide={travelSideLabel}
+                      columnLetter={columnLetter}
+                    />
+                  </div>
+                </div>
+              </details>
+            </MatchFlowScreen>
 
-        {/* 타이머 */}
-        <div className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
-          <CountdownRing secondsLeft={secondsLeft} total={COUNTDOWN_SECONDS} />
-          <div className="min-w-0 flex-1">
-            <p className="text-[16px] font-bold text-[#1A1A1A]">
-              {flowStep === 'seat' ? '착석 남은 시간' : '이동 남은 시간'}
-            </p>
-            <p className="mt-1 text-[14px] font-medium text-[#6B7280]">
-              {phaseCopy.timerHint}
-            </p>
-          </div>
-        </div>
+            {movementError ? (
+              <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-sm text-red-700">
+                {movementError}
+              </p>
+            ) : null}
 
-        {/* CTA */}
-        <button
-          type="button"
-          disabled={
-            isSubmittingSeat ||
-            !phaseCopy.ctaEnabled ||
-            (isSeeker && flowStep === 'move' && !moveDue)
-          }
-          onClick={() => void handleSeatedComplete()}
-          className="mt-1 w-full rounded-2xl py-4 text-[17px] font-bold text-white shadow-[0_10px_28px_rgba(116,127,0,0.35)] transition active:scale-[0.98] disabled:opacity-60"
-          style={{
-            background: `linear-gradient(180deg, #8A9430 0%, ${LINE7_PRIMARY} 45%, ${LINE7_DARK} 100%)`,
-          }}
-        >
-          {isSubmittingSeat ? '처리 중...' : phaseCopy.ctaLabel}
-        </button>
-
-        {seatSubmitError ? (
-          <p className="text-center text-sm font-medium text-red-600">{seatSubmitError}</p>
-        ) : null}
+            {seatSubmitError ? (
+              <p className="text-center text-sm font-medium text-red-600">{seatSubmitError}</p>
+            ) : null}
           </>
         )}
       </main>
