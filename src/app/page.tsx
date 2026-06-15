@@ -13,6 +13,7 @@ import {
   type CongestionStatus,
 } from '@/lib/congestion'
 import { formatStationDisplayName } from '@/lib/match-display'
+import { cancelMatchRequestClient } from '@/lib/cancel-match-request'
 import {
   resolveHomeProgressBannerLabel,
   resolveHomeProgressStep,
@@ -582,40 +583,6 @@ async function fetchHomeMatchProgress(
   }
 }
 
-/** 대기 중인 match_request를 cancelled로 변경합니다. */
-async function cancelHomeMatchRequest(
-  token: string,
-  requestId: string
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const response = await fetch('/api/match-requests/status', {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ request_id: requestId, status: 'cancelled' }),
-      cache: 'no-store',
-    })
-
-    const payload = (await response.json()) as {
-      success?: boolean
-      error?: string
-    }
-
-    if (!response.ok || !payload.success) {
-      return {
-        success: false,
-        error: payload.error ?? '요청 취소에 실패했습니다.',
-      }
-    }
-
-    return { success: true }
-  } catch {
-    return { success: false, error: '요청 취소 중 오류가 발생했습니다.' }
-  }
-}
-
 function buildHomeWaitView(input: {
   requestId: string
   requestType: string | null
@@ -1122,14 +1089,20 @@ export default function Home() {
       return
     }
 
-    if (
-      homeWaitView.phase !== 'waiting_seek' &&
-      homeWaitView.phase !== 'waiting_leave'
-    ) {
+    const isWaitingPhase =
+      homeWaitView.phase === 'waiting_seek' || homeWaitView.phase === 'waiting_leave'
+    const isActiveMatchPhase =
+      homeWaitView.phase === 'match_in_progress' || homeWaitView.phase === 'match_alert'
+
+    if (!isWaitingPhase && !isActiveMatchPhase) {
       return
     }
 
-    if (!window.confirm('요청을 취소하시겠습니까?')) {
+    const confirmMessage = isActiveMatchPhase
+      ? '매칭을 취소하시겠습니까?\n급한 일로 중간에 내리면 상대방은 다시 매칭 대기로 돌아갑니다.'
+      : '요청을 취소하시겠습니까?'
+
+    if (!window.confirm(confirmMessage)) {
       return
     }
 
@@ -1147,7 +1120,7 @@ export default function Home() {
     setIsCancellingHomeWait(true)
 
     try {
-      const result = await cancelHomeMatchRequest(token, homeWaitView.requestId)
+      const result = await cancelMatchRequestClient(token, homeWaitView.requestId)
       if (!result.success) {
         return
       }
@@ -1623,7 +1596,9 @@ export default function Home() {
               const card = resolveHomeMyRegistrationCard(homeWaitView)
               const showCancelButton =
                 (homeWaitView.phase === 'waiting_seek' ||
-                  homeWaitView.phase === 'waiting_leave') &&
+                  homeWaitView.phase === 'waiting_leave' ||
+                  homeWaitView.phase === 'match_in_progress' ||
+                  homeWaitView.phase === 'match_alert') &&
                 Boolean(homeWaitView.requestId)
               const isMatchAlert = homeWaitView.phase === 'match_alert'
               const isMatchInProgress = homeWaitView.phase === 'match_in_progress'

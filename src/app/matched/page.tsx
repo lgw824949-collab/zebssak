@@ -2,6 +2,7 @@
 
 import MatchFlowStepBar from '@/components/MatchFlowStepBar'
 import MatchFlowScreen from '@/components/MatchFlowScreen'
+import { cancelMatchRequestClient } from '@/lib/cancel-match-request'
 import type { MatchMovementPayload } from '@/lib/match-movement'
 import { resolveMatchedUserAction } from '@/lib/match-matched-action'
 import { resolveMatchFlowStep } from '@/lib/match-flow-steps'
@@ -19,6 +20,7 @@ const LINE7_GLOW = 'rgba(116, 127, 0, 0.12)'
 const SIDE_SEAT_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 
 interface RequestSummary {
+  request_id?: string
   car_number: number | null
   car_door_short: string | null
   seat_side: 'A' | 'B' | null
@@ -295,6 +297,8 @@ export default function MatchedPage() {
   const [transitionMessage, setTransitionMessage] = useState<string | null>(null)
   const [isUpdatingMovement, setIsUpdatingMovement] = useState(false)
   const [movementError, setMovementError] = useState('')
+  const [isCancelling, setIsCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
   const completionHandledRef = useRef(false)
 
   const loadMatchDetail = useCallback(
@@ -451,6 +455,54 @@ export default function MatchedPage() {
 
   function clearMatchSession() {
     clearMatchClientSession()
+  }
+
+  async function handleCancelMatch() {
+    if (isCancelling || !detail || detail.status !== 'accepted') {
+      return
+    }
+
+    const requestId =
+      detail.self.request_id?.trim() ||
+      sessionStorage.getItem('activeMatchRequestId')?.trim() ||
+      ''
+
+    if (!requestId) {
+      setCancelError('취소할 요청 정보를 찾을 수 없습니다.')
+      return
+    }
+
+    if (
+      !window.confirm(
+        '매칭을 취소하시겠습니까?\n급한 일로 중간에 내리면 상대방은 다시 매칭 대기로 돌아갑니다.'
+      )
+    ) {
+      return
+    }
+
+    const token = localStorage.getItem('token')
+    if (!token) {
+      router.replace('/login')
+      return
+    }
+
+    setIsCancelling(true)
+    setCancelError('')
+
+    try {
+      const result = await cancelMatchRequestClient(token, requestId)
+      if (!result.success) {
+        setCancelError(result.error ?? '매칭 취소에 실패했습니다.')
+        return
+      }
+
+      clearMatchSession()
+      router.replace('/')
+    } catch {
+      setCancelError('매칭 취소 중 오류가 발생했습니다.')
+    } finally {
+      setIsCancelling(false)
+    }
   }
 
   function handleConfirm() {
@@ -707,6 +759,21 @@ export default function MatchedPage() {
             {seatSubmitError ? (
               <p className="text-center text-sm font-medium text-red-600">{seatSubmitError}</p>
             ) : null}
+
+            {cancelError ? (
+              <p className="text-center text-sm font-medium text-red-600">{cancelError}</p>
+            ) : null}
+
+            <button
+              type="button"
+              disabled={isCancelling || isSubmitting}
+              onClick={() => {
+                void handleCancelMatch()
+              }}
+              className="zeb-touch-target w-full py-2 text-center text-sm font-semibold text-red-500 disabled:opacity-50"
+            >
+              {isCancelling ? '취소 중...' : '매칭 취소 (중간 하차 등)'}
+            </button>
           </>
         )}
       </main>

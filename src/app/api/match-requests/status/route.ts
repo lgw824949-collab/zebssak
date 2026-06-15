@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
+import { cancelMatchRequestForUser } from '@/lib/cancel-match-request'
 import { repairStaleMatchedRequest } from '@/lib/match-request-repair'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 
@@ -156,35 +157,16 @@ export async function PATCH(request: Request) {
     }
 
     const supabase = createSupabaseAdminClient()
+    const cancelResult = await cancelMatchRequestForUser(supabase, requestId, userId)
 
-    const { data: updated, error: updateError } = await supabase
-      .from('match_requests')
-      .update({ status: 'cancelled' })
-      .eq('id', requestId)
-      .eq('user_id', userId)
-      .in('status', ['waiting', 'matched'])
-      .select('id')
-      .maybeSingle()
-
-    if (updateError) {
-      return errorResponse('요청 취소에 실패했습니다.', 500)
+    if (!cancelResult.ok) {
+      return errorResponse(cancelResult.message, cancelResult.status)
     }
 
-    if (!updated) {
-      return errorResponse('매칭 요청을 찾을 수 없습니다.', 404)
-    }
-
-    const { error: cancelMatchError } = await supabase
-      .from('matches')
-      .update({ status: 'cancelled' })
-      .or(`seat_seek_request_id.eq.${requestId},leaving_request_id.eq.${requestId}`)
-      .eq('status', 'pending')
-
-    if (cancelMatchError) {
-      return errorResponse('연결된 매칭 취소에 실패했습니다.', 500)
-    }
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      data: { already_cancelled: cancelResult.alreadyCancelled === true },
+    })
   } catch {
     return errorResponse('서버 오류가 발생했습니다.', 500)
   }
