@@ -1,49 +1,10 @@
 ﻿import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
+import { repairStaleMatchedRequest } from '@/lib/match-request-repair'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 
 function errorResponse(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status })
-}
-
-/** matched 요청이 유효한 활성 매칭과 연결돼 있는지 확인합니다. */
-async function repairStaleMatchedRequest(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  requestId: string
-): Promise<boolean> {
-  const { data: latestMatch, error: matchError } = await supabase
-    .from('matches')
-    .select('id, status')
-    .or(`seat_seek_request_id.eq.${requestId},leaving_request_id.eq.${requestId}`)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (matchError) {
-    return false
-  }
-
-  const matchStatus = latestMatch?.status
-  if (matchStatus === 'pending' || matchStatus === 'accepted') {
-    return true
-  }
-
-  if (matchStatus === 'cancelled') {
-    await supabase
-      .from('match_requests')
-      .update({ status: 'cancelled' })
-      .eq('id', requestId)
-      .eq('status', 'matched')
-    return false
-  }
-
-  await supabase
-    .from('match_requests')
-    .update({ status: 'waiting' })
-    .eq('id', requestId)
-    .eq('status', 'matched')
-
-  return false
 }
 
 /**
@@ -77,12 +38,15 @@ export async function GET(request: Request) {
     let currentRequest = currentRequestRaw
 
     if (currentRequest?.status === 'matched') {
-      const isActive = await repairStaleMatchedRequest(
+      const repairResult = await repairStaleMatchedRequest(
         supabase,
         currentRequest.id as string
       )
-      if (!isActive) {
+
+      if (repairResult === 'cancelled') {
         currentRequest = null
+      } else if (repairResult === 'waiting') {
+        currentRequest = { ...currentRequest, status: 'waiting' }
       }
     }
 

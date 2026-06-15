@@ -2,6 +2,7 @@
 
 import MatchMovementPanel from '@/components/MatchMovementPanel'
 import type { MatchMovementPayload } from '@/lib/match-movement'
+import { clearMatchClientSession } from '@/lib/match-session'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
@@ -125,13 +126,12 @@ function MatchingForm() {
     destinationName: null,
   })
   const [viewerRole, setViewerRole] = useState<'seeker' | 'provider' | null>(null)
-  const [partnerAcceptedNotice, setPartnerAcceptedNotice] = useState(false)
+  const partnerAcceptedNotice = false
   const [actionError, setActionError] = useState('')
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDismissed, setIsDismissed] = useState(false)
   const [isNavigatingToMatched, setIsNavigatingToMatched] = useState(false)
-  const [isNavigatingHome, setIsNavigatingHome] = useState(false)
   const [movement, setMovement] = useState<MatchMovementPayload | null>(null)
   const [isUpdatingMovement, setIsUpdatingMovement] = useState(false)
   const expireRequestedRef = useRef(false)
@@ -145,27 +145,43 @@ function MatchingForm() {
 
   /** 거절 시 등록 관련 session 전체 정리 */
   const clearMatchRegistrationSession = useCallback(() => {
-    try {
-      sessionStorage.removeItem('activeMatchId')
-      sessionStorage.removeItem('activeMatchRequestId')
-      sessionStorage.removeItem('boardingDraft')
-      sessionStorage.removeItem('waitingDraft')
-      sessionStorage.removeItem('providerRegistered')
-      sessionStorage.removeItem('seekerMatchRequestRegistered')
-    } catch {
-      // sessionStorage 정리 실패 시 무시합니다.
-    }
+    clearMatchClientSession()
   }, [])
+
+  /** 매칭 상세에서 본인 요청 ID를 조회합니다. */
+  const resolveSelfRequestId = useCallback(
+    async (token: string, activeMatchId: string): Promise<string | null> => {
+      const fromSession = sessionStorage.getItem('activeMatchRequestId')?.trim()
+      if (fromSession) {
+        return fromSession
+      }
+
+      try {
+        const response = await fetch(`/api/matches/${encodeURIComponent(activeMatchId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        })
+        const result = (await response.json()) as {
+          success?: boolean
+          data?: { self?: { request_id?: string } }
+        }
+
+        if (!response.ok || !result.success) {
+          return null
+        }
+
+        const requestId = result.data?.self?.request_id?.trim()
+        return requestId || null
+      } catch {
+        return null
+      }
+    },
+    []
+  )
 
   const goToWaiting = useCallback(() => {
     router.replace('/waiting')
   }, [router])
-
-  const goToHome = useCallback(() => {
-    clearActiveMatchSession()
-    setIsNavigatingHome(true)
-    window.location.href = '/'
-  }, [clearActiveMatchSession])
 
   const goToMatched = useCallback(
     (matchId: string) => {
@@ -526,9 +542,13 @@ function MatchingForm() {
       setActionError('')
 
       if (action === 'reject') {
-        const requestId = sessionStorage.getItem('activeMatchRequestId')?.trim() ?? ''
         setIsDismissed(true)
         setIsSubmitting(true)
+
+        const requestId =
+          (await resolveSelfRequestId(token, matchId)) ??
+          sessionStorage.getItem('activeMatchRequestId')?.trim() ??
+          ''
 
         try {
           await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
@@ -609,6 +629,7 @@ function MatchingForm() {
       handleMatchStatusConflict,
       isDismissed,
       isSubmitting,
+      resolveSelfRequestId,
       router,
       searchParams,
     ]
@@ -622,7 +643,7 @@ function MatchingForm() {
     void submitMatchAction('reject')
   }
 
-  if (isNavigatingToMatched || isNavigatingHome) {
+  if (isNavigatingToMatched) {
     return null
   }
 

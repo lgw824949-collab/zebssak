@@ -87,19 +87,61 @@ export async function resolveActiveMatchNavigationTarget(
 
     const matchPayload = (await matchResponse.json()) as {
       success?: boolean
-      data?: { status?: string }
+      data?: {
+        status?: string
+        self?: { request_id?: string }
+      }
     }
 
     if (!matchResponse.ok || !matchPayload.success) {
       return 'none'
     }
 
-    if (matchPayload.data?.status === 'accepted') {
+    const matchStatus = matchPayload.data?.status
+    const selfRequestId = matchPayload.data?.self?.request_id
+
+    if (selfRequestId) {
+      const statusResponse = await fetch(
+        `/api/match-requests/status?request_id=${encodeURIComponent(selfRequestId)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+          signal,
+        }
+      )
+
+      const statusPayload = (await statusResponse.json()) as {
+        success?: boolean
+        data?: {
+          match_request?: { status?: string } | null
+          match?: { id?: string; status?: string } | null
+        }
+      }
+
+      if (statusResponse.ok && statusPayload.success) {
+        const requestStatus = statusPayload.data?.match_request?.status
+        if (requestStatus === 'cancelled') {
+          return 'none'
+        }
+
+        const linkedMatch = statusPayload.data?.match
+        if (linkedMatch?.id === matchId) {
+          if (linkedMatch.status === 'accepted') {
+            return 'matched'
+          }
+          if (linkedMatch.status === 'pending' && requestStatus === 'matched') {
+            return 'matching'
+          }
+        }
+      }
+    }
+
+    if (matchStatus === 'accepted') {
       return 'matched'
     }
 
-    if (matchPayload.data?.status === 'pending') {
-      return 'matching'
+    if (matchStatus === 'pending') {
+      return 'none'
     }
 
     return 'none'

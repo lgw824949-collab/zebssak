@@ -669,35 +669,49 @@ export async function PATCH(
       return errorResponse('매칭 참여자 정보를 찾을 수 없습니다.', 500)
     }
 
-    const { data: cancelledRejecterRows, error: cancelRejecterError } = await supabase
+    const { data: rejecterCurrent, error: rejecterCurrentError } = await supabase
       .from('match_requests')
-      .update({ status: 'cancelled' })
+      .select('status')
       .eq('id', rejecterRequest.id)
-      .in('status', ['matched', 'waiting'])
-      .select('id')
+      .maybeSingle()
 
-    if (cancelRejecterError) {
-      return errorResponse('매칭 요청 취소에 실패했습니다.', 500)
+    if (rejecterCurrentError) {
+      return errorResponse('매칭 요청 상태를 조회할 수 없습니다.', 500)
     }
 
-    if (!cancelledRejecterRows?.length) {
-      return errorResponse('거절할 매칭 요청 상태를 찾을 수 없습니다.', 409)
-    }
+    const alreadyCancelled = rejecterCurrent?.status === 'cancelled'
 
-    const { error: reopenPartnerError } = await supabase
-      .from('match_requests')
-      .update({ status: 'waiting' })
-      .eq('id', partnerRequest.id)
-      .eq('status', 'matched')
-
-    if (reopenPartnerError) {
-      await supabase
+    if (!alreadyCancelled) {
+      const { data: cancelledRejecterRows, error: cancelRejecterError } = await supabase
         .from('match_requests')
-        .update({ status: 'matched' })
+        .update({ status: 'cancelled' })
         .eq('id', rejecterRequest.id)
-        .eq('status', 'cancelled')
+        .in('status', ['matched', 'waiting'])
+        .select('id')
 
-      return errorResponse('상대방 매칭 요청 복구에 실패했습니다.', 500)
+      if (cancelRejecterError) {
+        return errorResponse('매칭 요청 취소에 실패했습니다.', 500)
+      }
+
+      if (!cancelledRejecterRows?.length) {
+        return errorResponse('거절할 매칭 요청 상태를 찾을 수 없습니다.', 409)
+      }
+
+      const { error: reopenPartnerError } = await supabase
+        .from('match_requests')
+        .update({ status: 'waiting' })
+        .eq('id', partnerRequest.id)
+        .eq('status', 'matched')
+
+      if (reopenPartnerError) {
+        await supabase
+          .from('match_requests')
+          .update({ status: 'matched' })
+          .eq('id', rejecterRequest.id)
+          .eq('status', 'cancelled')
+
+        return errorResponse('상대방 매칭 요청 복구에 실패했습니다.', 500)
+      }
     }
 
     const { data: cancelledRows, error: rejectMatchError } = await supabase

@@ -571,6 +571,37 @@ export default function WaitingPage() {
             if (!existingRequestId) {
               existingRequestId = snapshot.requestId
             }
+
+            const snapshotStatusResponse = await fetch(
+              `/api/match-requests/status?request_id=${encodeURIComponent(snapshot.requestId)}`,
+              {
+                headers: { Authorization: `Bearer ${authToken}` },
+                cache: 'no-store',
+                signal: abortController.signal,
+              }
+            )
+
+            if (cancelled) {
+              return
+            }
+
+            const snapshotStatus = (await snapshotStatusResponse.json()) as {
+              success?: boolean
+              data?: {
+                match_request?: { status?: string } | null
+              }
+            }
+
+            if (
+              snapshotStatusResponse.ok &&
+              snapshotStatus.success &&
+              snapshotStatus.data?.match_request?.status === 'cancelled'
+            ) {
+              clearWaitingMatchSession()
+              router.replace('/')
+              return
+            }
+
             persistWaitingSession(snapshot.draft, snapshot.requestId)
             if (!cancelled) {
               setDraft(parsedDraft)

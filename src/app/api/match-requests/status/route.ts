@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
+import { repairStaleMatchedRequest } from '@/lib/match-request-repair'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 
 function errorResponse(message: string, status: number) {
@@ -36,6 +37,26 @@ export async function GET(request: Request) {
       return errorResponse('매칭 요청을 찾을 수 없습니다.', 404)
     }
 
+    const repairResult = await repairStaleMatchedRequest(supabase, requestId)
+    if (repairResult === 'cancelled') {
+      return NextResponse.json({
+        success: true,
+        data: {
+          match_request: { ...matchRequest, status: 'cancelled' },
+          queue_position: null,
+          match: null,
+        },
+      })
+    }
+
+    const effectiveRequest = {
+      ...matchRequest,
+      status:
+        repairResult === 'waiting'
+          ? 'waiting'
+          : String(matchRequest.status ?? ''),
+    }
+
     const { data: matchRaw } = await supabase
       .from('matches')
       .select('id, status, notify_expires_at')
@@ -48,7 +69,7 @@ export async function GET(request: Request) {
 
     // 취소된 요청·종료된 매칭은 활성 매칭으로 내려주지 않습니다.
     let match: typeof matchRaw = null
-    const requestStatus = String(matchRequest.status ?? '')
+    const requestStatus = String(effectiveRequest.status ?? '')
     if (requestStatus !== 'cancelled' && matchRaw) {
       const matchStatus = String(matchRaw.status ?? '')
       if (matchStatus === 'pending' || matchStatus === 'accepted') {
@@ -57,7 +78,7 @@ export async function GET(request: Request) {
     }
 
     let queuePosition: number | null = null
-    if (matchRequest.request_type === 'seat_seek' && matchRequest.status === 'waiting') {
+    if (effectiveRequest.request_type === 'seat_seek' && effectiveRequest.status === 'waiting') {
       const { data: waitingList } = await supabase
         .from('match_requests')
         .select('id, remaining_stations, requested_at, users(is_vulnerable)')
@@ -89,7 +110,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       data: {
-        match_request: matchRequest,
+        match_request: effectiveRequest,
         queue_position: queuePosition,
         match: match ?? null,
       },
@@ -141,6 +162,7 @@ export async function PATCH(request: Request) {
       .update({ status: 'cancelled' })
       .eq('id', requestId)
       .eq('user_id', userId)
+      .in('status', ['waiting', 'matched'])
       .select('id')
       .maybeSingle()
 
