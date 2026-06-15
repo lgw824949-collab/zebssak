@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppHamburgerMenu from '@/components/AppHamburgerMenu'
 import CongestionHaltModal from '@/components/CongestionHaltModal'
+import HomeMatchProgressBar from '@/components/HomeMatchProgressBar'
 import {
   fetchCongestionStatus,
   isLineHalted,
@@ -12,6 +13,14 @@ import {
   type CongestionStatus,
 } from '@/lib/congestion'
 import { formatStationDisplayName } from '@/lib/match-display'
+import {
+  resolveHomeProgressBannerLabel,
+  resolveHomeProgressStep,
+  resolveHomeRegistrationPurposeLine,
+  type HomeMatchProgress,
+} from '@/lib/match-home-progress'
+import { resolveMatchFlowStep } from '@/lib/match-flow-steps'
+import type { MatchMovementPayload } from '@/lib/match-movement'
 import { resolveActiveMatchNavigationTarget } from '@/lib/match-session'
 import {
   isSubwayOperatingHours,
@@ -149,7 +158,12 @@ function mapLineLabelToApiLine(lineLabel: string): string | null {
   return null
 }
 
-type HomeWaitPhase = 'waiting_seek' | 'waiting_leave' | 'match_alert' | 'match_done'
+type HomeWaitPhase =
+  | 'waiting_seek'
+  | 'waiting_leave'
+  | 'match_alert'
+  | 'match_in_progress'
+  | 'match_done'
 
 const HOME_MATCH_COMPLETED_HINT_KEY = 'homeMatchCompletedHint'
 
@@ -170,9 +184,10 @@ interface HomeWaitView {
   matchStatus: string | null
   trainNo: string | null
   carNumber: number | null
+  homeProgress: HomeMatchProgress | null
 }
 
-type HomeMatchStatusBoxKind = 'waiting' | 'completed' | 'failed'
+type HomeMatchStatusBoxKind = 'waiting' | 'completed' | 'failed' | 'in_progress'
 
 interface HomeMatchStatusBox {
   kind: HomeMatchStatusBoxKind
@@ -188,10 +203,28 @@ function resolveHomeMatchStatusBox(view: HomeWaitView | null): HomeMatchStatusBo
     return null
   }
 
-  if (view.phase === 'match_done' || view.matchStatus === 'accepted') {
+  if (view.phase === 'match_in_progress' && view.homeProgress) {
+    return {
+      kind: 'in_progress',
+      label: resolveHomeProgressBannerLabel({
+        registrationKind: view.registrationKind,
+        step: view.homeProgress.step,
+        matchCompleted: view.homeProgress.matchCompleted,
+      }),
+      emoji: '●',
+      backgroundColor: '#FFF8F0',
+      textColor: '#8B6914',
+    }
+  }
+
+  if (view.phase === 'match_done') {
     return {
       kind: 'completed',
-      label: '완료',
+      label: resolveHomeProgressBannerLabel({
+        registrationKind: view.registrationKind,
+        step: 'seated',
+        matchCompleted: true,
+      }),
       emoji: '✓',
       backgroundColor: LINE7_SUCCESS_BG,
       textColor: LINE7_PRIMARY_DEEP,
@@ -237,32 +270,35 @@ function resolveHomeMyRegistrationCard(view: HomeWaitView): {
   purposeLine: string
   progressLine: string
 } {
-  const destination = view.destinationName || '목적지 미확인'
+  const purposeLine = resolveHomeRegistrationPurposeLine(
+    view.registrationKind,
+    view.destinationName
+  )
 
   if (view.phase === 'match_done') {
-    if (view.registrationKind === 'leave') {
-      return {
-        statusBadge: '완료',
-        purposeLine: `하차 알림 · ${destination}까지`,
-        progressLine:
-          '목적지 전에도 다시 등록해 주세요. 다른 분과 또 연결될 수 있어요.',
-      }
-    }
-
     return {
-      statusBadge: '완료',
-      purposeLine: `자리 찾기 · ${destination}까지`,
-      progressLine: '다시 등록하면 다른 빈자리와 또 연결될 수 있어요.',
+      statusBadge:
+        view.registrationKind === 'leave' ? '양보 완료' : '착석 완료',
+      purposeLine,
+      progressLine:
+        view.registrationKind === 'leave'
+          ? '목적지 전에도 다시 등록해 주세요. 다른 분과 또 연결될 수 있어요.'
+          : '다시 등록하면 다른 빈자리와 또 연결될 수 있어요.',
+    }
+  }
+
+  if (view.phase === 'match_in_progress') {
+    return {
+      statusBadge: '진행 중',
+      purposeLine,
+      progressLine: '탭하면 상세 화면으로 이동합니다',
     }
   }
 
   if (view.phase === 'match_alert') {
     return {
       statusBadge: '연결됨',
-      purposeLine:
-        view.registrationKind === 'leave'
-          ? `하차 알림 · ${destination}까지`
-          : `자리 찾기 · ${destination}까지`,
+      purposeLine,
       progressLine:
         view.registrationKind === 'leave'
           ? '착석 희망자 확인 · 탭해서 수락'
@@ -275,7 +311,7 @@ function resolveHomeMyRegistrationCard(view: HomeWaitView): {
       view.waitingCount > 0 ? `${view.waitingCount}명` : '모이는 중'
     return {
       statusBadge: '대기 중',
-      purposeLine: `하차 알림 · ${destination}까지`,
+      purposeLine,
       progressLine: `착석 희망자 ${poolText} 대기`,
     }
   }
@@ -285,7 +321,7 @@ function resolveHomeMyRegistrationCard(view: HomeWaitView): {
 
   return {
     statusBadge: '대기 중',
-    purposeLine: `자리 찾기 · ${destination}까지`,
+    purposeLine,
     progressLine: `대기 순서 ${rankText}${totalText}`,
   }
 }
@@ -415,6 +451,13 @@ function buildHomeMatchDoneView(hint: HomeMatchCompletedHint): HomeWaitView {
     matchStatus: 'accepted',
     trainNo: null,
     carNumber: null,
+    homeProgress: {
+      step: 'seated',
+      flowStep: 'done',
+      handoffRemaining: null,
+      seatConfirmed: true,
+      matchCompleted: true,
+    },
   }
 }
 
@@ -433,6 +476,7 @@ async function fetchMatchRequestStatus(
 ): Promise<{
   queuePosition: number | null
   pendingMatchId: string | null
+  acceptedMatchId: string | null
   matchStatus: string | null
   requestType: string | null
   requestStatus: string | null
@@ -458,6 +502,7 @@ async function fetchMatchRequestStatus(
     return {
       queuePosition: null,
       pendingMatchId: null,
+      acceptedMatchId: null,
       matchStatus: null,
       requestType: null,
       requestStatus: null,
@@ -465,15 +510,75 @@ async function fetchMatchRequestStatus(
   }
 
   const matchStatus = statusPayload.data?.match?.status ?? null
-  const pendingMatchId =
-    matchStatus === 'pending' ? (statusPayload.data?.match?.id ?? null) : null
+  const matchId = statusPayload.data?.match?.id ?? null
+  const pendingMatchId = matchStatus === 'pending' ? matchId : null
+  const acceptedMatchId = matchStatus === 'accepted' ? matchId : null
 
   return {
     queuePosition: statusPayload.data?.queue_position ?? null,
     pendingMatchId,
+    acceptedMatchId,
     matchStatus,
     requestType: statusPayload.data?.match_request?.request_type ?? null,
     requestStatus: statusPayload.data?.match_request?.status ?? null,
+  }
+}
+
+async function fetchHomeMatchProgress(
+  token: string,
+  matchId: string
+): Promise<HomeMatchProgress | null> {
+  try {
+    const response = await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    })
+
+    const payload = (await response.json()) as {
+      success?: boolean
+      data?: {
+        status?: string
+        viewer_role?: 'seeker' | 'provider'
+        movement?: MatchMovementPayload
+        seat_confirmation?: { seated?: boolean } | null
+      }
+    }
+
+    if (!response.ok || !payload.success || !payload.data) {
+      return null
+    }
+
+    const data = payload.data
+    const matchCompleted = data.status === 'completed'
+    const handoffRemaining =
+      data.movement?.route_guide.handoff_remaining_stations ?? null
+    const seatConfirmed = data.seat_confirmation?.seated === true
+    const viewerRole = data.viewer_role ?? 'seeker'
+    const flowStep = resolveMatchFlowStep({
+      matchStatus: data.status ?? 'accepted',
+      viewerRole,
+      selfMovementStatus: data.movement?.self.status,
+      partnerMovementStatus: data.movement?.partner.status,
+      handoffRemainingStations: handoffRemaining,
+      seatConfirmed,
+    })
+
+    const step = resolveHomeProgressStep({
+      flowStep,
+      handoffRemaining,
+      seatConfirmed,
+      matchCompleted,
+    })
+
+    return {
+      step,
+      flowStep,
+      handoffRemaining,
+      seatConfirmed,
+      matchCompleted,
+    }
+  } catch {
+    return null
   }
 }
 
@@ -519,9 +624,11 @@ function buildHomeWaitView(input: {
   queuePosition: number | null
   waitingCount: number
   pendingMatchId: string | null
+  acceptedMatchId: string | null
   matchStatus: string | null
   trainNo: string | null
   carNumber: number | null
+  homeProgress: HomeMatchProgress | null
 }): HomeWaitView | null {
   const registrationKind: 'seek' | 'leave' =
     input.requestType === 'leaving' ? 'leave' : 'seek'
@@ -535,6 +642,7 @@ function buildHomeWaitView(input: {
     matchStatus: input.matchStatus,
     trainNo: input.trainNo,
     carNumber: input.carNumber,
+    homeProgress: input.homeProgress,
   }
 
   if (input.requestStatus === 'cancelled') {
@@ -546,14 +654,33 @@ function buildHomeWaitView(input: {
       ...baseView,
       phase: 'match_alert',
       matchId: input.pendingMatchId,
+      homeProgress: null,
     }
   }
 
   if (input.matchStatus === 'accepted') {
+    const matchId = input.acceptedMatchId ?? input.pendingMatchId
+    if (input.homeProgress?.matchCompleted) {
+      return {
+        ...baseView,
+        phase: 'match_done',
+        matchId,
+        homeProgress: input.homeProgress,
+      }
+    }
+
     return {
       ...baseView,
-      phase: 'match_done',
-      matchId: input.pendingMatchId,
+      phase: 'match_in_progress',
+      matchId,
+      homeProgress:
+        input.homeProgress ?? {
+          step: 'matched',
+          flowStep: 'move',
+          handoffRemaining: null,
+          seatConfirmed: false,
+          matchCompleted: false,
+        },
     }
   }
 
@@ -562,6 +689,7 @@ function buildHomeWaitView(input: {
       ...baseView,
       phase: 'match_alert',
       matchId: input.pendingMatchId,
+      homeProgress: null,
     }
   }
 
@@ -574,6 +702,7 @@ function buildHomeWaitView(input: {
       phase:
         input.requestType === 'leaving' ? 'waiting_leave' : 'waiting_seek',
       matchId: null,
+      homeProgress: null,
     }
   }
 
@@ -585,6 +714,7 @@ function buildHomeWaitView(input: {
     ...baseView,
     phase: input.requestType === 'leaving' ? 'waiting_leave' : 'waiting_seek',
     matchId: null,
+    homeProgress: null,
   }
 }
 
@@ -677,6 +807,11 @@ async function fetchHomeWaitView(token: string): Promise<HomeWaitView | null> {
     // sessionStorage 실패 시 홈 표시만 유지합니다.
   }
 
+  let homeProgress: HomeMatchProgress | null = null
+  if (status.acceptedMatchId) {
+    homeProgress = await fetchHomeMatchProgress(token, status.acceptedMatchId)
+  }
+
   const view = buildHomeWaitView({
     requestId,
     requestType,
@@ -685,9 +820,11 @@ async function fetchHomeWaitView(token: string): Promise<HomeWaitView | null> {
     queuePosition: status.queuePosition,
     waitingCount,
     pendingMatchId: status.pendingMatchId,
+    acceptedMatchId: status.acceptedMatchId,
     matchStatus: status.matchStatus,
     trainNo,
     carNumber,
+    homeProgress,
   })
 
   if (!view) {
@@ -806,9 +943,12 @@ export default function Home() {
     }
 
     const intervalMs =
-      homeWaitView?.phase === 'waiting_seek' || homeWaitView?.phase === 'waiting_leave'
-        ? 5000
-        : 20000
+      homeWaitView?.phase === 'match_in_progress'
+        ? 3000
+        : homeWaitView?.phase === 'waiting_seek' ||
+            homeWaitView?.phase === 'waiting_leave'
+          ? 5000
+          : 20000
 
     const timer = window.setInterval(() => {
       void loadHomeWaitStatus(token)
@@ -1058,6 +1198,11 @@ export default function Home() {
         clearHomeMatchSession()
         setHomeWaitView(null)
       })()
+      return
+    }
+
+    if (homeWaitView.phase === 'match_in_progress') {
+      router.push('/matched')
       return
     }
 
@@ -1455,7 +1600,9 @@ export default function Home() {
         {homeMatchStatusBox ? (
           <section className="mx-4 mt-3" aria-label="매칭 상태">
             <p
-              className="rounded-xl border px-4 py-3 text-center text-sm font-bold"
+              className={`rounded-xl border px-4 py-3 text-center text-sm font-bold ${
+                homeMatchStatusBox.kind === 'in_progress' ? 'home-status-blink' : ''
+              }`}
               style={{
                 backgroundColor: homeMatchStatusBox.backgroundColor,
                 borderColor: LINE7_BORDER,
@@ -1479,12 +1626,16 @@ export default function Home() {
                   homeWaitView.phase === 'waiting_leave') &&
                 Boolean(homeWaitView.requestId)
               const isMatchAlert = homeWaitView.phase === 'match_alert'
+              const isMatchInProgress = homeWaitView.phase === 'match_in_progress'
+              const isMatchDone = homeWaitView.phase === 'match_done'
+              const showProgressBar =
+                (isMatchInProgress || isMatchDone) && homeWaitView.homeProgress
 
               return (
                 <div
                   className="w-full rounded-2xl border px-4 py-4 text-left"
                   style={
-                    isMatchAlert
+                    isMatchAlert || isMatchInProgress
                       ? {
                           borderColor: LINE7_BORDER_STRONG,
                           backgroundColor: LINE7_SOFT_BG,
@@ -1513,7 +1664,7 @@ export default function Home() {
                         style={{
                           backgroundColor: isMatchAlert
                             ? LINE7_PRIMARY
-                            : homeWaitView.phase === 'match_done'
+                            : isMatchDone
                               ? LINE7_ACCENT
                               : LINE7_PRIMARY,
                         }}
@@ -1523,9 +1674,17 @@ export default function Home() {
                       <p className="mt-2 text-[16px] font-extrabold text-[#1A1A1A]">
                         {card.purposeLine}
                       </p>
-                      <p className="mt-1 text-[14px] font-semibold text-[#5F6B2E]">
-                        {card.progressLine}
-                      </p>
+                      {!showProgressBar ? (
+                        <p className="mt-1 text-[14px] font-semibold text-[#5F6B2E]">
+                          {card.progressLine}
+                        </p>
+                      ) : null}
+                      {showProgressBar ? (
+                        <HomeMatchProgressBar
+                          registrationKind={homeWaitView.registrationKind}
+                          progress={homeWaitView.homeProgress as HomeMatchProgress}
+                        />
+                      ) : null}
                     </div>
                     {showCancelButton ? (
                       <button
@@ -1639,6 +1798,20 @@ export default function Home() {
         )}
         */}
       </main>
+      <style jsx global>{`
+        @keyframes home-status-blink-keyframes {
+          0%,
+          100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.55;
+          }
+        }
+        .home-status-blink {
+          animation: home-status-blink-keyframes 1s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   )
 }
