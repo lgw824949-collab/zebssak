@@ -567,15 +567,52 @@ export async function PATCH(
       })
     }
 
-    // 거절 — 스키마에 rejected 없음 → cancelled 사용
-    const { error: reopenError } = await supabase
+    // 거절 — 거절한 사용자 요청은 cancelled, 상대는 waiting으로 복귀
+    const { data: participantRows, error: participantError } = await supabase
+      .from('match_requests')
+      .select('id, user_id')
+      .in('id', [match.seat_seek_request_id, match.leaving_request_id])
+
+    if (participantError || !participantRows?.length) {
+      return errorResponse('매칭 요청 정보를 찾을 수 없습니다.', 500)
+    }
+
+    const rejecterRequest = participantRows.find((row) => row.user_id === userId)
+    const partnerRequest = participantRows.find((row) => row.user_id !== userId)
+
+    if (!rejecterRequest || !partnerRequest) {
+      return errorResponse('매칭 참여자 정보를 찾을 수 없습니다.', 500)
+    }
+
+    const { data: cancelledRejecterRows, error: cancelRejecterError } = await supabase
+      .from('match_requests')
+      .update({ status: 'cancelled' })
+      .eq('id', rejecterRequest.id)
+      .in('status', ['matched', 'waiting'])
+      .select('id')
+
+    if (cancelRejecterError) {
+      return errorResponse('매칭 요청 취소에 실패했습니다.', 500)
+    }
+
+    if (!cancelledRejecterRows?.length) {
+      return errorResponse('거절할 매칭 요청 상태를 찾을 수 없습니다.', 409)
+    }
+
+    const { error: reopenPartnerError } = await supabase
       .from('match_requests')
       .update({ status: 'waiting' })
-      .in('id', [match.seat_seek_request_id, match.leaving_request_id])
+      .eq('id', partnerRequest.id)
       .eq('status', 'matched')
 
-    if (reopenError) {
-      return errorResponse('매칭 요청 복구에 실패했습니다.', 500)
+    if (reopenPartnerError) {
+      await supabase
+        .from('match_requests')
+        .update({ status: 'matched' })
+        .eq('id', rejecterRequest.id)
+        .eq('status', 'cancelled')
+
+      return errorResponse('상대방 매칭 요청 복구에 실패했습니다.', 500)
     }
 
     const { data: cancelledRows, error: rejectMatchError } = await supabase
@@ -589,8 +626,7 @@ export async function PATCH(
       await supabase
         .from('match_requests')
         .update({ status: 'matched' })
-        .in('id', [match.seat_seek_request_id, match.leaving_request_id])
-        .eq('status', 'waiting')
+        .in('id', [rejecterRequest.id, partnerRequest.id])
 
       return errorResponse('매칭 거절 처리에 실패했습니다.', 500)
     }

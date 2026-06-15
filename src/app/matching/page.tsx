@@ -138,6 +138,20 @@ function MatchingForm() {
     sessionStorage.removeItem('activeMatchId')
   }, [])
 
+  /** 거절 시 등록 관련 session 전체 정리 */
+  const clearMatchRegistrationSession = useCallback(() => {
+    try {
+      sessionStorage.removeItem('activeMatchId')
+      sessionStorage.removeItem('activeMatchRequestId')
+      sessionStorage.removeItem('boardingDraft')
+      sessionStorage.removeItem('waitingDraft')
+      sessionStorage.removeItem('providerRegistered')
+      sessionStorage.removeItem('seekerMatchRequestRegistered')
+    } catch {
+      // sessionStorage 정리 실패 시 무시합니다.
+    }
+  }, [])
+
   const goToWaiting = useCallback(() => {
     router.replace('/waiting')
   }, [router])
@@ -427,20 +441,40 @@ function MatchingForm() {
       setActionError('')
 
       if (action === 'reject') {
-        clearActiveMatchSession()
-        sessionStorage.removeItem('activeMatchRequestId')
-        actionHandledRef.current = true
+        const requestId = sessionStorage.getItem('activeMatchRequestId')?.trim() ?? ''
         setIsDismissed(true)
-        void fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ action }),
-          keepalive: true,
-        }).catch(() => {})
-        window.location.href = '/'
+        setIsSubmitting(true)
+
+        try {
+          await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ action }),
+          })
+        } catch {
+          // 매칭 거절 API 실패 시에도 요청 취소를 시도합니다.
+        }
+
+        try {
+          if (requestId) {
+            await fetch('/api/match-requests/status', {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ request_id: requestId, status: 'cancelled' }),
+            })
+          }
+        } catch {
+          // 요청 취소 API 실패 시에도 홈으로 이동합니다.
+        } finally {
+          clearMatchRegistrationSession()
+          window.location.href = '/'
+        }
         return
       }
 
@@ -485,7 +519,7 @@ function MatchingForm() {
       }
     },
     [
-      goToHome,
+      clearMatchRegistrationSession,
       goToMatched,
       handleMatchStatusConflict,
       isDismissed,

@@ -528,6 +528,10 @@ function buildHomeWaitView(input: {
     carNumber: input.carNumber,
   }
 
+  if (input.requestStatus === 'cancelled') {
+    return null
+  }
+
   if (input.matchStatus === 'accepted') {
     return {
       ...baseView,
@@ -635,6 +639,11 @@ async function fetchHomeWaitView(token: string): Promise<HomeWaitView | null> {
   }
   if (status.requestStatus) {
     requestStatus = status.requestStatus
+  }
+
+  if (requestStatus === 'cancelled') {
+    clearHomeMatchSession()
+    return null
   }
 
   try {
