@@ -1,22 +1,32 @@
 import type { MatchMovementStatus } from '@/lib/match-movement'
+import {
+  HANDOFF_MOVE_START_THRESHOLD,
+  isHandoffMoveDue,
+  isHandoffReady,
+} from '@/lib/match-handoff-remaining'
 
-export type MatchFlowStep = 'accept' | 'move' | 'seat' | 'done'
+export type MatchFlowStep = 'accept' | 'move' | 'wait' | 'seat' | 'done'
 
-export const MATCH_FLOW_STEP_LABELS = ['수락', '이동', '착석', '완료'] as const
+export const MATCH_FLOW_STEP_LABELS = ['수락', '이동', '대기', '착석', '완료'] as const
+
+export { HANDOFF_MOVE_START_THRESHOLD, HANDOFF_READY_STATION_THRESHOLD } from '@/lib/match-handoff-remaining'
+export { isHandoffMoveDue, isHandoffReady } from '@/lib/match-handoff-remaining'
 
 export function resolveMatchFlowStepIndex(step: MatchFlowStep): number {
   if (step === 'accept') return 0
   if (step === 'move') return 1
-  if (step === 'seat') return 2
-  return 3
+  if (step === 'wait') return 2
+  if (step === 'seat') return 3
+  return 4
 }
 
-/** 매칭·이동·착석 상태로 현재 단계를 판별합니다. */
+/** 매칭·이동·대기·착석 상태로 현재 단계를 판별합니다. */
 export function resolveMatchFlowStep(input: {
   matchStatus: string
   viewerRole: 'seeker' | 'provider'
   selfMovementStatus?: MatchMovementStatus
   partnerMovementStatus?: MatchMovementStatus
+  handoffRemainingStations?: number | null
   seatConfirmed?: boolean
 }): MatchFlowStep {
   if (input.matchStatus === 'completed' || input.seatConfirmed) {
@@ -29,16 +39,15 @@ export function resolveMatchFlowStep(input: {
 
   const selfStatus = input.selfMovementStatus ?? 'idle'
   const partnerStatus = input.partnerMovementStatus ?? 'idle'
+  const handoffReady = isHandoffReady(input.handoffRemainingStations)
 
-  if (input.viewerRole === 'seeker') {
-    if (selfStatus === 'arrived') {
-      return 'seat'
-    }
-    return 'move'
-  }
+  const seekerAtDoor =
+    input.viewerRole === 'seeker'
+      ? selfStatus === 'arrived'
+      : partnerStatus === 'arrived'
 
-  if (partnerStatus === 'arrived') {
-    return 'seat'
+  if (seekerAtDoor) {
+    return handoffReady ? 'seat' : 'wait'
   }
 
   return 'move'
@@ -61,14 +70,28 @@ export function resolveAcceptPhaseCopy(viewerRole: 'seeker' | 'provider'): {
   return {
     title: '빈자리 연결됨',
     guide: '하차 예정자와 연결되었어요',
-    action: '이동 후 수락 버튼을 눌러 주세요',
+    action: `양보 역 ${HANDOFF_MOVE_START_THRESHOLD}역 전에 이동 안내가 옵니다`,
   }
+}
+
+function formatHandoffWaitText(handoffRemainingStations: number | null | undefined): string {
+  if (handoffRemainingStations == null || handoffRemainingStations < 0) {
+    return '양보자가 내릴 때까지'
+  }
+
+  if (handoffRemainingStations === 0) {
+    return '이번 역에서'
+  }
+
+  return `${handoffRemainingStations}역 후`
 }
 
 /** 수락 후 화면 — 역할·단계별 안내 문구 */
 export function resolveMatchedPhaseCopy(input: {
   viewerRole: 'seeker' | 'provider'
   step: MatchFlowStep
+  handoffStationName?: string
+  handoffRemainingStations?: number | null
   selfMovementStatus?: MatchMovementStatus
   partnerMovementStatus?: MatchMovementStatus
 }): {
@@ -77,57 +100,117 @@ export function resolveMatchedPhaseCopy(input: {
   subline: string
   ctaLabel: string
   timerHint: string
+  ctaEnabled: boolean
 } {
   const selfStatus = input.selfMovementStatus ?? 'idle'
   const partnerStatus = input.partnerMovementStatus ?? 'idle'
+  const handoffStation = input.handoffStationName?.trim() || '양보 역'
+  const waitText = formatHandoffWaitText(input.handoffRemainingStations)
+  const moveDue = isHandoffMoveDue(input.handoffRemainingStations)
+  const handoffRemaining =
+    typeof input.handoffRemainingStations === 'number'
+      ? input.handoffRemainingStations
+      : null
 
   if (input.step === 'done') {
     return {
-      banner: '이용이 완료되었어요',
-      headline: '착석 완료',
+      banner: '5단계 · 완료',
+      headline: '이용 완료',
       subline: '잠시 후 홈으로 이동합니다',
       ctaLabel: '홈으로',
       timerHint: '',
+      ctaEnabled: true,
+    }
+  }
+
+  if (input.step === 'wait') {
+    if (input.viewerRole === 'seeker') {
+      return {
+        banner: '3단계 · 대기',
+        headline: '문 옆에서 서서 대기',
+        subline: `${handoffStation} · ${waitText} 양보자가 내리면 앉아 주세요`,
+        ctaLabel: '착석 완료',
+        timerHint: '아직 앉지 마세요 · 양보자 하차를 기다려 주세요',
+        ctaEnabled: false,
+      }
+    }
+
+    return {
+      banner: '3단계 · 대기',
+      headline: '착석 희망자 대기 중',
+      subline: `${waitText} ${handoffStation}에서 양보 예정`,
+      ctaLabel: '양보 완료',
+      timerHint: '목적지 전까지 자리를 지켜 주세요',
+      ctaEnabled: false,
     }
   }
 
   if (input.step === 'seat') {
     if (input.viewerRole === 'seeker') {
       return {
-        banner: '3단계 · 착석',
-        headline: '자리에 앉아 주세요',
-        subline: '착석 후 아래 버튼을 눌러 주세요',
+        banner: '4단계 · 착석',
+        headline: '지금 앉아 주세요',
+        subline: `${handoffStation} · 양보자가 곧 비워 주는 자리예요`,
         ctaLabel: '착석 완료',
-        timerHint: '서둘러 착석해 주세요',
+        timerHint: '앉은 뒤 아래 버튼을 눌러 주세요',
+        ctaEnabled: true,
       }
     }
 
     return {
-      banner: '3단계 · 착석',
-      headline: '착석 희망자 도착',
-      subline: '자리를 양보해 주세요',
+      banner: '4단계 · 착석',
+      headline: '지금 양보해 주세요',
+      subline: '착석 희망자가 문 옆에서 기다리고 있어요',
       ctaLabel: '양보 완료',
-      timerHint: '착석 희망자가 확인 중이에요',
+      timerHint: '일어서서 자리를 비워 주세요',
+      ctaEnabled: true,
     }
   }
 
   if (input.viewerRole === 'seeker') {
+    if (!moveDue) {
+      return {
+        banner: '2단계 · 이동 대기',
+        headline: '아직 이동하지 마세요',
+        subline: `${handoffStation} · ${waitText} 이동 안내가 옵니다`,
+        ctaLabel: '착석 완료',
+        timerHint: `${HANDOFF_MOVE_START_THRESHOLD}역 전에 이동하라고 알려드려요`,
+        ctaEnabled: false,
+      }
+    }
+
     if (selfStatus === 'moving') {
       return {
-        banner: '2단계 · 이동 중',
+        banner: '2단계 · 지금 이동',
         headline: '지금 이동 중이에요',
         subline: '표시된 호차·출입문으로 가 주세요',
         ctaLabel: '착석 완료',
-        timerHint: '도착하면 착석 완료를 눌러 주세요',
+        timerHint: '도착하면 도착했어요를 눌러 주세요',
+        ctaEnabled: false,
       }
     }
 
     return {
-      banner: '2단계 · 이동',
-      headline: '이동을 시작해 주세요',
-      subline: '이동 시작 → 도착했어요 순서로 눌러 주세요',
+      banner: '2단계 · 지금 이동',
+      headline: '지금 이동하세요',
+      subline:
+        handoffRemaining != null
+          ? `${handoffStation} · ${handoffRemaining}역 전 · 지금 출발해 주세요`
+          : '표시된 호차·출입문으로 지금 이동해 주세요',
       ctaLabel: '착석 완료',
-      timerHint: '이동 후 착석 완료를 눌러 주세요',
+      timerHint: '이동 시작 → 도착했어요 순서로 눌러 주세요',
+      ctaEnabled: false,
+    }
+  }
+
+  if (!moveDue) {
+    return {
+      banner: '2단계 · 이동 대기',
+      headline: '착석 희망자 대기',
+      subline: `${waitText} ${handoffStation} 전에 이동 안내 예정`,
+      ctaLabel: '양보 완료',
+      timerHint: `${HANDOFF_MOVE_START_THRESHOLD}역 전에 착석 희망자에게 알려요`,
+      ctaEnabled: false,
     }
   }
 
@@ -138,14 +221,16 @@ export function resolveMatchedPhaseCopy(input: {
       subline: '자리를 지켜 주세요',
       ctaLabel: '양보 완료',
       timerHint: '착석 희망자가 도착할 때까지 기다려 주세요',
+      ctaEnabled: false,
     }
   }
 
   return {
-    banner: '2단계 · 이동',
-    headline: '착석 희망자 출발 대기',
-    subline: '착석 희망자가 이동을 시작하면 알려드려요',
+    banner: '2단계 · 이동 안내',
+    headline: '곧 착석 희망자가 옵니다',
+    subline: `${handoffRemaining ?? HANDOFF_MOVE_START_THRESHOLD}역 전 · 이동 안내를 보냈어요`,
     ctaLabel: '양보 완료',
-    timerHint: '착석 희망자 이동을 기다려 주세요',
+    timerHint: '착석 희망자가 문 옆으로 옵니다',
+    ctaEnabled: false,
   }
 }

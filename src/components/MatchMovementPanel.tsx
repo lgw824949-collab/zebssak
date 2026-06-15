@@ -1,6 +1,8 @@
 'use client'
 
 import type { MatchMovementPayload, MatchMovementStatus } from '@/lib/match-movement'
+import type { MatchFlowStep } from '@/lib/match-flow-steps'
+import { HANDOFF_MOVE_START_THRESHOLD, isHandoffMoveDue } from '@/lib/match-handoff-remaining'
 import {
   resolvePartnerMovementLabel,
   resolveSelfMovementLabel,
@@ -9,6 +11,7 @@ import {
 interface MatchMovementPanelProps {
   viewerRole: 'seeker' | 'provider'
   movement: MatchMovementPayload
+  flowStep?: MatchFlowStep
   isUpdating?: boolean
   onStartMoving?: () => void
   onArrived?: () => void
@@ -25,6 +28,7 @@ function formatRemainingStations(count: number | null): string {
 export default function MatchMovementPanel({
   viewerRole,
   movement,
+  flowStep,
   isUpdating = false,
   onStartMoving,
   onArrived,
@@ -35,6 +39,13 @@ export default function MatchMovementPanel({
   const partnerLabel = resolvePartnerMovementLabel(partner.status, partnerRole)
   const selfLabel = resolveSelfMovementLabel(self.status)
   const selfStatus = self.status
+  const handoffRemaining = routeGuide.handoff_remaining_stations
+  const moveDue = isHandoffMoveDue(handoffRemaining)
+  const isWaitingForHandoff = flowStep === 'wait'
+  const isSeatReady = flowStep === 'seat'
+  const isMovePrep = flowStep === 'move' && !moveDue
+  const isMoveNow = flowStep === 'move' && moveDue
+  const seekerCanMove = viewerRole === 'seeker' && moveDue && flowStep === 'move'
 
   return (
     <div className="rounded-2xl border border-[#D5DDB8] bg-white px-4 py-5 text-left shadow-[0_2px_10px_rgba(26,26,26,0.04)]">
@@ -42,13 +53,13 @@ export default function MatchMovementPanel({
 
       <div className="mt-4 flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold text-[#9CA3AF]">만나는 역</p>
+          <p className="text-[11px] font-semibold text-[#9CA3AF]">양보 역</p>
           <p className="mt-1 truncate text-[22px] font-bold leading-tight text-[#1A1A1A]">
             {routeGuide.handoff_station_name}
           </p>
         </div>
         <p className="shrink-0 text-[32px] font-extrabold leading-none text-[#747F00] tabular-nums">
-          {formatRemainingStations(routeGuide.handoff_remaining_stations)}
+          {formatRemainingStations(handoffRemaining)}
         </p>
       </div>
 
@@ -58,6 +69,41 @@ export default function MatchMovementPanel({
           {formatRemainingStations(routeGuide.self_remaining_stations)}
         </span>
       </p>
+
+      {isMovePrep ? (
+        <p className="mt-3 rounded-xl bg-[#F3F4F6] px-3 py-2.5 text-center text-[14px] font-semibold leading-snug text-[#4B5563]">
+          {viewerRole === 'seeker'
+            ? `${HANDOFF_MOVE_START_THRESHOLD}역 전에 이동 안내가 옵니다 · 아직 기다려 주세요`
+            : `${formatRemainingStations(handoffRemaining)} 후 착석 희망자에게 이동 안내`}
+        </p>
+      ) : null}
+
+      {isMoveNow && viewerRole === 'seeker' ? (
+        <p className="mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[15px] font-extrabold leading-snug text-[#8B6914]">
+          지금 이동하세요 · {routeGuide.handoff_station_name} {formatRemainingStations(handoffRemaining)} 전
+        </p>
+      ) : null}
+
+      {isMoveNow && viewerRole === 'provider' ? (
+        <p className="mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[14px] font-semibold leading-snug text-[#8B6914]">
+          착석 희망자에게 이동 안내를 보냈어요
+        </p>
+      ) : null}
+      {isWaitingForHandoff ? (
+        <p className="mt-3 rounded-xl bg-[#FFF8F0] px-3 py-2.5 text-center text-[14px] font-semibold leading-snug text-[#8B6914]">
+          {viewerRole === 'seeker'
+            ? '양보자가 내릴 때까지 문 옆에서 서서 기다려 주세요'
+            : `${formatRemainingStations(handoffRemaining)} 후 자리를 비워 주세요`}
+        </p>
+      ) : null}
+
+      {isSeatReady ? (
+        <p className="mt-3 rounded-xl bg-[#F0F5E8] px-3 py-2.5 text-center text-[14px] font-semibold leading-snug text-[#4A7C3F]">
+          {viewerRole === 'seeker'
+            ? '곧 앉을 수 있어요 · 양보자가 비우면 착석해 주세요'
+            : '곧 내릴 역이에요 · 자리를 비워 주세요'}
+        </p>
+      ) : null}
 
       <div
         className="mt-4 rounded-xl px-4 py-3.5 text-center"
@@ -78,7 +124,7 @@ export default function MatchMovementPanel({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              disabled={isUpdating || selfStatus === 'arrived'}
+              disabled={isUpdating || selfStatus === 'arrived' || !seekerCanMove}
               onClick={onStartMoving}
               className="rounded-xl border-2 border-[#D5DDB8] bg-white py-4 text-[16px] font-bold text-[#1A1A1A] transition active:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -86,7 +132,7 @@ export default function MatchMovementPanel({
             </button>
             <button
               type="button"
-              disabled={isUpdating || selfStatus === 'arrived'}
+              disabled={isUpdating || selfStatus === 'arrived' || !seekerCanMove}
               onClick={onArrived}
               className="rounded-xl py-4 text-[16px] font-bold text-white transition active:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               style={{ backgroundColor: '#747F00' }}
@@ -98,7 +144,11 @@ export default function MatchMovementPanel({
       ) : (
         <div className="mt-4 space-y-3">
           <p className="text-center text-[15px] font-medium text-[#6B7280]">
-            착석 희망자가 오면 알려드려요
+            {isWaitingForHandoff
+              ? '착석 희망자가 문 옆에서 기다리고 있어요'
+              : isSeatReady
+                ? '지금 양보해 주세요'
+                : '착석 희망자가 오면 알려드려요'}
           </p>
           <p className="rounded-xl bg-[#FFFBF5] px-3 py-2.5 text-center text-[14px] font-medium leading-snug text-[#7D6B52]">
             <span className="font-bold text-[#B8860B]">팁</span>

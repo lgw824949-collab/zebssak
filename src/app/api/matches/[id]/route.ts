@@ -13,6 +13,7 @@ import type {
   MatchMovementStatus,
   MatchRouteGuide,
 } from '@/lib/match-movement'
+import { resolveLiveHandoffRemainingStations } from '@/lib/match-handoff-remaining-server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
@@ -101,6 +102,7 @@ function buildRequestSummary(row: MatchRequestDetailRow) {
 }
 
 async function loadMatchMovementPayload(
+  request: Request,
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   matchId: string,
   userId: string,
@@ -150,12 +152,21 @@ async function loadMatchMovementPayload(
   const selfRole: 'seeker' | 'provider' =
     selfRow.request_type === 'leaving' ? 'provider' : 'seeker'
 
+  const leavingTrain = unwrapRelation(leavingRow.train)
+  const leavingDestination = unwrapRelation(leavingRow.destination_station)
+  const handoffRemaining = await resolveLiveHandoffRemainingStations(request, supabase, {
+    trainNo: leavingTrain?.train_no ?? null,
+    lineNumber:
+      typeof leavingTrain?.line_number === 'number' ? leavingTrain.line_number : null,
+    destinationStationCode: leavingDestination?.station_code ?? null,
+    destinationStationName: leavingDestination?.station_name ?? null,
+    fallbackRemaining: leavingRow.remaining_stations ?? null,
+  })
+
   const routeGuide: MatchRouteGuide = {
     handoff_station_name:
-      formatStationDisplayName(
-        unwrapRelation(leavingRow.destination_station)?.station_name
-      ) || '양보 역',
-    handoff_remaining_stations: leavingRow.remaining_stations ?? null,
+      formatStationDisplayName(leavingDestination?.station_name) || '양보 역',
+    handoff_remaining_stations: handoffRemaining,
     self_destination_name:
       formatStationDisplayName(
         unwrapRelation(selfRow.destination_station)?.station_name
@@ -481,6 +492,7 @@ export async function GET(
     }
 
     const movement = await loadMatchMovementPayload(
+      request,
       supabase,
       matchId,
       userId,

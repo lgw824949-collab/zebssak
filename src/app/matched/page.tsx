@@ -7,6 +7,7 @@ import {
   resolveMatchFlowStep,
   resolveMatchedPhaseCopy,
 } from '@/lib/match-flow-steps'
+import { isHandoffMoveDue } from '@/lib/match-handoff-remaining'
 import { clearMatchClientSession } from '@/lib/match-session'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -622,19 +623,25 @@ export default function MatchedPage() {
   const isSeeker = detail.viewer_role === 'seeker'
   const seatConfirmed =
     seatAnswer === true || detail.seat_confirmation?.seated === true
+  const handoffRemaining = detail.movement?.route_guide.handoff_remaining_stations ?? null
+  const handoffStationName = detail.movement?.route_guide.handoff_station_name
   const flowStep = resolveMatchFlowStep({
     matchStatus: detail.status,
     viewerRole: detail.viewer_role,
     selfMovementStatus: detail.movement?.self.status,
     partnerMovementStatus: detail.movement?.partner.status,
+    handoffRemainingStations: handoffRemaining,
     seatConfirmed,
   })
   const phaseCopy = resolveMatchedPhaseCopy({
     viewerRole: detail.viewer_role,
     step: flowStep,
+    handoffStationName,
+    handoffRemainingStations: handoffRemaining,
     selfMovementStatus: detail.movement?.self.status,
     partnerMovementStatus: detail.movement?.partner.status,
   })
+  const moveDue = isHandoffMoveDue(handoffRemaining)
   const isFlowDone = flowStep === 'done'
   const guide = isSeeker ? detail.partner : detail.self
   const seatsPerSection = seatsPerSectionFromStationCode(guide.destination_station_code)
@@ -727,6 +734,7 @@ export default function MatchedPage() {
           <MatchMovementPanel
             viewerRole={detail.viewer_role}
             movement={detail.movement}
+            flowStep={flowStep}
             isUpdating={isUpdatingMovement}
             onStartMoving={() => void submitMovementStatus('moving')}
             onArrived={() => void submitMovementStatus('arrived')}
@@ -795,7 +803,11 @@ export default function MatchedPage() {
         {/* CTA */}
         <button
           type="button"
-          disabled={isSubmittingSeat || (isSeeker && flowStep === 'move' && detail.movement?.self.status !== 'arrived')}
+          disabled={
+            isSubmittingSeat ||
+            !phaseCopy.ctaEnabled ||
+            (isSeeker && flowStep === 'move' && !moveDue)
+          }
           onClick={() => void handleSeatedComplete()}
           className="mt-1 w-full rounded-2xl py-4 text-[17px] font-bold text-white shadow-[0_10px_28px_rgba(116,127,0,0.35)] transition active:scale-[0.98] disabled:opacity-60"
           style={{
