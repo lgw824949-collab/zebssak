@@ -47,10 +47,10 @@ export function resolveHomeProgressStepLabels(
   registrationKind: 'seek' | 'leave'
 ): readonly [string, string, string] {
   if (registrationKind === 'leave') {
-    return ['매칭 완료', '양보 대기', '양보 완료']
+    return ['매칭', '대기', '완료']
   }
 
-  return ['매칭 완료', '이동 중', '착석 완료']
+  return ['매칭', '이동', '완료']
 }
 
 /** 역할·단계별 깜빡 안내 문구 */
@@ -63,52 +63,36 @@ export function resolveHomeProgressBlinkHint(input: {
   trainCurrentStationName?: string | null
 }): string {
   const currentStation = input.trainCurrentStationName?.trim()
-  const locationPrefix = currentStation ? `지금 ${currentStation}` : null
 
   if (input.matchCompleted) {
-    return input.registrationKind === 'leave'
-      ? '양보가 완료되었어요'
-      : '착석이 완료되었어요'
+    return input.registrationKind === 'leave' ? '양보 완료' : '착석 완료'
   }
 
   if (input.registrationKind === 'leave') {
     if (input.step === 'matched') {
-      return locationPrefix
-        ? `${locationPrefix} · 목적지 전까지 편히 앉아 주세요`
-        : '목적지 전까지 편히 앉아 주세요'
+      return currentStation ? `${currentStation} · 편히 앉기` : '편히 앉아 주세요'
     }
     if (input.step === 'moving') {
       if (input.flowStep === 'wait') {
-        return locationPrefix
-          ? `${locationPrefix} · 착석 희망자가 문 옆에서 기다려요`
-          : '착석 희망자가 문 옆에서 기다리고 있어요'
+        return '문 옆 대기 중'
       }
-      if (locationPrefix && input.handoffRemaining != null) {
-        return `${locationPrefix} · 양보 역까지 ${input.handoffRemaining}역`
-      }
-      return '착석 희망자가 이동 중이에요'
+      return '착석 희망자 이동 중'
     }
-    return '지금 양보해 주세요'
+    return '지금 양보'
   }
 
   if (input.step === 'matched') {
-    return locationPrefix
-      ? `${locationPrefix} · 수락 후 바로 이동해 주세요`
-      : '수락 후 바로 표시된 호차·출입문으로 이동해 주세요'
+    return '수락 후 바로 이동'
   }
 
   if (input.step === 'moving') {
     if (input.flowStep === 'wait') {
-      return locationPrefix
-        ? `${locationPrefix} · 양보자 내릴 때까지 문 옆에서 대기`
-        : '양보자가 내릴 때까지 문 옆에서 서서 기다려 주세요'
+      return '문 옆 대기'
     }
-    return locationPrefix
-      ? `${locationPrefix} · 지금 이동하세요`
-      : '지금 이동하세요 · 표시된 호차·출입문으로 가 주세요'
+    return '지금 이동'
   }
 
-  return '지금 앉아 주세요'
+  return '지금 앉기'
 }
 
 /** 홈 상단 배너 문구 */
@@ -132,7 +116,7 @@ export function resolveHomeRegistrationPurposeLine(
 ): string {
   const destination = destinationName || '목적지 미확인'
   if (registrationKind === 'leave') {
-    return `자리 넘기기 · ${destination}까지`
+    return `양보 · ${destination}`
   }
-  return `빈자리 찾기 · ${destination}까지`
+  return `착석 · ${destination}`
 }

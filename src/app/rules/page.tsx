@@ -12,8 +12,8 @@ const MATCHING_RULES = [
   { label: '참여', text: `목적지 필수 · 최소 ${MIN_PARTICIPATION_STATIONS}역 이상 남아야 함` },
   { label: '권장', text: MATCH_STATION_GUIDE.participationRules[1].text },
   { label: '매칭', text: MATCH_STATION_GUIDE.participationRules[2].text },
-  { label: '이동', text: '수락 후 바로 착석 희망자 이동 안내 (같은·옆 호차)' },
-  { label: '착석', text: '양보자가 내리기 전까지 문 옆 서서 대기' },
+  { label: '이동', text: '수락 후 바로 이동' },
+  { label: '착석', text: '문 옆 대기 후 착석' },
   { label: '우선순위', text: '교통약자 → 매너포인트 → 호차 거리 → 남은 역 → 요청 시각' },
   { label: '수락', text: '알림 후 30초 안에 수락' },
 ] as const

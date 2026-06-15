@@ -25,9 +25,9 @@ const GUIDE_STEPS = [
   {
     title: '매칭 후',
     lines: [
-      { label: '수락', text: '30초 안에 수락' },
-      { label: '이동', text: '수락 후 바로 호차·출입문으로 이동 (옆 호차 약 1분)' },
-      { label: '착석', text: '문 옆 대기 → 하차 직전 착석' },
+      { label: '수락', text: '30초 안에' },
+      { label: '이동', text: '수락 후 바로' },
+      { label: '착석', text: '문 옆 대기 → 착석' },
     ],
   },
 ] as const

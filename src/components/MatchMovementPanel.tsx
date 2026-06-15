@@ -51,13 +51,13 @@ export default function MatchMovementPanel({
 
   return (
     <div className="rounded-2xl border border-[#D5DDB8] bg-white px-4 py-5 text-left shadow-[0_2px_10px_rgba(26,26,26,0.04)]">
-      <h2 className="text-[17px] font-bold text-[#747F00]">이동 안내</h2>
+      <h2 className="text-[17px] font-bold text-[#747F00]">이동</h2>
 
       {showRouteContext ? (
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {routeGuide.train_current_station_name ? (
             <div className="rounded-xl bg-[#F7F8F2] px-3 py-2.5">
-              <p className="text-[11px] font-semibold text-[#9CA3AF]">열차 위치</p>
+              <p className="text-[11px] font-semibold text-[#9CA3AF]">위치</p>
               <p className="mt-1 text-[15px] font-bold text-[#1A1A1A]">
                 {routeGuide.train_current_station_name}
               </p>
@@ -65,7 +65,7 @@ export default function MatchMovementPanel({
           ) : null}
           {routeGuide.provider_direction_label ? (
             <div className="rounded-xl bg-[#F7F8F2] px-3 py-2.5">
-              <p className="text-[11px] font-semibold text-[#9CA3AF]">양보자 방향</p>
+              <p className="text-[11px] font-semibold text-[#9CA3AF]">방향</p>
               <p className="mt-1 text-[15px] font-bold text-[#747F00]">
                 {routeGuide.provider_direction_label}
               </p>
@@ -86,43 +86,29 @@ export default function MatchMovementPanel({
         </p>
       </div>
 
-      <p className="mt-3 text-[15px] font-medium text-[#6B7280]">
-        내 하차 · {routeGuide.self_destination_name}{' '}
-        <span className="font-bold text-[#374151]">
-          {formatRemainingStations(routeGuide.self_remaining_stations)}
-        </span>
-      </p>
-
       {isMoveNow && viewerRole === 'seeker' ? (
         <p
-          className="match-move-blink mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[16px] font-extrabold leading-snug text-[#8B6914]"
+          className="match-move-blink mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[16px] font-extrabold text-[#8B6914]"
           role="alert"
         >
-          지금 이동하세요
-          <span className="mt-1 block text-[14px] font-bold">
-            표시된 호차·출입문으로 이동해 주세요
-          </span>
+          지금 이동
         </p>
       ) : null}
 
       {isMoveNow && viewerRole === 'provider' ? (
-        <p className="mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[14px] font-semibold leading-snug text-[#8B6914]">
-          착석 희망자에게 이동 안내를 보냈어요 · 문 옆으로 옵니다
+        <p className="mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[14px] font-semibold text-[#8B6914]">
+          착석 희망자 이동 중
         </p>
       ) : null}
       {isWaitingForHandoff ? (
-        <p className="mt-3 rounded-xl bg-[#FFF8F0] px-3 py-2.5 text-center text-[14px] font-semibold leading-snug text-[#8B6914]">
-          {viewerRole === 'seeker'
-            ? '양보자가 내릴 때까지 문 옆에서 서서 기다려 주세요'
-            : `${formatRemainingStations(handoffRemaining)} 후 자리를 비워 주세요`}
+        <p className="mt-3 rounded-xl bg-[#FFF8F0] px-3 py-2.5 text-center text-[14px] font-semibold text-[#8B6914]">
+          {viewerRole === 'seeker' ? '문 옆 대기' : `${formatRemainingStations(handoffRemaining)} 후 양보`}
         </p>
       ) : null}
 
       {isSeatReady ? (
-        <p className="mt-3 rounded-xl bg-[#F0F5E8] px-3 py-2.5 text-center text-[14px] font-semibold leading-snug text-[#4A7C3F]">
-          {viewerRole === 'seeker'
-            ? '곧 앉을 수 있어요 · 양보자가 비우면 착석해 주세요'
-            : '곧 내릴 역이에요 · 자리를 비워 주세요'}
+        <p className="mt-3 rounded-xl bg-[#F0F5E8] px-3 py-2.5 text-center text-[14px] font-semibold text-[#4A7C3F]">
+          {viewerRole === 'seeker' ? '지금 앉기' : '지금 양보'}
         </p>
       ) : null}
 
@@ -163,20 +149,13 @@ export default function MatchMovementPanel({
           </div>
         </div>
       ) : (
-        <div className="mt-4 space-y-3">
-          <p className="text-center text-[15px] font-medium text-[#6B7280]">
-            {isWaitingForHandoff
-              ? '착석 희망자가 문 옆에서 기다리고 있어요'
-              : isSeatReady
-                ? '지금 양보해 주세요'
-                : '착석 희망자가 오면 알려드려요'}
-          </p>
-          <p className="rounded-xl bg-[#FFFBF5] px-3 py-2.5 text-center text-[14px] font-medium leading-snug text-[#7D6B52]">
-            <span className="font-bold text-[#B8860B]">팁</span>
-            {' · '}
-            앞에 사람이 있으면 양보가 불편할 수 있어요
-          </p>
-        </div>
+        <p className="mt-4 text-center text-[15px] font-medium text-[#6B7280]">
+          {isWaitingForHandoff
+            ? '문 옆 대기 중'
+            : isSeatReady
+              ? '지금 양보'
+              : '이동 대기'}
+        </p>
       )}
 
       <style jsx>{`

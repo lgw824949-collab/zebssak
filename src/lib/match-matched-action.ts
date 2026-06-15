@@ -28,23 +28,24 @@ function formatHandoffRemaining(count: number | null | undefined): string {
   return `${count}역 후`
 }
 
-/** 매칭 후 화면 — 지금 할 일 하나만 (버튼 없으면 대기 안내) */
+/** 매칭 후 화면 — 지금 할 일 하나만 */
 export function resolveMatchedUserAction(input: {
   viewerRole: 'seeker' | 'provider'
   step: MatchFlowStep
   handoffStationName?: string
   handoffRemainingStations?: number | null
   selfMovementStatus?: MatchMovementStatus
+  partnerMovementStatus?: MatchMovementStatus
   selfCarNumber?: number | null
   targetCarNumber?: number | null
   targetDoorLabel?: string | null
   locationLine?: string | null
-  trainCurrentStationName?: string | null
 }): MatchedUserAction {
   const handoffStation = input.handoffStationName?.trim() || '양보 역'
   const remainingText = formatHandoffRemaining(input.handoffRemainingStations)
   const selfStatus = input.selfMovementStatus ?? 'idle'
-  const movementLocationLine =
+  const partnerStatus = input.partnerMovementStatus ?? 'idle'
+  const locationHint =
     resolveSeekerMovementLocationLine({
       selfCarNumber: input.selfCarNumber,
       targetCarNumber: input.targetCarNumber,
@@ -52,18 +53,18 @@ export function resolveMatchedUserAction(input: {
     }) ??
     input.locationLine?.trim() ??
     null
-  const locationHint = movementLocationLine
-  const currentStation = input.trainCurrentStationName?.trim() || null
-  const liveLocationDetail = currentStation ? `지금 ${currentStation}` : null
+
+  const routeDetail = (station: string) =>
+    locationHint ? `${locationHint} · ${station}` : station
 
   if (input.step === 'done') {
     const isSeeker = input.viewerRole === 'seeker'
     return {
       kind: 'go_home',
-      stepLabel: '5단계 · 완료',
+      stepLabel: '완료',
       headline: isSeeker ? '착석 완료' : '양보 완료',
-      detail: '이용이 끝났어요',
-      instruction: '잠시 후 홈으로 이동합니다',
+      detail: '',
+      instruction: '',
       buttonLabel: '홈으로',
       blink: false,
       afterClickMessage: null,
@@ -75,28 +76,26 @@ export function resolveMatchedUserAction(input: {
     if (input.viewerRole === 'seeker') {
       return {
         kind: 'seat_confirm',
-        stepLabel: '4단계 · 착석',
-        headline: '지금 앉아 주세요',
-        detail: `${handoffStation} · 양보자가 비워 주는 자리예요`,
-        instruction: '앉은 뒤 아래 버튼을 눌러 주세요',
+        stepLabel: '착석',
+        headline: '지금 앉기',
+        detail: routeDetail(handoffStation),
+        instruction: '',
         buttonLabel: '착석 완료',
         blink: true,
-        afterClickMessage: '착석 완료! 홈으로 이동합니다',
+        afterClickMessage: null,
         locationHint,
       }
     }
 
     return {
       kind: 'yield_confirm',
-      stepLabel: '4단계 · 착석',
-      headline: '지금 양보해 주세요',
-      detail: locationHint
-        ? `착석 희망자가 ${locationHint} 문 옆에서 기다려요`
-        : '착석 희망자가 문 옆에서 기다리고 있어요',
-      instruction: '일어서서 자리를 비운 뒤 버튼을 눌러 주세요',
+      stepLabel: '착석',
+      headline: '지금 양보',
+      detail: locationHint ? `${locationHint} 문 옆` : handoffStation,
+      instruction: '',
       buttonLabel: '양보 완료',
       blink: true,
-      afterClickMessage: '양보 완료! 홈으로 이동합니다',
+      afterClickMessage: null,
       locationHint,
     }
   }
@@ -105,10 +104,12 @@ export function resolveMatchedUserAction(input: {
     if (input.viewerRole === 'seeker') {
       return {
         kind: 'wait',
-        stepLabel: '3단계 · 대기',
-        headline: '문 옆에서 서서 기다리세요',
-        detail: `${handoffStation} · ${remainingText || '곧'} 양보자가 내려요`,
-        instruction: '아직 앉지 마세요 · 양보자가 내리면 착석 안내가 옵니다',
+        stepLabel: '대기',
+        headline: '문 옆 대기',
+        detail: routeDetail(
+          remainingText ? `${handoffStation} · ${remainingText}` : handoffStation
+        ),
+        instruction: '아직 앉지 마세요',
         buttonLabel: null,
         blink: false,
         afterClickMessage: null,
@@ -118,10 +119,10 @@ export function resolveMatchedUserAction(input: {
 
     return {
       kind: 'wait',
-      stepLabel: '3단계 · 대기',
-      headline: '착석 희망자가 문 옆에 있어요',
-      detail: `${remainingText || '곧'} ${handoffStation}에서 내리면 돼요`,
-      instruction: '지금은 편히 앉아 주세요 · 하차 직전에 양보 안내가 옵니다',
+      stepLabel: '대기',
+      headline: '문 옆 대기 중',
+      detail: locationHint ?? (remainingText ? `${handoffStation} · ${remainingText}` : handoffStation),
+      instruction: '',
       buttonLabel: null,
       blink: false,
       afterClickMessage: null,
@@ -133,42 +134,38 @@ export function resolveMatchedUserAction(input: {
     if (selfStatus === 'moving') {
       return {
         kind: 'move_arrive',
-        stepLabel: '2단계 · 이동 중',
-        headline: '호차로 가고 있나요?',
-        detail: locationHint
-          ? `${locationHint} 문 옆으로 이동해 주세요`
-          : '표시된 출입문으로 이동해 주세요',
-        instruction: '도착했으면 아래 버튼을 눌러 주세요',
+        stepLabel: '이동',
+        headline: '이동 중',
+        detail: routeDetail(handoffStation),
+        instruction: '',
         buttonLabel: '도착했어요',
         blink: true,
-        afterClickMessage: '다음 단계 · 양보자가 내릴 때까지 문 옆에서 서서 기다려 주세요',
+        afterClickMessage: null,
         locationHint,
       }
     }
 
     return {
       kind: 'move_start',
-      stepLabel: '2단계 · 지금 이동',
-      headline: '지금 이동하세요',
-      detail: locationHint
-        ? `${locationHint} · ${handoffStation} 양보 예정`
-        : `${handoffStation} · 표시된 호차·출입문으로 이동해 주세요`,
-      instruction: '옆 호차면 약 1분 · 이동 시작을 눌러 주세요',
+      stepLabel: '이동',
+      headline: '지금 이동',
+      detail: routeDetail(handoffStation),
+      instruction: '',
       buttonLabel: '이동 시작',
       blink: true,
-      afterClickMessage: '다음 · 도착하면 「도착했어요」를 눌러 주세요',
+      afterClickMessage: null,
       locationHint,
     }
   }
 
   return {
     kind: 'wait',
-    stepLabel: '2단계 · 이동 중',
-    headline: '착석 희망자가 오고 있어요',
-    detail: liveLocationDetail
-      ? `${liveLocationDetail} · ${handoffStation}까지 ${remainingText || '조금 후'}`
-      : `${remainingText || '곧'} ${handoffStation}에서 양보 예정`,
-    instruction: '자리를 지켜 주세요 · 착석 희망자가 문 옆으로 옵니다',
+    stepLabel: '이동',
+    headline: partnerStatus === 'moving' ? '이동 중' : '착석 희망자 대기',
+    detail: routeDetail(
+      remainingText ? `${handoffStation} · ${remainingText}` : handoffStation
+    ),
+    instruction: '',
     buttonLabel: null,
     blink: false,
     afterClickMessage: null,

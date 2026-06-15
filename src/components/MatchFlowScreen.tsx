@@ -39,6 +39,8 @@ export default function MatchFlowScreen({
   const directionLabel = providerDirectionLabel?.trim() || null
   const showLiveTrain =
     flowStep !== 'done' && (Boolean(currentStation) || Boolean(directionLabel))
+  const statusText = transitionMessage ?? action.instruction
+  const showStatus = Boolean(statusText) && (showButton || action.kind === 'wait')
 
   return (
     <div className="flex flex-col gap-3">
@@ -47,9 +49,12 @@ export default function MatchFlowScreen({
         <h1 className="mt-2 text-center text-[24px] font-extrabold leading-tight text-[#1A1A1A]">
           {action.headline}
         </h1>
-        <p className="mt-2 text-center text-[15px] font-medium leading-snug text-[#6B7280]">
-          {action.detail}
-        </p>
+
+        {action.detail ? (
+          <p className="mt-2 text-center text-[15px] font-medium leading-snug text-[#6B7280]">
+            {action.detail}
+          </p>
+        ) : null}
 
         {showLiveTrain ? (
           <div
@@ -57,13 +62,13 @@ export default function MatchFlowScreen({
           >
             {currentStation ? (
               <div className="rounded-xl bg-[#F7F8F2] px-3 py-2.5 text-center">
-                <p className="text-[11px] font-semibold text-[#9CA3AF]">열차 현재 위치</p>
+                <p className="text-[11px] font-semibold text-[#9CA3AF]">현재 위치</p>
                 <p className="mt-1 text-[16px] font-extrabold text-[#1A1A1A]">{currentStation}</p>
               </div>
             ) : null}
             {directionLabel ? (
               <div className="rounded-xl bg-[#F7F8F2] px-3 py-2.5 text-center">
-                <p className="text-[11px] font-semibold text-[#9CA3AF]">이동 방향</p>
+                <p className="text-[11px] font-semibold text-[#9CA3AF]">방향</p>
                 <p className="mt-1 text-[15px] font-extrabold text-[#747F00]">{directionLabel}</p>
               </div>
             ) : null}
@@ -76,25 +81,21 @@ export default function MatchFlowScreen({
               {remainingLabel}
             </p>
             <p className="mt-1 text-[12px] font-semibold text-[#9CA3AF]">
-              {positionIsLive ? '양보 역까지 (실시간)' : '양보 역까지 (등록 기준 · 위치 연결 중)'}
+              {positionIsLive ? '실시간' : '등록 기준'}
             </p>
           </div>
         ) : null}
 
-        <p
-          className={`mt-4 rounded-xl px-4 py-3.5 text-center text-[15px] font-bold leading-snug ${
-            action.blink && !transitionMessage
-              ? 'match-flow-blink bg-[#FFF3CD] text-[#8B6914]'
-              : 'bg-[#F7F8F2] text-[#4A5219]'
-          }`}
-          role="status"
-        >
-          {transitionMessage ?? action.instruction}
-        </p>
-
-        {action.locationHint && !transitionMessage ? (
-          <p className="mt-3 text-center text-[16px] font-extrabold text-[#374151]">
-            {action.locationHint}
+        {showStatus ? (
+          <p
+            className={`mt-4 rounded-xl px-4 py-3.5 text-center text-[15px] font-bold leading-snug ${
+              action.blink && !transitionMessage && showButton
+                ? 'match-flow-blink bg-[#FFF3CD] text-[#8B6914]'
+                : 'bg-[#F7F8F2] text-[#4A5219]'
+            }`}
+            role="status"
+          >
+            {statusText}
           </p>
         ) : null}
       </div>
@@ -113,18 +114,7 @@ export default function MatchFlowScreen({
         >
           {isSubmitting ? '처리 중...' : action.buttonLabel}
         </button>
-      ) : (
-        <div
-          className="rounded-2xl border border-dashed border-[#D5DDB8] bg-[#FAFBF7] px-4 py-3.5 text-center text-[14px] font-semibold text-[#6B7280]"
-          role="status"
-        >
-          {action.kind === 'wait'
-            ? positionIsLive
-              ? '열차가 이동 중이에요 · 역이 바뀌면 안내가 업데이트됩니다'
-              : '실시간 위치를 불러오는 중이에요 · 잠시만 기다려 주세요'
-            : '지금은 기다리는 단계예요 · 안내가 바뀌면 버튼이 나타납니다'}
-        </div>
-      )}
+      ) : null}
 
       {children}
 
