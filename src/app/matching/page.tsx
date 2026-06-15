@@ -138,12 +138,7 @@ function MatchingForm() {
   const actionHandledRef = useRef(false)
   const acceptNavigateScheduledRef = useRef(false)
 
-  /** 거절·이탈 시 매칭 세션 정리 */
-  const clearActiveMatchSession = useCallback(() => {
-    sessionStorage.removeItem('activeMatchId')
-  }, [])
-
-  /** 거절 시 등록 관련 session 전체 정리 */
+  /** 거절·이탈 시 등록 관련 session 전체 정리 */
   const clearMatchRegistrationSession = useCallback(() => {
     clearMatchClientSession()
   }, [])
@@ -196,18 +191,15 @@ function MatchingForm() {
     [router]
   )
 
-  /** pending이 아닌 매칭 — 토스트 후 대기 화면으로 이동 */
-  const handleMatchStatusConflict = useCallback(
-    (message: string) => {
-      setToastMessage(message)
-      setIsDismissed(true)
-      clearActiveMatchSession()
-      window.setTimeout(() => {
-        goToWaiting()
-      }, MATCH_STATUS_CONFLICT_REDIRECT_MS)
-    },
-    [clearActiveMatchSession, goToWaiting]
-  )
+  /** pending이 아닌 매칭 — 토스트 후 홈으로 이동 */
+  const handleMatchStatusConflict = useCallback((message: string) => {
+    setToastMessage(message)
+    setIsDismissed(true)
+    clearMatchRegistrationSession()
+    window.setTimeout(() => {
+      window.location.href = '/'
+    }, MATCH_STATUS_CONFLICT_REDIRECT_MS)
+  }, [clearMatchRegistrationSession])
 
   const expireMatchOnTimeout = useCallback(async () => {
     if (expireRequestedRef.current || actionHandledRef.current) {
@@ -296,8 +288,21 @@ function MatchingForm() {
           setMovement(result.data.movement)
         }
 
-        if (result.data.status === 'accepted') {
+        const matchStatus = result.data.status
+
+        if (matchStatus === 'accepted') {
           goToMatched(resolvedMatchId)
+          return
+        }
+
+        if (matchStatus === 'cancelled' || matchStatus === 'expired') {
+          clearMatchRegistrationSession()
+          window.location.href = '/'
+          return
+        }
+
+        if (matchStatus !== 'pending') {
+          handleMatchStatusConflict('처리할 수 없는 매칭 상태입니다.')
           return
         }
 
@@ -335,7 +340,7 @@ function MatchingForm() {
       cancelled = true
       window.clearInterval(timerId)
     }
-  }, [goToMatched, router, searchParams])
+  }, [clearMatchRegistrationSession, goToMatched, handleMatchStatusConflict, router, searchParams])
 
   const submitMovementStatus = useCallback(
     async (status: 'moving' | 'arrived') => {

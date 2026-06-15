@@ -893,8 +893,19 @@ export default function WaitingPage() {
           authToken,
           (matchId) => {
             if (cancelled) return
-            sessionStorage.setItem('activeMatchId', matchId)
-            router.replace('/matching')
+            void (async () => {
+              const navigationTarget = await resolveActiveMatchNavigationTarget(
+                authToken,
+                matchId,
+                requestId,
+                abortController.signal
+              )
+              if (cancelled || navigationTarget !== 'matching') {
+                return
+              }
+              sessionStorage.setItem('activeMatchId', matchId)
+              router.replace('/matching')
+            })()
           },
           (message) => {
             if (cancelled) return

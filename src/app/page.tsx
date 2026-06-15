@@ -12,6 +12,7 @@ import {
   type CongestionStatus,
 } from '@/lib/congestion'
 import { formatStationDisplayName } from '@/lib/match-display'
+import { resolveActiveMatchNavigationTarget } from '@/lib/match-session'
 import {
   isSubwayOperatingHours,
   SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE,
@@ -1005,12 +1006,37 @@ export default function Home() {
     }
 
     if (homeWaitView.phase === 'match_alert' && homeWaitView.matchId) {
-      try {
-        sessionStorage.setItem('activeMatchId', homeWaitView.matchId)
-      } catch {
-        // sessionStorage 실패 시에도 매칭 화면으로 이동합니다.
+      const token = localStorage.getItem('token')
+      if (!token) {
+        router.push('/login')
+        return
       }
-      router.push('/matching')
+
+      void (async () => {
+        const navigationTarget = await resolveActiveMatchNavigationTarget(
+          token,
+          homeWaitView.matchId as string,
+          homeWaitView.requestId
+        )
+
+        if (navigationTarget === 'matching') {
+          try {
+            sessionStorage.setItem('activeMatchId', homeWaitView.matchId as string)
+          } catch {
+            // sessionStorage 실패 시에도 매칭 화면으로 이동합니다.
+          }
+          router.push('/matching')
+          return
+        }
+
+        if (navigationTarget === 'matched') {
+          router.push('/matched')
+          return
+        }
+
+        clearHomeMatchSession()
+        setHomeWaitView(null)
+      })()
       return
     }
 
