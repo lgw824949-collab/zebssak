@@ -600,8 +600,8 @@ export default function MatchedPage() {
 
   return (
     <div className="min-h-dvh bg-[#f6f7f2] pb-8">
-      <p className="mx-4 mt-4 rounded-xl bg-[#f0f5e8] px-4 py-3 text-center text-sm font-medium text-[#4a7c3f]">
-        매칭이 완료됐어요! 아래 좌석으로 이동해주세요 🚇
+      <p className="mx-4 mt-4 rounded-xl bg-[#f0f5e8] px-4 py-3 text-center text-[16px] font-semibold text-[#4a7c3f]">
+        아래 좌석으로 이동해 주세요
       </p>
       {/* 상단 히어로 */}
       <div
@@ -676,13 +676,11 @@ export default function MatchedPage() {
             {infoItems.map((item) => (
               <div
                 key={item.label}
-                className="rounded-xl px-1 py-2.5 text-center"
+                className="rounded-xl px-1 py-3 text-center"
                 style={{ backgroundColor: LINE7_GLOW }}
               >
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
-                  {item.label}
-                </p>
-                <p className="mt-1 text-[15px] font-bold leading-tight text-[#1A1A1A]">
+                <p className="text-[12px] font-bold text-[#6B7280]">{item.label}</p>
+                <p className="mt-1.5 text-[18px] font-extrabold leading-tight text-[#1A1A1A]">
                   {item.value}
                 </p>
               </div>
@@ -718,11 +716,9 @@ export default function MatchedPage() {
         <div className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
           <CountdownRing secondsLeft={secondsLeft} total={COUNTDOWN_SECONDS} />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-[#1A1A1A]">착석까지 남은 시간</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-[#6B7280]">
-              {secondsLeft <= 60
-                ? '곧 시간이 만료됩니다. 빠르게 착석해 주세요.'
-                : '표시된 출입문·열로 이동한 뒤 착석 완료를 눌러 주세요.'}
+            <p className="text-[16px] font-bold text-[#1A1A1A]">착석 남은 시간</p>
+            <p className="mt-1 text-[14px] font-medium text-[#6B7280]">
+              {secondsLeft <= 60 ? '서둘러 착석해 주세요' : '이동 후 착석 완료를 눌러 주세요'}
             </p>
           </div>
         </div>

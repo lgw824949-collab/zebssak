@@ -24,18 +24,18 @@ export function resolvePartnerMovementLabel(
   partnerRole: 'seeker' | 'provider'
 ): string {
   if (partnerRole === 'provider') {
-    return '양보자가 자리 대기 중입니다'
+    return '양보자 대기 중'
   }
 
   if (status === 'moving') {
-    return '찾는 분이 이동 중입니다'
+    return '찾는 분 · 이동 중'
   }
 
   if (status === 'arrived') {
-    return '찾는 분이 도착했습니다'
+    return '찾는 분 · 도착'
   }
 
-  return '찾는 분이 아직 출발 전입니다'
+  return '찾는 분 · 출발 전'
 }
 
 /** 본인 이동 상태 한글 라벨 */
