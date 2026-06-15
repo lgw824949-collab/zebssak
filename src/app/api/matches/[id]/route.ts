@@ -7,6 +7,12 @@ import {
   lineLabelFromStationCode,
   seatsPerSectionFromStationCode,
 } from '@/lib/match-display'
+import type {
+  MatchMovementPayload,
+  MatchMovementState,
+  MatchMovementStatus,
+  MatchRouteGuide,
+} from '@/lib/match-movement'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
@@ -91,6 +97,76 @@ function buildRequestSummary(row: MatchRequestDetailRow) {
     line_label: lineLabelFromStationCode(stationCode),
     destination_station_name: formatStationDisplayName(destination?.station_name),
     destination_station_code: stationCode,
+  }
+}
+
+async function loadMatchMovementPayload(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  matchId: string,
+  userId: string,
+  seatSeekRow: MatchRequestDetailRow,
+  leavingRow: MatchRequestDetailRow
+): Promise<MatchMovementPayload> {
+  const isSeeker = seatSeekRow.user_id === userId
+  const selfRow = isSeeker ? seatSeekRow : leavingRow
+  const partnerRow = isSeeker ? leavingRow : seatSeekRow
+
+  const { data: movementRows, error: movementError } = await supabase
+    .from('match_movement_status')
+    .select('user_id, status, updated_at')
+    .eq('match_id', matchId)
+
+  const rowByUser = new Map<string, MatchMovementState>()
+  if (!movementError && movementRows) {
+    for (const row of movementRows) {
+      const status = row.status as MatchMovementStatus
+      if (status === 'idle' || status === 'moving' || status === 'arrived') {
+        rowByUser.set(row.user_id as string, {
+          status,
+          updated_at: String(row.updated_at),
+        })
+      }
+    }
+  }
+
+  const resolveState = (
+    targetUserId: string,
+    role: 'seeker' | 'provider'
+  ): MatchMovementState => {
+    const stored = rowByUser.get(targetUserId)
+    if (stored) {
+      return stored
+    }
+
+    if (role === 'provider') {
+      return { status: 'idle', updated_at: null }
+    }
+
+    return { status: 'idle', updated_at: null }
+  }
+
+  const partnerRole: 'seeker' | 'provider' =
+    partnerRow.request_type === 'leaving' ? 'provider' : 'seeker'
+  const selfRole: 'seeker' | 'provider' =
+    selfRow.request_type === 'leaving' ? 'provider' : 'seeker'
+
+  const routeGuide: MatchRouteGuide = {
+    handoff_station_name:
+      formatStationDisplayName(
+        unwrapRelation(leavingRow.destination_station)?.station_name
+      ) || '양보 역',
+    handoff_remaining_stations: leavingRow.remaining_stations ?? null,
+    self_destination_name:
+      formatStationDisplayName(
+        unwrapRelation(selfRow.destination_station)?.station_name
+      ) || '목적지',
+    self_remaining_stations: selfRow.remaining_stations ?? null,
+  }
+
+  return {
+    self: resolveState(selfRow.user_id, selfRole),
+    partner: resolveState(partnerRow.user_id, partnerRole),
+    route_guide: routeGuide,
   }
 }
 
@@ -404,6 +480,14 @@ export async function GET(
       }
     }
 
+    const movement = await loadMatchMovementPayload(
+      supabase,
+      matchId,
+      userId,
+      seatSeekRow,
+      leavingRow
+    )
+
     return NextResponse.json({
       success: true,
       data: {
@@ -413,6 +497,7 @@ export async function GET(
         partner: buildRequestSummary(partnerRow),
         self: buildRequestSummary(selfRow),
         seat_confirmation,
+        movement,
       },
     })
   } catch {

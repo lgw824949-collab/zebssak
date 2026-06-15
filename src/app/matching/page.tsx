@@ -1,10 +1,13 @@
 'use client'
 
+import MatchMovementPanel from '@/components/MatchMovementPanel'
+import type { MatchMovementPayload } from '@/lib/match-movement'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 const MATCH_TIMEOUT_SECONDS = 30
 const PENDING_MATCH_POLL_MS = 2000
+const MATCH_MOVEMENT_POLL_MS = 3000
 const MATCH_STATUS_CONFLICT_REDIRECT_MS = 1200
 
 interface MatchGuideState {
@@ -129,6 +132,8 @@ function MatchingForm() {
   const [isDismissed, setIsDismissed] = useState(false)
   const [isNavigatingToMatched, setIsNavigatingToMatched] = useState(false)
   const [isNavigatingHome, setIsNavigatingHome] = useState(false)
+  const [movement, setMovement] = useState<MatchMovementPayload | null>(null)
+  const [isUpdatingMovement, setIsUpdatingMovement] = useState(false)
   const expireRequestedRef = useRef(false)
   const actionHandledRef = useRef(false)
   const acceptNavigateScheduledRef = useRef(false)
@@ -221,19 +226,32 @@ function MatchingForm() {
     }
 
     const matchId = resolveMatchId(searchParams.get('matchId'))
+    if (!matchId) {
+      return
+    }
+    const resolvedMatchId = matchId
 
-    async function loadPartnerGuide() {
-      if (!matchId) return
+    let cancelled = false
+
+    async function refreshMatchDetail() {
+      if (cancelled) {
+        return
+      }
 
       try {
-        const response = await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const response = await fetch(
+          `/api/matches/${encodeURIComponent(resolvedMatchId)}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }
+        )
         const result = (await response.json()) as {
           success?: boolean
           data?: {
             status?: string
             viewer_role?: 'seeker' | 'provider'
+            movement?: MatchMovementPayload
             partner?: {
               car_number?: number | null
               car_door_short?: string | null
@@ -258,8 +276,12 @@ function MatchingForm() {
           setViewerRole(role)
         }
 
+        if (result.data.movement) {
+          setMovement(result.data.movement)
+        }
+
         if (result.data.status === 'accepted') {
-          goToMatched(matchId)
+          goToMatched(resolvedMatchId)
           return
         }
 
@@ -288,8 +310,71 @@ function MatchingForm() {
       }
     }
 
-    void loadPartnerGuide()
+    void refreshMatchDetail()
+    const timerId = window.setInterval(() => {
+      void refreshMatchDetail()
+    }, MATCH_MOVEMENT_POLL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timerId)
+    }
   }, [goToMatched, router, searchParams])
+
+  const submitMovementStatus = useCallback(
+    async (status: 'moving' | 'arrived') => {
+      const token = localStorage.getItem('token')
+      const matchId = resolveMatchId(searchParams.get('matchId'))
+
+      if (!token || !matchId || viewerRole !== 'seeker') {
+        return
+      }
+
+      setIsUpdatingMovement(true)
+
+      try {
+        const response = await fetch(
+          `/api/matches/${encodeURIComponent(matchId)}/movement-status`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ status }),
+          }
+        )
+
+        const result = (await response.json()) as {
+          success?: boolean
+          data?: { status?: 'moving' | 'arrived' }
+        }
+
+        if (!response.ok || !result.success || !result.data?.status) {
+          setActionError('이동 상태 전송에 실패했습니다.')
+          return
+        }
+
+        setMovement((prev) =>
+          prev
+            ? {
+                ...prev,
+                self: {
+                  status: result.data!.status!,
+                  updated_at: new Date().toISOString(),
+                },
+              }
+            : prev
+        )
+        setActionError('')
+      } catch {
+        setActionError('이동 상태 전송 중 오류가 발생했습니다.')
+      } finally {
+        setIsUpdatingMovement(false)
+      }
+    },
+    [searchParams, viewerRole]
+  )
 
   // sessionStorage에 matchId만 있을 때 URL을 맞춥니다.
   useEffect(() => {
@@ -672,6 +757,18 @@ function MatchingForm() {
               </p>
             ) : null}
           </div>
+
+          {movement && viewerRole ? (
+            <div className="mt-6 text-left">
+              <MatchMovementPanel
+                viewerRole={viewerRole}
+                movement={movement}
+                isUpdating={isUpdatingMovement}
+                onStartMoving={() => void submitMovementStatus('moving')}
+                onArrived={() => void submitMovementStatus('arrived')}
+              />
+            </div>
+          ) : null}
 
           <div className="mt-8">
             <p className="zeb-label" style={{ marginBottom: '0.5rem' }}>

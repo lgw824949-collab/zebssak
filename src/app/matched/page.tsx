@@ -1,9 +1,12 @@
 'use client'
 
+import MatchMovementPanel from '@/components/MatchMovementPanel'
+import type { MatchMovementPayload } from '@/lib/match-movement'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 const COUNTDOWN_SECONDS = 180
+const MATCH_MOVEMENT_POLL_MS = 3000
 const HOME_MATCH_COMPLETED_HINT_KEY = 'homeMatchCompletedHint'
 /** 서울 7호선 브랜드 */
 const LINE7_PRIMARY = '#747F00'
@@ -32,6 +35,7 @@ interface MatchDetail {
   viewer_role: 'seeker' | 'provider'
   partner: RequestSummary
   self: RequestSummary
+  movement?: MatchMovementPayload
   seat_confirmation?: { seated: boolean; created_at: string } | null
 }
 
@@ -330,6 +334,49 @@ export default function MatchedPage() {
   const [isSubmittingSeat, setIsSubmittingSeat] = useState(false)
   const [seatSubmitError, setSeatSubmitError] = useState('')
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS)
+  const [isUpdatingMovement, setIsUpdatingMovement] = useState(false)
+  const [movementError, setMovementError] = useState('')
+
+  const loadMatchDetail = useCallback(
+    async (
+      matchId: string,
+      token: string,
+      options?: { signal?: AbortSignal; silent?: boolean }
+    ) => {
+      try {
+        const response = await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+          signal: options?.signal,
+        })
+
+        const result = (await response.json()) as {
+          success?: boolean
+          error?: string
+          data?: MatchDetail
+        }
+
+        if (!response.ok || !result.success || !result.data) {
+          if (!options?.silent) {
+            setError(result.error ?? '매칭 결과를 불러올 수 없습니다.')
+          }
+          return
+        }
+
+        setError('')
+        setDetail(result.data)
+        if (result.data.seat_confirmation) {
+          setSeatAnswer(result.data.seat_confirmation.seated)
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
+        if (!options?.silent) {
+          setError('네트워크 오류가 발생했습니다.')
+        }
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -347,38 +394,75 @@ export default function MatchedPage() {
 
     const abortController = new AbortController()
 
-    async function loadMatchDetail() {
+    void loadMatchDetail(matchId, token, { signal: abortController.signal })
+
+    const timerId = window.setInterval(() => {
+      void loadMatchDetail(matchId, token, { silent: true })
+    }, MATCH_MOVEMENT_POLL_MS)
+
+    return () => {
+      abortController.abort()
+      window.clearInterval(timerId)
+    }
+  }, [loadMatchDetail, router])
+
+  const submitMovementStatus = useCallback(
+    async (status: 'moving' | 'arrived') => {
+      const token = localStorage.getItem('token')
+      const matchId = resolveMatchId()
+
+      if (!token || !matchId || detail?.viewer_role !== 'seeker') {
+        return
+      }
+
+      setIsUpdatingMovement(true)
+
       try {
-        const response = await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: abortController.signal,
-        })
+        const response = await fetch(
+          `/api/matches/${encodeURIComponent(matchId)}/movement-status`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ status }),
+          }
+        )
 
         const result = (await response.json()) as {
           success?: boolean
-          error?: string
-          data?: MatchDetail
+          data?: { status?: 'moving' | 'arrived' }
         }
 
-        if (!response.ok || !result.success || !result.data) {
-          setError(result.error ?? '매칭 결과를 불러올 수 없습니다.')
+        if (!response.ok || !result.success || !result.data?.status) {
+          setMovementError('이동 상태 전송에 실패했습니다.')
           return
         }
 
-        setDetail(result.data)
-        if (result.data.seat_confirmation) {
-          setSeatAnswer(result.data.seat_confirmation.seated)
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return
-        setError('네트워크 오류가 발생했습니다.')
+        setDetail((prev) =>
+          prev?.movement
+            ? {
+                ...prev,
+                movement: {
+                  ...prev.movement,
+                  self: {
+                    status: result.data!.status!,
+                    updated_at: new Date().toISOString(),
+                  },
+                },
+              }
+            : prev
+        )
+        setMovementError('')
+      } catch {
+        setMovementError('이동 상태 전송 중 오류가 발생했습니다.')
+      } finally {
+        setIsUpdatingMovement(false)
       }
-    }
-
-    void loadMatchDetail()
-
-    return () => abortController.abort()
-  }, [router])
+    },
+    [detail?.viewer_role]
+  )
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -572,6 +656,20 @@ export default function MatchedPage() {
       </div>
 
       <main className="relative z-[1] mx-auto -mt-5 flex w-full max-w-md flex-col gap-3 px-4">
+        {detail.movement ? (
+          <MatchMovementPanel
+            viewerRole={detail.viewer_role}
+            movement={detail.movement}
+            isUpdating={isUpdatingMovement}
+            onStartMoving={() => void submitMovementStatus('moving')}
+            onArrived={() => void submitMovementStatus('arrived')}
+          />
+        ) : null}
+        {movementError ? (
+          <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-sm text-red-700">
+            {movementError}
+          </p>
+        ) : null}
         {/* 요약 칩 */}
         <div className="rounded-2xl bg-white p-4 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
           <div className="grid grid-cols-4 gap-2">
