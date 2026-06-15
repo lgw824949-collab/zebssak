@@ -92,9 +92,39 @@ export interface SeoulPositionRow {
   subwayNm?: string
 }
 
-export function getSeoulMetroApiKey(): string | null {
-  const key = process.env.SEOUL_METRO_API_KEY?.trim()
+/** 열차 위치 API 키 (OA-12601). 없으면 구 SEOUL_METRO_API_KEY 사용 */
+export function getSeoulMetroPositionApiKey(): string | null {
+  const key =
+    process.env.SEOUL_METRO_POSITION_API_KEY?.trim() ||
+    process.env.SEOUL_METRO_API_KEY?.trim()
   return key ? key : null
+}
+
+/** 역 도착 API 키 (OA-12764). 없으면 구 SEOUL_METRO_API_KEY 사용 */
+export function getSeoulMetroArrivalApiKey(): string | null {
+  const key =
+    process.env.SEOUL_METRO_ARRIVAL_API_KEY?.trim() ||
+    process.env.SEOUL_METRO_API_KEY?.trim()
+  return key ? key : null
+}
+
+/** 위치·도착 키 중 하나라도 있으면 true (헬스체크용) */
+export function getSeoulMetroApiKey(): string | null {
+  return getSeoulMetroPositionApiKey() || getSeoulMetroArrivalApiKey()
+}
+
+function resolveSeoulMetroApiKeyForPath(pathAfterKey: string): string | null {
+  const normalized = pathAfterKey.toLowerCase()
+  if (normalized.includes('realtimeposition')) {
+    return getSeoulMetroPositionApiKey()
+  }
+  if (
+    normalized.includes('realtimestationarrival') ||
+    normalized.includes('realtimearrival')
+  ) {
+    return getSeoulMetroArrivalApiKey()
+  }
+  return getSeoulMetroPositionApiKey() || getSeoulMetroArrivalApiKey()
 }
 
 export function resolveSeoulSubwayId(lineParam: string): string | null {
@@ -119,15 +149,14 @@ export function buildSeoulMetroApiUrl(
   request: Request,
   pathAfterKey: string
 ): string | null {
-  const key = getSeoulMetroApiKey()
-  if (!key) return null
+  if (!resolveSeoulMetroApiKeyForPath(pathAfterKey)) return null
 
   const normalizedPath = pathAfterKey.replace(/^\/+/, '')
   return new URL(`/api/seoul-metro/${normalizedPath}`, request.url).toString()
 }
 
 export function buildSeoulMetroDirectUrl(pathAfterKey: string): string | null {
-  const key = getSeoulMetroApiKey()
+  const key = resolveSeoulMetroApiKeyForPath(pathAfterKey)
   if (!key) return null
   const normalizedPath = pathAfterKey.replace(/^\/+/, '')
   return `${SEOUL_METRO_DIRECT_HOST}/api/subway/${encodeURIComponent(key)}/${normalizedPath}`
@@ -301,6 +330,8 @@ export async function fetchRealtimePositionRows(
   lineName: string
 ): Promise<SeoulPositionRow[]> {
   const path = `json/realtimePosition/0/100/${encodeURIComponent(lineName)}`
+  if (!getSeoulMetroPositionApiKey()) return []
+
   const proxyUrl = buildSeoulMetroApiUrl(request, path)
   const directUrl = buildSeoulMetroDirectUrl(path)
   if (!proxyUrl) return []
@@ -323,7 +354,7 @@ export async function fetchRealtimeArrivalRows(
   stationName: string
 ): Promise<SeoulArrivalRow[]> {
   const station = stationName.trim().replace(/역$/u, '')
-  if (!station) return []
+  if (!station || !getSeoulMetroArrivalApiKey()) return []
 
   const path = `json/realtimeStationArrival/0/10/${encodeURIComponent(station)}`
   const raw = await fetchSeoulMetroUpstream(request, path)

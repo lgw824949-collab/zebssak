@@ -3,7 +3,7 @@ import {
   extractArrivalRows,
   extractResultCode,
   fetchSeoulMetroUpstream,
-  getSeoulMetroApiKey,
+  getSeoulMetroArrivalApiKey,
   isSeoulApiSuccess,
 } from '@/lib/seoul-metro'
 
@@ -19,9 +19,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: false, error: 'station 파라미터가 필요합니다.', rows: [] }, { status: 400 })
   }
 
-  if (!getSeoulMetroApiKey()) {
+  if (!getSeoulMetroArrivalApiKey()) {
     return NextResponse.json(
-      { success: false, error: 'SEOUL_METRO_API_KEY가 설정되지 않았습니다.', rows: [] },
+      {
+        success: false,
+        error: 'SEOUL_METRO_ARRIVAL_API_KEY가 설정되지 않았습니다.',
+        rows: [],
+      },
       { status: 500 }
     )
   }

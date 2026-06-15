@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     arrivalCount,
     error,
     hint: !hasKey
-      ? 'Vercel에 SEOUL_METRO_API_KEY 추가 후 Redeploy'
+      ? 'Vercel에 SEOUL_METRO_POSITION_API_KEY, SEOUL_METRO_ARRIVAL_API_KEY 추가 후 Redeploy'
       : arrivalCount === 0
         ? '프록시/도착 API 실패. main 최신 배포 후 Redeploy, /api/seoul-metro 404 여부 확인'
         : '도착 API 정상',

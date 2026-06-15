@@ -136,7 +136,7 @@ const TERMINAL_BY_LINE: Record<SupportedLine, { up: string; down: string }> = {
   seoul4: { up: '당고개', down: '오이도' },
   seoul5: { up: '방화', down: '마천·하남' },
   seoul6: { up: '응암', down: '신내' },
-  seoul7: { up: '장암', down: '부천종합운동장' },
+  seoul7: { up: '장암', down: '석남' },
   seoul8: { up: '암사', down: '모란' },
   seoul9: { up: '개화', down: '중앙보훈병원' },
   incheon1: { up: '검단호수공원', down: '국제업무지구' },

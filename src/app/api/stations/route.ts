@@ -228,7 +228,7 @@ export async function GET(request: Request) {
     // 역 순서는 호선별 기준 목록(FALLBACK)을 단일 소스로 고정해 일관성 보장
     // - seoul1: 소요산→인천/신창
     // - seoul4: 당고개→오이도
-    // - seoul7: 장암→부천종합운동장
+    // - seoul7: 장암→석남
     // - incheon2: 운연→검단오류
     const cachedResponse = stationsResponseCache.get(line)
     if (cachedResponse && cachedResponse.expiresAt > Date.now()) {

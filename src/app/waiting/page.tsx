@@ -262,7 +262,7 @@ function getDirectionDisplay(draft: BoardingDraft): string {
   if (lineKey === 'seoul4') return direction === '1' ? '당고개 방면' : direction === '2' ? '오이도 방면' : ''
   if (lineKey === 'seoul5') return direction === '1' ? '방화 방면' : direction === '2' ? '마천 방면' : ''
   if (lineKey === 'seoul6') return direction === '1' ? '응암순환' : ''
-  if (lineKey === 'seoul7') return direction === '1' ? '장암 방면' : direction === '2' ? '부천종합운동장 방면' : ''
+  if (lineKey === 'seoul7') return direction === '1' ? '장암 방면' : direction === '2' ? '석남 방면' : ''
   if (lineKey === 'seoul8') return direction === '1' ? '암사 방면' : direction === '2' ? '모란 방면' : ''
   if (lineKey === 'seoul9') return direction === '1' ? '개화 방면' : direction === '2' ? '중앙보훈병원 방면' : ''
   if (lineKey === 'incheon1') {

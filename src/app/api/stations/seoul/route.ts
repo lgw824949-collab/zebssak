@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
   fetchRealtimePositionRows,
-  getSeoulMetroApiKey,
+  getSeoulMetroPositionApiKey,
   mapPositionRowToTrainFields,
   type SeoulPositionRow,
 } from '@/lib/seoul-metro'
@@ -90,9 +90,9 @@ export async function GET(request: Request) {
 
     const { lineParam, lineName } = resolved
 
-    if (!getSeoulMetroApiKey()) {
+    if (!getSeoulMetroPositionApiKey()) {
       return errorResponse(
-        'SEOUL_METRO_API_KEY 환경변수가 설정되지 않았습니다.',
+        'SEOUL_METRO_POSITION_API_KEY 환경변수가 설정되지 않았습니다.',
         500
       )
     }

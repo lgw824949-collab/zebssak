@@ -13,7 +13,7 @@ export async function GET(
 ) {
   if (!getSeoulMetroApiKey()) {
     return NextResponse.json(
-      { success: false, error: 'SEOUL_METRO_API_KEY 환경변수가 설정되지 않았습니다.' },
+      { success: false, error: 'SEOUL_METRO_POSITION_API_KEY 또는 SEOUL_METRO_ARRIVAL_API_KEY가 설정되지 않았습니다.' },
       { status: 500 }
     )
   }
