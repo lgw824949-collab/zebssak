@@ -96,9 +96,16 @@ export default function MatchMovementPanel({
           </div>
         </div>
       ) : (
-        <p className="mt-4 text-center text-[15px] font-medium leading-relaxed text-[#6B7280]">
-          착석 희망자가 오면 알려드려요
-        </p>
+        <div className="mt-4 space-y-3">
+          <p className="text-center text-[15px] font-medium text-[#6B7280]">
+            착석 희망자가 오면 알려드려요
+          </p>
+          <p className="rounded-xl bg-[#FFFBF5] px-3 py-2.5 text-center text-[14px] font-medium leading-snug text-[#7D6B52]">
+            <span className="font-bold text-[#B8860B]">팁</span>
+            {' · '}
+            앞에 사람이 있으면 양보가 불편할 수 있어요
+          </p>
+        </div>
       )}
     </div>
   )
