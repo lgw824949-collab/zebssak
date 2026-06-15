@@ -146,6 +146,43 @@ function persistWaitingSession(draft: BoardingDraft, requestId: string): void {
   }
 }
 
+/** 취소·거절 후 대기/매칭 session을 정리합니다. */
+function clearWaitingMatchSession(): void {
+  try {
+    sessionStorage.removeItem(ACTIVE_REQUEST_KEY)
+    sessionStorage.removeItem('activeMatchId')
+    sessionStorage.removeItem(WAITING_DRAFT_KEY)
+    sessionStorage.removeItem('boardingDraft')
+    sessionStorage.removeItem(REGISTERED_FLAG_KEY)
+    sessionStorage.removeItem(PROVIDER_REGISTERED_FLAG_KEY)
+    sessionStorage.removeItem('seekerMatchRequestRegistered')
+  } catch {
+    // sessionStorage 정리 실패 시 무시합니다.
+  }
+}
+
+type MatchNavigationTarget = 'matching' | 'matched' | 'none'
+
+/** 활성 매칭 화면 이동 여부를 판별합니다. */
+function resolveMatchNavigationTarget(
+  matchStatus: string | undefined,
+  requestStatus: string | undefined
+): MatchNavigationTarget {
+  if (requestStatus === 'cancelled') {
+    return 'none'
+  }
+
+  if (matchStatus === 'accepted') {
+    return 'matched'
+  }
+
+  if (matchStatus === 'pending' && requestStatus === 'matched') {
+    return 'matching'
+  }
+
+  return 'none'
+}
+
 /** draft에서 좌석 정보 추출 (seeker API 필수) */
 function resolveSeatFromDraft(
   draft: BoardingDraft
@@ -760,13 +797,22 @@ export default function WaitingPage() {
             return
           }
 
-          if (statusResult.data?.match?.id) {
+          if (statusResult.data?.match_request?.status === 'cancelled') {
+            clearWaitingMatchSession()
+            router.replace('/')
+            return
+          }
+
+          const navigationTarget = resolveMatchNavigationTarget(
+            statusResult.data?.match?.status,
+            statusResult.data?.match_request?.status
+          )
+
+          if (navigationTarget !== 'none' && statusResult.data?.match?.id) {
             sessionStorage.setItem('activeMatchId', statusResult.data.match.id)
-            if (statusResult.data.match.status === 'accepted') {
-              router.replace('/matched')
-              return
-            }
-            router.replace('/matching')
+            router.replace(
+              navigationTarget === 'matched' ? '/matched' : '/matching'
+            )
             return
           }
 
@@ -866,6 +912,7 @@ export default function WaitingPage() {
           success?: boolean
           data?: {
             match?: { id?: string; status?: string } | null
+            match_request?: { status?: string } | null
           }
         }
 
@@ -874,6 +921,14 @@ export default function WaitingPage() {
         }
 
         const match = statusResult.data?.match
+        const requestStatus = statusResult.data?.match_request?.status
+
+        if (requestStatus === 'cancelled') {
+          clearWaitingMatchSession()
+          router.replace('/')
+          return
+        }
+
         if (!match?.id) {
           return
         }
@@ -885,7 +940,7 @@ export default function WaitingPage() {
           return
         }
 
-        if (match.status === 'pending') {
+        if (match.status === 'pending' && requestStatus === 'matched') {
           router.replace('/matching')
         }
       } catch {
@@ -938,6 +993,7 @@ export default function WaitingPage() {
           success?: boolean
           data?: {
             match?: { id?: string; status?: string } | null
+            match_request?: { status?: string } | null
           }
         }
 
@@ -946,6 +1002,14 @@ export default function WaitingPage() {
         }
 
         const match = statusResult.data?.match
+        const requestStatus = statusResult.data?.match_request?.status
+
+        if (requestStatus === 'cancelled') {
+          clearWaitingMatchSession()
+          router.replace('/')
+          return
+        }
+
         if (!match?.id) {
           return
         }
@@ -957,7 +1021,7 @@ export default function WaitingPage() {
           return
         }
 
-        if (match.status === 'pending') {
+        if (match.status === 'pending' && requestStatus === 'matched') {
           router.replace(`/matching?matchId=${encodeURIComponent(match.id)}`)
         }
       } catch {

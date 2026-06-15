@@ -36,7 +36,7 @@ export async function GET(request: Request) {
       return errorResponse('매칭 요청을 찾을 수 없습니다.', 404)
     }
 
-    const { data: match } = await supabase
+    const { data: matchRaw } = await supabase
       .from('matches')
       .select('id, status, notify_expires_at')
       .or(
@@ -45,6 +45,16 @@ export async function GET(request: Request) {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
+
+    // 취소된 요청·종료된 매칭은 활성 매칭으로 내려주지 않습니다.
+    let match: typeof matchRaw = null
+    const requestStatus = String(matchRequest.status ?? '')
+    if (requestStatus !== 'cancelled' && matchRaw) {
+      const matchStatus = String(matchRaw.status ?? '')
+      if (matchStatus === 'pending' || matchStatus === 'accepted') {
+        match = matchRaw
+      }
+    }
 
     let queuePosition: number | null = null
     if (matchRequest.request_type === 'seat_seek' && matchRequest.status === 'waiting') {
@@ -140,6 +150,16 @@ export async function PATCH(request: Request) {
 
     if (!updated) {
       return errorResponse('매칭 요청을 찾을 수 없습니다.', 404)
+    }
+
+    const { error: cancelMatchError } = await supabase
+      .from('matches')
+      .update({ status: 'cancelled' })
+      .or(`seat_seek_request_id.eq.${requestId},leaving_request_id.eq.${requestId}`)
+      .eq('status', 'pending')
+
+    if (cancelMatchError) {
+      return errorResponse('연결된 매칭 취소에 실패했습니다.', 500)
     }
 
     return NextResponse.json({ success: true })

@@ -59,11 +59,16 @@ async function resolveStatusBadge(): Promise<StatusBadge> {
     const payload = (await response.json()) as {
       success?: boolean
       data?: {
+        match_request?: { status?: string } | null
         match?: { id?: string; status?: string } | null
       }
     }
 
     if (!response.ok || !payload.success) {
+      return 'none'
+    }
+
+    if (payload.data?.match_request?.status === 'cancelled') {
       return 'none'
     }
 
