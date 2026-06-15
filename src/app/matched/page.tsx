@@ -680,6 +680,7 @@ export default function MatchedPage() {
     partnerMovementStatus: detail.movement?.partner.status,
     handoffRemainingStations: handoffRemaining,
     seatConfirmed,
+    positionIsLive,
   })
   const userAction = resolveMatchedUserAction({
     viewerRole: detail.viewer_role,
@@ -687,6 +688,9 @@ export default function MatchedPage() {
     handoffStationName,
     handoffRemainingStations: handoffRemaining,
     selfMovementStatus: detail.movement?.self.status,
+    selfCarNumber: detail.self.car_number,
+    targetCarNumber: isSeeker ? detail.partner.car_number : detail.self.car_number,
+    targetDoorLabel: isSeeker ? detail.partner.car_door_short : detail.self.car_door_short,
     locationLine,
     trainCurrentStationName,
   })

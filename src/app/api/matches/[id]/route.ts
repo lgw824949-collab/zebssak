@@ -156,9 +156,11 @@ async function loadMatchMovementPayload(
     selfRow.request_type === 'leaving' ? 'provider' : 'seeker'
 
   const leavingTrain = unwrapRelation(leavingRow.train)
+  const seatSeekTrain = unwrapRelation(seatSeekRow.train)
   const leavingDestination = unwrapRelation(leavingRow.destination_station)
   const handoffContext = await resolveLiveHandoffRouteContext(request, supabase, {
-    trainNo: leavingTrain?.train_no ?? null,
+    trainNo: leavingTrain?.train_no ?? seatSeekTrain?.train_no ?? null,
+    alternateTrainNos: [leavingTrain?.train_no, seatSeekTrain?.train_no],
     lineNumber:
       typeof leavingTrain?.line_number === 'number' ? leavingTrain.line_number : null,
     destinationStationCode: leavingDestination?.station_code ?? null,

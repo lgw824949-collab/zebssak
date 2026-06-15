@@ -5,6 +5,7 @@ import {
   normalizeDirectionForStorage,
 } from '@/lib/match-direction'
 import { sendMatchPushNotifications } from '@/lib/push-server'
+import { resolveAdjacentCarNumbers, resolveCarDistance } from '@/lib/match-movement-guide'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -33,6 +34,7 @@ interface WaitingRequestRow {
   requested_at: string
   is_disabled: boolean
   total_points: number
+  car_number: number
 }
 
 function errorResponse(message: string, status: number) {
@@ -171,6 +173,7 @@ async function attachPriorityFields(
     user_id: string
     remaining_stations: number
     requested_at: string
+    car_number: number
   }>
 ): Promise<WaitingRequestRow[]> {
   if (!rows.length) {
@@ -208,6 +211,10 @@ async function attachPriorityFields(
 
   return rows.map((row) => ({
     ...row,
+    car_number:
+      typeof row.car_number === 'number' && Number.isInteger(row.car_number)
+        ? row.car_number
+        : 1,
     is_disabled: disabledByUserId.get(row.user_id) === true,
     total_points: pointsByUserId.get(row.user_id) ?? 0,
   }))
@@ -217,16 +224,25 @@ async function attachPriorityFields(
  * 매칭 우선순위 정렬
  * 1) 교통약자(is_disabled=true) 우선
  * 2) total_points 높은 순
- * 3) 남은 역 수 많은 순
- * 4) 요청 시각 빠른 순
+ * 3) 호차 거리 가까운 순 (같은 호차 → 옆 호차)
+ * 4) 남은 역 수 많은 순
+ * 5) 요청 시각 빠른 순
  */
-function sortByMatchingPriority(rows: WaitingRequestRow[]): WaitingRequestRow[] {
+function sortByMatchingPriority(
+  rows: WaitingRequestRow[],
+  requesterCarNumber: number
+): WaitingRequestRow[] {
   return [...rows].sort((a, b) => {
     if (a.is_disabled !== b.is_disabled) {
       return a.is_disabled ? -1 : 1
     }
     if (b.total_points !== a.total_points) {
       return b.total_points - a.total_points
+    }
+    const carDistanceA = resolveCarDistance(requesterCarNumber, a.car_number)
+    const carDistanceB = resolveCarDistance(requesterCarNumber, b.car_number)
+    if (carDistanceA !== carDistanceB) {
+      return carDistanceA - carDistanceB
     }
     if (b.remaining_stations !== a.remaining_stations) {
       return b.remaining_stations - a.remaining_stations
@@ -245,7 +261,7 @@ async function calculateQueuePosition(
 ): Promise<number> {
   const { data, error } = await supabase
     .from('match_requests')
-    .select('id, user_id, remaining_stations, requested_at')
+    .select('id, user_id, remaining_stations, requested_at, car_number')
     .eq('status', 'waiting')
     .eq('request_type', requestType)
 
@@ -253,8 +269,12 @@ async function calculateQueuePosition(
     return 1
   }
 
+  const currentRow = data.find((row) => row.id === currentRequestId)
+  const requesterCar =
+    typeof currentRow?.car_number === 'number' ? currentRow.car_number : 1
+
   const rows = await attachPriorityFields(supabase, data)
-  const sorted = sortByMatchingPriority(rows)
+  const sorted = sortByMatchingPriority(rows, requesterCar)
   const index = sorted.findIndex((row) => row.id === currentRequestId)
   return index >= 0 ? index + 1 : sorted.length
 }
@@ -276,6 +296,8 @@ async function tryCreateMatch(
 
   const directionValues = equivalentDirectionsForMatch(direction)
 
+  const adjacentCars = resolveAdjacentCarNumbers(carNumber)
+
   const { data: candidates, error } = await supabase
     .from('match_requests')
     .select(`
@@ -283,13 +305,14 @@ async function tryCreateMatch(
       user_id,
       remaining_stations,
       requested_at,
+      car_number,
       destination_station:stations!destination_station_id(station_code),
       origin_station:stations!origin_station_id(station_code)
     `)
     .eq('status', 'waiting')
     .eq('request_type', oppositeType)
     .eq('train_id', trainUuid)
-    .eq('car_number', carNumber)
+    .in('car_number', adjacentCars.length ? adjacentCars : [carNumber])
     .in('direction', directionValues)
     .neq('id', newRequestId)
 
@@ -321,7 +344,8 @@ async function tryCreateMatch(
   }
 
   const ranked = sortByMatchingPriority(
-    await attachPriorityFields(supabase, sameLineCandidates)
+    await attachPriorityFields(supabase, sameLineCandidates),
+    carNumber
   )
   const partner = ranked[0]
   if (!partner) {

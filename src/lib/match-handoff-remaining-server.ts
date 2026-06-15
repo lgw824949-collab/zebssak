@@ -28,6 +28,79 @@ function resolveApiTrainNo(storedTrainNo: string | null | undefined): string {
   return trimmed
 }
 
+function collectTrainNoCandidates(
+  ...sources: readonly (string | null | undefined)[]
+): string[] {
+  const candidates = new Set<string>()
+
+  for (const source of sources) {
+    const apiTrainNo = resolveApiTrainNo(source)
+    if (!apiTrainNo) {
+      continue
+    }
+
+    candidates.add(apiTrainNo)
+    candidates.add(normalizeSeoulTrainNo(apiTrainNo))
+
+    const digits = apiTrainNo.replace(/\D/g, '')
+    if (!digits) {
+      continue
+    }
+
+    candidates.add(digits)
+    const trimmedDigits = digits.replace(/^0+/, '') || '0'
+    candidates.add(trimmedDigits)
+    candidates.add(trimmedDigits.padStart(4, '0'))
+  }
+
+  return [...candidates].filter((value) => value.length > 0)
+}
+
+function findPositionRowByTrainCandidates(
+  rows: Awaited<ReturnType<typeof fetchRealtimePositionRows>>,
+  candidates: readonly string[]
+): (typeof rows)[number] | null {
+  if (!rows.length || !candidates.length) {
+    return null
+  }
+
+  const normalizedCandidates = new Set(
+    candidates.flatMap((candidate) => [candidate, normalizeSeoulTrainNo(candidate)])
+  )
+
+  for (const row of rows) {
+    const rowTrain = String(row.trainNo ?? '').trim()
+    if (!rowTrain) {
+      continue
+    }
+
+    const rowNormalized = normalizeSeoulTrainNo(rowTrain)
+    if (
+      normalizedCandidates.has(rowTrain) ||
+      normalizedCandidates.has(rowNormalized)
+    ) {
+      return row
+    }
+
+    for (const candidate of normalizedCandidates) {
+      if (!candidate || !rowNormalized) {
+        continue
+      }
+
+      if (
+        rowNormalized.endsWith(candidate) ||
+        candidate.endsWith(rowNormalized) ||
+        rowTrain.endsWith(candidate) ||
+        candidate.endsWith(rowTrain)
+      ) {
+        return row
+      }
+    }
+  }
+
+  return null
+}
+
 function resolveSeoulLineParam(
   destinationStationCode: string | null | undefined,
   trainLineNumber: number | null | undefined
@@ -122,6 +195,7 @@ export async function resolveLiveHandoffRouteContext(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   input: {
     trainNo: string | null | undefined
+    alternateTrainNos?: readonly (string | null | undefined)[]
     lineNumber: number | null | undefined
     destinationStationCode: string | null | undefined
     destinationStationName: string | null | undefined
@@ -139,9 +213,12 @@ export async function resolveLiveHandoffRouteContext(
     input.lineNumber
   )
   const lineName = lineParam ? resolveSeoulLineName(lineParam) : null
-  const apiTrainNo = resolveApiTrainNo(input.trainNo)
+  const trainCandidates = collectTrainNoCandidates(
+    input.trainNo,
+    ...(input.alternateTrainNos ?? [])
+  )
 
-  if (!lineName || !apiTrainNo) {
+  if (!lineName || trainCandidates.length === 0) {
     return {
       handoff_remaining_stations: fallback,
       current_station_name: null,
@@ -166,11 +243,7 @@ export async function resolveLiveHandoffRouteContext(
     }
 
     const positionRows = await fetchRealtimePositionRows(request, lineName)
-    const normalizedTarget = normalizeSeoulTrainNo(apiTrainNo)
-    const positionRow = positionRows.find((row) => {
-      const rowTrain = normalizeSeoulTrainNo(String(row.trainNo ?? ''))
-      return rowTrain === normalizedTarget
-    })
+    const positionRow = findPositionRowByTrainCandidates(positionRows, trainCandidates)
 
     if (!positionRow?.statnNm) {
       return {
@@ -219,6 +292,7 @@ export async function resolveLiveHandoffRemainingStations(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   input: {
     trainNo: string | null | undefined
+    alternateTrainNos?: readonly (string | null | undefined)[]
     lineNumber: number | null | undefined
     destinationStationCode: string | null | undefined
     destinationStationName: string | null | undefined

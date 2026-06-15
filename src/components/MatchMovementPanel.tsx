@@ -2,7 +2,7 @@
 
 import type { MatchMovementPayload, MatchMovementStatus } from '@/lib/match-movement'
 import type { MatchFlowStep } from '@/lib/match-flow-steps'
-import { HANDOFF_MOVE_START_THRESHOLD, isHandoffMoveDue } from '@/lib/match-handoff-remaining'
+import { isHandoffMoveDue } from '@/lib/match-handoff-remaining'
 import {
   resolvePartnerMovementLabel,
   resolveSelfMovementLabel,
@@ -43,7 +43,6 @@ export default function MatchMovementPanel({
   const moveDue = isHandoffMoveDue(handoffRemaining)
   const isWaitingForHandoff = flowStep === 'wait'
   const isSeatReady = flowStep === 'seat'
-  const isMovePrep = flowStep === 'move' && !moveDue
   const isMoveNow = flowStep === 'move' && moveDue
   const seekerCanMove = viewerRole === 'seeker' && moveDue && flowStep === 'move'
   const showRouteContext =
@@ -94,14 +93,6 @@ export default function MatchMovementPanel({
         </span>
       </p>
 
-      {isMovePrep ? (
-        <p className="mt-3 rounded-xl bg-[#F3F4F6] px-3 py-2.5 text-center text-[14px] font-semibold leading-snug text-[#4B5563]">
-          {viewerRole === 'seeker'
-            ? `${HANDOFF_MOVE_START_THRESHOLD}역 전에 이동 안내가 옵니다 · 아직 기다려 주세요`
-            : `${formatRemainingStations(handoffRemaining)} 후 착석 희망자에게 이동 안내`}
-        </p>
-      ) : null}
-
       {isMoveNow && viewerRole === 'seeker' ? (
         <p
           className="match-move-blink mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[16px] font-extrabold leading-snug text-[#8B6914]"
@@ -109,14 +100,14 @@ export default function MatchMovementPanel({
         >
           지금 이동하세요
           <span className="mt-1 block text-[14px] font-bold">
-            {routeGuide.handoff_station_name} {formatRemainingStations(handoffRemaining)} 전
+            표시된 호차·출입문으로 이동해 주세요
           </span>
         </p>
       ) : null}
 
       {isMoveNow && viewerRole === 'provider' ? (
         <p className="mt-3 rounded-xl bg-[#FFF3CD] px-3 py-2.5 text-center text-[14px] font-semibold leading-snug text-[#8B6914]">
-          착석 희망자에게 이동 안내를 보냈어요
+          착석 희망자에게 이동 안내를 보냈어요 · 문 옆으로 옵니다
         </p>
       ) : null}
       {isWaitingForHandoff ? (

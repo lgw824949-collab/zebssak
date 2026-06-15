@@ -1,5 +1,4 @@
 import type { MatchFlowStep } from '@/lib/match-flow-steps'
-import { isHandoffMoveDue } from '@/lib/match-handoff-remaining'
 
 /** 홈 화면 단순 진행 — 매칭완료 → 이동중 → 착석완료 */
 export type HomeProgressStep = 'matched' | 'moving' | 'seated'
@@ -94,8 +93,8 @@ export function resolveHomeProgressBlinkHint(input: {
 
   if (input.step === 'matched') {
     return locationPrefix
-      ? `${locationPrefix} · 곧 이동 안내가 올 거예요`
-      : '곧 이동 안내가 올 거예요 · 아직 이동하지 마세요'
+      ? `${locationPrefix} · 수락 후 바로 이동해 주세요`
+      : '수락 후 바로 표시된 호차·출입문으로 이동해 주세요'
   }
 
   if (input.step === 'moving') {
@@ -104,13 +103,9 @@ export function resolveHomeProgressBlinkHint(input: {
         ? `${locationPrefix} · 양보자 내릴 때까지 문 옆에서 대기`
         : '양보자가 내릴 때까지 문 옆에서 서서 기다려 주세요'
     }
-    if (isHandoffMoveDue(input.handoffRemaining)) {
-      return '지금 이동하세요'
-    }
-    if (locationPrefix && input.handoffRemaining != null) {
-      return `${locationPrefix} · 이동 안내까지 ${input.handoffRemaining}역`
-    }
-    return '표시된 호차·출입문으로 이동해 주세요'
+    return locationPrefix
+      ? `${locationPrefix} · 지금 이동하세요`
+      : '지금 이동하세요 · 표시된 호차·출입문으로 가 주세요'
   }
 
   return '지금 앉아 주세요'

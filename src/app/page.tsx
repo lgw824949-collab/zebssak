@@ -565,6 +565,7 @@ async function fetchHomeMatchProgress(
       partnerMovementStatus: data.movement?.partner.status,
       handoffRemainingStations: handoffRemaining,
       seatConfirmed,
+      positionIsLive: data.movement?.route_guide.position_is_live === true,
     })
 
     const step = resolveHomeProgressStep({
