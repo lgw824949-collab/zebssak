@@ -10,6 +10,9 @@ export interface HomeMatchProgress {
   handoffRemaining: number | null
   seatConfirmed: boolean
   matchCompleted: boolean
+  trainCurrentStationName: string | null
+  providerDirectionLabel: string | null
+  positionIsLive: boolean
 }
 
 export function resolveHomeProgressStepIndex(step: HomeProgressStep): number {
@@ -33,12 +36,8 @@ export function resolveHomeProgressStep(input: {
     return 'seated'
   }
 
-  if (input.flowStep === 'wait') {
+  if (input.flowStep === 'wait' || input.flowStep === 'move') {
     return 'moving'
-  }
-
-  if (input.flowStep === 'move') {
-    return isHandoffMoveDue(input.handoffRemaining) ? 'moving' : 'matched'
   }
 
   return 'matched'
@@ -62,7 +61,11 @@ export function resolveHomeProgressBlinkHint(input: {
   flowStep: MatchFlowStep
   handoffRemaining: number | null
   matchCompleted: boolean
+  trainCurrentStationName?: string | null
 }): string {
+  const currentStation = input.trainCurrentStationName?.trim()
+  const locationPrefix = currentStation ? `지금 ${currentStation}` : null
+
   if (input.matchCompleted) {
     return input.registrationKind === 'leave'
       ? '양보가 완료되었어요'
@@ -71,11 +74,18 @@ export function resolveHomeProgressBlinkHint(input: {
 
   if (input.registrationKind === 'leave') {
     if (input.step === 'matched') {
-      return '목적지 전까지 편히 앉아 주세요'
+      return locationPrefix
+        ? `${locationPrefix} · 목적지 전까지 편히 앉아 주세요`
+        : '목적지 전까지 편히 앉아 주세요'
     }
     if (input.step === 'moving') {
       if (input.flowStep === 'wait') {
-        return '착석 희망자가 문 옆에서 기다리고 있어요'
+        return locationPrefix
+          ? `${locationPrefix} · 착석 희망자가 문 옆에서 기다려요`
+          : '착석 희망자가 문 옆에서 기다리고 있어요'
+      }
+      if (locationPrefix && input.handoffRemaining != null) {
+        return `${locationPrefix} · 양보 역까지 ${input.handoffRemaining}역`
       }
       return '착석 희망자가 이동 중이에요'
     }
@@ -83,15 +93,22 @@ export function resolveHomeProgressBlinkHint(input: {
   }
 
   if (input.step === 'matched') {
-    return '곧 이동 안내가 올 거예요 · 아직 이동하지 마세요'
+    return locationPrefix
+      ? `${locationPrefix} · 곧 이동 안내가 올 거예요`
+      : '곧 이동 안내가 올 거예요 · 아직 이동하지 마세요'
   }
 
   if (input.step === 'moving') {
     if (input.flowStep === 'wait') {
-      return '양보자가 내릴 때까지 문 옆에서 서서 기다려 주세요'
+      return locationPrefix
+        ? `${locationPrefix} · 양보자 내릴 때까지 문 옆에서 대기`
+        : '양보자가 내릴 때까지 문 옆에서 서서 기다려 주세요'
     }
     if (isHandoffMoveDue(input.handoffRemaining)) {
       return '지금 이동하세요'
+    }
+    if (locationPrefix && input.handoffRemaining != null) {
+      return `${locationPrefix} · 이동 안내까지 ${input.handoffRemaining}역`
     }
     return '표시된 호차·출입문으로 이동해 주세요'
   }

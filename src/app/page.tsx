@@ -458,6 +458,9 @@ function buildHomeMatchDoneView(hint: HomeMatchCompletedHint): HomeWaitView {
       handoffRemaining: null,
       seatConfirmed: true,
       matchCompleted: true,
+      trainCurrentStationName: null,
+      providerDirectionLabel: null,
+      positionIsLive: false,
     },
   }
 }
@@ -577,6 +580,11 @@ async function fetchHomeMatchProgress(
       handoffRemaining,
       seatConfirmed,
       matchCompleted,
+      trainCurrentStationName:
+        data.movement?.route_guide.train_current_station_name ?? null,
+      providerDirectionLabel:
+        data.movement?.route_guide.provider_direction_label ?? null,
+      positionIsLive: data.movement?.route_guide.position_is_live === true,
     }
   } catch {
     return null
@@ -647,6 +655,9 @@ function buildHomeWaitView(input: {
           handoffRemaining: null,
           seatConfirmed: false,
           matchCompleted: false,
+          trainCurrentStationName: null,
+          providerDirectionLabel: null,
+          positionIsLive: false,
         },
     }
   }

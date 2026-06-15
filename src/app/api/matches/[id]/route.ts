@@ -6,6 +6,7 @@ import {
   formatStationDisplayName,
   lineLabelFromStationCode,
   resolveDirectionDisplayLabel,
+  resolveSeoulLineNumberFromStationCode,
   seatsPerSectionFromStationCode,
 } from '@/lib/match-display'
 import type {
@@ -166,6 +167,9 @@ async function loadMatchMovementPayload(
   })
 
   const leavingLineLabel = lineLabelFromStationCode(leavingDestination?.station_code ?? null)
+  const seoulLineNumber = resolveSeoulLineNumberFromStationCode(
+    leavingDestination?.station_code ?? null
+  )
 
   const routeGuide: MatchRouteGuide = {
     handoff_station_name:
@@ -177,8 +181,9 @@ async function loadMatchMovementPayload(
       ) || '목적지',
     self_remaining_stations: selfRow.remaining_stations ?? null,
     train_current_station_name: handoffContext.current_station_name,
+    position_is_live: handoffContext.position_is_live,
     provider_direction_label: resolveDirectionDisplayLabel(
-      typeof leavingTrain?.line_number === 'number' ? leavingTrain.line_number : null,
+      seoulLineNumber,
       leavingRow.direction ?? null,
       leavingLineLabel
     ),

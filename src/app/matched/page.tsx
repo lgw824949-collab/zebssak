@@ -653,6 +653,11 @@ export default function MatchedPage() {
     seatAnswer === true || detail.seat_confirmation?.seated === true
   const handoffRemaining = detail.movement?.route_guide.handoff_remaining_stations ?? null
   const handoffStationName = detail.movement?.route_guide.handoff_station_name
+  const trainCurrentStationName =
+    detail.movement?.route_guide.train_current_station_name ?? null
+  const providerDirectionLabel =
+    detail.movement?.route_guide.provider_direction_label ?? null
+  const positionIsLive = detail.movement?.route_guide.position_is_live === true
   const guide = isSeeker ? detail.partner : detail.self
   const seatsPerSection = seatsPerSectionFromStationCode(guide.destination_station_code)
   const travelSideLabel = seatSideToTravelSideLabel(guide.seat_side)
@@ -683,6 +688,7 @@ export default function MatchedPage() {
     handoffRemainingStations: handoffRemaining,
     selfMovementStatus: detail.movement?.self.status,
     locationLine,
+    trainCurrentStationName,
   })
   const isFlowDone = flowStep === 'done'
   const isSubmitting = isSubmittingSeat || isUpdatingMovement
@@ -715,6 +721,9 @@ export default function MatchedPage() {
               flowStep={flowStep}
               action={userAction}
               handoffRemaining={handoffRemaining}
+              trainCurrentStationName={trainCurrentStationName}
+              providerDirectionLabel={providerDirectionLabel}
+              positionIsLive={positionIsLive}
               transitionMessage={transitionMessage}
               isSubmitting={isSubmitting}
               onPrimaryAction={() => void handlePrimaryAction(userAction)}

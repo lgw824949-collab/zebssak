@@ -36,12 +36,15 @@ export function resolveMatchedUserAction(input: {
   handoffRemainingStations?: number | null
   selfMovementStatus?: MatchMovementStatus
   locationLine?: string | null
+  trainCurrentStationName?: string | null
 }): MatchedUserAction {
   const handoffStation = input.handoffStationName?.trim() || '양보 역'
   const remainingText = formatHandoffRemaining(input.handoffRemainingStations)
   const selfStatus = input.selfMovementStatus ?? 'idle'
   const moveDue = isHandoffMoveDue(input.handoffRemainingStations)
   const locationHint = input.locationLine?.trim() || null
+  const currentStation = input.trainCurrentStationName?.trim() || null
+  const liveLocationDetail = currentStation ? `지금 ${currentStation}` : null
 
   if (input.step === 'done') {
     const isSeeker = input.viewerRole === 'seeker'
@@ -120,7 +123,9 @@ export function resolveMatchedUserAction(input: {
         kind: 'wait',
         stepLabel: '2단계 · 이동 대기',
         headline: '아직 이동하지 마세요',
-        detail: `${handoffStation} · ${remainingText || '조금 후'} 이동 안내가 옵니다`,
+        detail: liveLocationDetail
+          ? `${liveLocationDetail} · ${handoffStation}까지 ${remainingText || '조금 후'}`
+          : `${handoffStation} · ${remainingText || '조금 후'} 이동 안내가 옵니다`,
         instruction: '3역 전에 「이동 시작」 버튼이 나타나요',
         buttonLabel: null,
         blink: false,
@@ -163,8 +168,10 @@ export function resolveMatchedUserAction(input: {
       kind: 'wait',
       stepLabel: '2단계 · 이동 대기',
       headline: '편히 앉아 주세요',
-      detail: `${remainingText || '조금 후'} 착석 희망자에게 이동 안내가 갑니다`,
-      instruction: '목적지 전까지 자리를 지켜 주세요',
+      detail: liveLocationDetail
+        ? `${liveLocationDetail} · ${handoffStation}까지 ${remainingText || '조금 후'}`
+        : `${remainingText || '조금 후'} 착석 희망자에게 이동 안내가 갑니다`,
+      instruction: '목적지 전까지 자리를 지켜 주세요 · 3역 전에 안내가 바뀝니다',
       buttonLabel: null,
       blink: false,
       afterClickMessage: null,

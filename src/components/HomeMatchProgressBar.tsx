@@ -24,6 +24,7 @@ export default function HomeMatchProgressBar({
     flowStep: progress.flowStep,
     handoffRemaining: progress.handoffRemaining,
     matchCompleted: progress.matchCompleted,
+    trainCurrentStationName: progress.trainCurrentStationName,
   })
   const shouldBlink = !progress.matchCompleted
 

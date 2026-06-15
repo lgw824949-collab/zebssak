@@ -12,6 +12,8 @@ export interface MatchRouteGuide {
   self_remaining_stations: number | null
   /** 실시간 열차 현재 역 (양보자 열차 기준) */
   train_current_station_name: string | null
+  /** 실시간 위치 API로 남은 역·현재역을 계산했는지 */
+  position_is_live: boolean
   /** 양보자(자리 넘기기) 이동 방향 */
   provider_direction_label: string | null
 }

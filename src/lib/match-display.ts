@@ -47,6 +47,27 @@ export function formatCarDoorPosition(
   return `${formatExitDoorDisplayLabel(carNumber, door)}번 문 옆 (${sideLabel})`
 }
 
+/** 역 코드(s7-01 등) → 서울 호선 번호 1~9 */
+export function resolveSeoulLineNumberFromStationCode(
+  stationCode: string | null | undefined
+): number | null {
+  const match = (stationCode ?? '').trim().toLowerCase().match(/^s([1-9])/)
+  if (!match?.[1]) {
+    return null
+  }
+
+  const lineNumber = Number.parseInt(match[1], 10)
+  return Number.isFinite(lineNumber) ? lineNumber : null
+}
+
+/** 역 코드 접두사(s7, l1 등) */
+export function resolveStationLinePrefix(
+  stationCode: string | null | undefined
+): string | null {
+  const match = (stationCode ?? '').trim().toLowerCase().match(/^(s[1-9]|l[12]|i[12])/)
+  return match?.[1] ?? null
+}
+
 export function formatStationDisplayName(name: string | null | undefined): string {
   const trimmed = (name ?? '').trim()
   if (!trimmed) return '미확인'
