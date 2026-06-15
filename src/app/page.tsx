@@ -191,7 +191,7 @@ function resolveHomeMatchStatusBox(view: HomeWaitView | null): HomeMatchStatusBo
   if (view.phase === 'match_done' || view.matchStatus === 'accepted') {
     return {
       kind: 'completed',
-      label: '매칭 완료',
+      label: '완료',
       emoji: '✓',
       backgroundColor: LINE7_SUCCESS_BG,
       textColor: LINE7_PRIMARY_DEEP,
@@ -201,22 +201,27 @@ function resolveHomeMatchStatusBox(view: HomeWaitView | null): HomeMatchStatusBo
   if (view.matchStatus === 'expired' || view.matchStatus === 'cancelled') {
     return {
       kind: 'failed',
-      label: '매칭 실패',
+      label: '연결 실패',
       emoji: '✕',
       backgroundColor: '#F0EBE6',
       textColor: '#7D5A52',
     }
   }
 
-  if (
-    view.phase === 'waiting_seek' ||
-    view.phase === 'waiting_leave' ||
-    view.phase === 'match_alert' ||
-    view.matchStatus === 'pending'
-  ) {
+  if (view.phase === 'match_alert' || view.matchStatus === 'pending') {
     return {
       kind: 'waiting',
-      label: '매칭 대기중',
+      label: '연결됨',
+      emoji: '●',
+      backgroundColor: LINE7_SUCCESS_BG,
+      textColor: LINE7_PRIMARY_DEEP,
+    }
+  }
+
+  if (view.phase === 'waiting_seek' || view.phase === 'waiting_leave') {
+    return {
+      kind: 'waiting',
+      label: '대기 중',
       emoji: '●',
       backgroundColor: LINE7_MUTED_BG,
       textColor: LINE7_PRIMARY_DARK,
@@ -253,12 +258,15 @@ function resolveHomeMyRegistrationCard(view: HomeWaitView): {
 
   if (view.phase === 'match_alert') {
     return {
-      statusBadge: '매칭 도착',
+      statusBadge: '연결됨',
       purposeLine:
         view.registrationKind === 'leave'
           ? `하차 알림 · ${destination}까지`
           : `자리 찾기 · ${destination}까지`,
-      progressLine: '지금 확인하면 연결됩니다',
+      progressLine:
+        view.registrationKind === 'leave'
+          ? '착석 희망자 확인 · 탭해서 수락'
+          : '이동 후 수락해 주세요',
     }
   }
 
@@ -266,9 +274,9 @@ function resolveHomeMyRegistrationCard(view: HomeWaitView): {
     const poolText =
       view.waitingCount > 0 ? `${view.waitingCount}명` : '모이는 중'
     return {
-      statusBadge: '진행 중',
+      statusBadge: '대기 중',
       purposeLine: `하차 알림 · ${destination}까지`,
-      progressLine: `매칭 대기 중 · 착석 희망자 ${poolText}`,
+      progressLine: `착석 희망자 ${poolText} 대기`,
     }
   }
 
@@ -276,9 +284,9 @@ function resolveHomeMyRegistrationCard(view: HomeWaitView): {
   const totalText = view.waitingCount > 0 ? ` / ${view.waitingCount}명` : ''
 
   return {
-    statusBadge: '진행 중',
+    statusBadge: '대기 중',
     purposeLine: `자리 찾기 · ${destination}까지`,
-    progressLine: `매칭 대기 중 · ${rankText}${totalText}`,
+    progressLine: `대기 순서 ${rankText}${totalText}`,
   }
 }
 
@@ -531,6 +539,14 @@ function buildHomeWaitView(input: {
 
   if (input.requestStatus === 'cancelled') {
     return null
+  }
+
+  if (input.requestStatus === 'matched' && input.matchStatus !== 'accepted') {
+    return {
+      ...baseView,
+      phase: 'match_alert',
+      matchId: input.pendingMatchId,
+    }
   }
 
   if (input.matchStatus === 'accepted') {
@@ -789,12 +805,17 @@ export default function Home() {
       token = null
     }
 
+    const intervalMs =
+      homeWaitView?.phase === 'waiting_seek' || homeWaitView?.phase === 'waiting_leave'
+        ? 5000
+        : 20000
+
     const timer = window.setInterval(() => {
       void loadHomeWaitStatus(token)
-    }, 20000)
+    }, intervalMs)
 
     return () => window.clearInterval(timer)
-  }, [loadHomeWaitStatus])
+  }, [loadHomeWaitStatus, homeWaitView?.phase])
 
   useEffect(() => {
     function handleVisibilityRefresh() {
@@ -1503,7 +1524,7 @@ export default function Home() {
                         {card.purposeLine}
                       </p>
                       <p className="mt-1 text-[14px] font-semibold text-[#5F6B2E]">
-                        {isMatchAlert ? '탭해서 매칭 확인하기' : card.progressLine}
+                        {card.progressLine}
                       </p>
                     </div>
                     {showCancelButton ? (

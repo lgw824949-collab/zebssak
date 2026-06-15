@@ -326,13 +326,26 @@ function formatTrainSubline(draft: BoardingDraft): string {
 const MATCH_GUIDE_BY_ROLE = {
   provider: [
     '착석 희망자가 등록되면 자동 연결',
-    '매칭되면 알림 화면으로 이동',
+    '연결되면 알림 화면으로 이동',
     '이 화면을 나가도 대기는 유지됩니다',
   ],
   seeker: [
     '하차 예정자가 등록되면 자동 연결',
-    '매칭되면 알림 화면으로 이동',
+    '연결되면 알림 화면으로 이동',
     '이 화면을 나가도 대기는 유지됩니다',
+  ],
+} as const
+
+const MATCH_PROGRESS_GUIDE_BY_ROLE = {
+  provider: [
+    '착석 희망자와 연결되었어요',
+    '알림에서 수락해 주세요',
+    '앞에 사람 있으면 양보가 불편할 수 있어요',
+  ],
+  seeker: [
+    '하차 예정자와 연결되었어요',
+    '표시된 호차로 이동해 주세요',
+    '도착 후 수락해 주세요',
   ],
 } as const
 
@@ -340,6 +353,29 @@ const WAITING_SUBTITLE_BY_ROLE = {
   provider: '착석 희망자가 등록되면 알려드려요',
   seeker: '하차 예정자가 등록되면 알려드려요',
 } as const
+
+const CONNECTED_SUBTITLE_BY_ROLE = {
+  provider: '착석 희망자와 연결 · 알림에서 확인',
+  seeker: '하차 예정자와 연결 · 이동 후 수락',
+} as const
+
+type WaitMatchPhase = 'waiting' | 'connected' | 'accepted'
+
+/** 요청·매칭 상태로 내 상태 화면 진행 단계를 판별합니다. */
+function resolveWaitMatchPhase(
+  requestStatus?: string | null,
+  matchStatus?: string | null
+): WaitMatchPhase {
+  if (matchStatus === 'accepted') {
+    return 'accepted'
+  }
+
+  if (requestStatus === 'matched') {
+    return 'connected'
+  }
+
+  return 'waiting'
+}
 
 const MATCH_TYPE_LABEL_BY_ROLE = {
   provider: '하차 예정 등록',
@@ -540,6 +576,7 @@ export default function WaitingPage() {
   const [isReady, setIsReady] = useState(false)
   const [partnerAcceptedNotice, setPartnerAcceptedNotice] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
+  const [matchPhase, setMatchPhase] = useState<WaitMatchPhase>('waiting')
 
   useEffect(() => {
     const tokenFromStorage = localStorage.getItem('token')
@@ -589,6 +626,7 @@ export default function WaitingPage() {
               success?: boolean
               data?: {
                 match_request?: { status?: string } | null
+                match?: { status?: string } | null
               }
             }
 
@@ -600,6 +638,15 @@ export default function WaitingPage() {
               clearWaitingMatchSession()
               router.replace('/')
               return
+            }
+
+            if (snapshotStatusResponse.ok && snapshotStatus.success) {
+              setMatchPhase(
+                resolveWaitMatchPhase(
+                  snapshotStatus.data?.match_request?.status,
+                  snapshotStatus.data?.match?.status
+                )
+              )
             }
 
             persistWaitingSession(snapshot.draft, snapshot.requestId)
@@ -854,6 +901,9 @@ export default function WaitingPage() {
             statusResult.data?.match?.status,
             statusResult.data?.match_request?.status
           )
+          const requestStatus = statusResult.data?.match_request?.status
+          const matchStatus = statusResult.data?.match?.status
+          setMatchPhase(resolveWaitMatchPhase(requestStatus, matchStatus))
 
           if (navigationTarget !== 'none' && statusResult.data?.match?.id) {
             sessionStorage.setItem('activeMatchId', statusResult.data.match.id)
@@ -980,6 +1030,7 @@ export default function WaitingPage() {
 
         const match = statusResult.data?.match
         const requestStatus = statusResult.data?.match_request?.status
+        setMatchPhase(resolveWaitMatchPhase(requestStatus, match?.status))
 
         if (requestStatus === 'cancelled') {
           clearWaitingMatchSession()
@@ -1061,6 +1112,7 @@ export default function WaitingPage() {
 
         const match = statusResult.data?.match
         const requestStatus = statusResult.data?.match_request?.status
+        setMatchPhase(resolveWaitMatchPhase(requestStatus, match?.status))
 
         if (requestStatus === 'cancelled') {
           clearWaitingMatchSession()
@@ -1218,6 +1270,27 @@ export default function WaitingPage() {
   const isProviderDraft = draft?.role === 'provider'
   const waitingRole = isProviderDraft ? 'provider' : 'seeker'
   const isWaitingPanelVisible = isProviderDraft ? isProviderWaiting : isSeekerWaiting
+  const showStatusPanel = matchPhase !== 'waiting' || isWaitingPanelVisible
+  const statusTitle =
+    matchPhase === 'accepted'
+      ? '연결 완료'
+      : matchPhase === 'connected'
+        ? '연결됨'
+        : '대기 중'
+  const statusSubtitle =
+    matchPhase === 'accepted'
+      ? '좌석 안내 화면으로 이동합니다'
+      : matchPhase === 'connected'
+        ? CONNECTED_SUBTITLE_BY_ROLE[waitingRole]
+        : WAITING_SUBTITLE_BY_ROLE[waitingRole]
+  const liveStatusLabel =
+    matchPhase === 'waiting' ? '실시간 대기 중' : '진행 중'
+  const guideItems =
+    matchPhase === 'connected' || matchPhase === 'accepted'
+      ? MATCH_PROGRESS_GUIDE_BY_ROLE[waitingRole]
+      : MATCH_GUIDE_BY_ROLE[waitingRole]
+  const guideTitle =
+    matchPhase === 'connected' || matchPhase === 'accepted' ? '진행 안내' : '이용 안내'
   return (
     <WaitingPageLayout>
       <WaitingPageHeader onBack={goBack} />
@@ -1313,7 +1386,7 @@ export default function WaitingPage() {
           </div>
         ) : null}
 
-        {isWaitingPanelVisible && (
+        {showStatusPanel && (
           <>
             <section
               style={{
@@ -1336,12 +1409,12 @@ export default function WaitingPage() {
                   color: lineColor,
                 }}
               >
-                매칭 대기 중
+                {statusTitle}
               </p>
               <p style={{ margin: '10px 0 0', fontSize: 14, fontWeight: 500, color: '#6B7280' }}>
-                {WAITING_SUBTITLE_BY_ROLE[waitingRole]}
+                {statusSubtitle}
               </p>
-              {!isProviderDraft && waitingRank != null ? (
+              {matchPhase === 'waiting' && !isProviderDraft && waitingRank != null ? (
                 <p style={{ margin: '8px 0 0', fontSize: 13, fontWeight: 600, color: '#9CA3AF' }}>
                   대기 순위 {waitingRank}위
                 </p>
@@ -1357,7 +1430,7 @@ export default function WaitingPage() {
               >
                 <span className="wait-live-dot" aria-hidden />
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#6B7280' }}>
-                  실시간 매칭 대기 중
+                  {liveStatusLabel}
                 </span>
               </div>
             </section>
@@ -1406,7 +1479,7 @@ export default function WaitingPage() {
                   }}
                 >
                   <span style={{ fontSize: 14, fontWeight: 500, color: '#6B7280' }}>
-                    매칭 유형
+                    등록 유형
                   </span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>
                     {MATCH_TYPE_LABEL_BY_ROLE[waitingRole]}
@@ -1424,10 +1497,10 @@ export default function WaitingPage() {
               }}
             >
               <p style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 700, color: '#374151' }}>
-                매칭 안내
+                {guideTitle}
               </p>
               <ol style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-                {MATCH_GUIDE_BY_ROLE[waitingRole].map((label, index) => (
+                {guideItems.map((label, index) => (
                   <li
                     key={label}
                     style={{
