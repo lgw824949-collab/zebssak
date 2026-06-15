@@ -1,3 +1,5 @@
+import { clearMatchClientSession } from '@/lib/match-session'
+
 /**
  * API 401 응답 시 로그인 화면으로 이동합니다.
  */
@@ -8,6 +10,7 @@ export function clearAuthAndRedirectToLogin(): void {
   try {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    clearMatchClientSession()
   } catch {
     // storage 접근 실패 시에도 로그인으로 유도
   }

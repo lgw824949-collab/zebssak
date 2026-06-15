@@ -4,6 +4,10 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import AppHamburgerMenu from '@/components/AppHamburgerMenu'
 import { handleUnauthorizedResponse } from '@/lib/auth-client'
+import {
+  clearMatchClientSession,
+  resolveActiveMatchNavigationTarget,
+} from '@/lib/match-session'
 import { subscribeMatchRealtime } from '@/lib/match-realtime'
 
 type BoardingLineKey =
@@ -148,17 +152,7 @@ function persistWaitingSession(draft: BoardingDraft, requestId: string): void {
 
 /** 취소·거절 후 대기/매칭 session을 정리합니다. */
 function clearWaitingMatchSession(): void {
-  try {
-    sessionStorage.removeItem(ACTIVE_REQUEST_KEY)
-    sessionStorage.removeItem('activeMatchId')
-    sessionStorage.removeItem(WAITING_DRAFT_KEY)
-    sessionStorage.removeItem('boardingDraft')
-    sessionStorage.removeItem(REGISTERED_FLAG_KEY)
-    sessionStorage.removeItem(PROVIDER_REGISTERED_FLAG_KEY)
-    sessionStorage.removeItem('seekerMatchRequestRegistered')
-  } catch {
-    // sessionStorage 정리 실패 시 무시합니다.
-  }
+  clearMatchClientSession()
 }
 
 type MatchNavigationTarget = 'matching' | 'matched' | 'none'
@@ -619,8 +613,30 @@ export default function WaitingPage() {
 
         const storedMatchId = sessionStorage.getItem('activeMatchId')?.trim()
         if (storedMatchId) {
-          router.replace(`/matching?matchId=${encodeURIComponent(storedMatchId)}`)
-          return
+          const navigationTarget = await resolveActiveMatchNavigationTarget(
+            authToken,
+            storedMatchId,
+            existingRequestId,
+            abortController.signal
+          )
+
+          if (cancelled) {
+            return
+          }
+
+          if (navigationTarget === 'matching') {
+            router.replace(`/matching?matchId=${encodeURIComponent(storedMatchId)}`)
+            return
+          }
+
+          if (navigationTarget === 'matched') {
+            router.replace('/matched')
+            return
+          }
+
+          clearWaitingMatchSession()
+          existingRequestId = null
+          parsedDraft = loadBoardingDraft()
         }
 
         if (!isRegistered || !requestId) {

@@ -6,6 +6,46 @@ function errorResponse(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status })
 }
 
+/** matched 요청이 유효한 활성 매칭과 연결돼 있는지 확인합니다. */
+async function repairStaleMatchedRequest(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  requestId: string
+): Promise<boolean> {
+  const { data: latestMatch, error: matchError } = await supabase
+    .from('matches')
+    .select('id, status')
+    .or(`seat_seek_request_id.eq.${requestId},leaving_request_id.eq.${requestId}`)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (matchError) {
+    return false
+  }
+
+  const matchStatus = latestMatch?.status
+  if (matchStatus === 'pending' || matchStatus === 'accepted') {
+    return true
+  }
+
+  if (matchStatus === 'cancelled') {
+    await supabase
+      .from('match_requests')
+      .update({ status: 'cancelled' })
+      .eq('id', requestId)
+      .eq('status', 'matched')
+    return false
+  }
+
+  await supabase
+    .from('match_requests')
+    .update({ status: 'waiting' })
+    .eq('id', requestId)
+    .eq('status', 'matched')
+
+  return false
+}
+
 /**
  * GET /api/match-requests/current
  * 현재 로그인 유저의 활성(waiting/matched) 요청 1건
@@ -19,7 +59,7 @@ export async function GET(request: Request) {
 
     const supabase = createSupabaseAdminClient()
 
-    const { data: currentRequest, error: currentError } = await supabase
+    const { data: currentRequestRaw, error: currentError } = await supabase
       .from('match_requests')
       .select(
         'id, status, request_type, remaining_stations, car_number, requested_at, destination_station_id, train_id'
@@ -32,6 +72,18 @@ export async function GET(request: Request) {
 
     if (currentError) {
       return errorResponse('현재 매칭 요청을 불러올 수 없습니다.', 500)
+    }
+
+    let currentRequest = currentRequestRaw
+
+    if (currentRequest?.status === 'matched') {
+      const isActive = await repairStaleMatchedRequest(
+        supabase,
+        currentRequest.id as string
+      )
+      if (!isActive) {
+        currentRequest = null
+      }
     }
 
     const { count: waitingCountRaw, error: waitingCountError } = await supabase

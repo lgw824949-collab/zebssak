@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import AppHamburgerMenu from '@/components/AppHamburgerMenu'
+import { clearMatchClientSession } from '@/lib/match-session'
 
 interface StoredUser {
   username?: string
@@ -103,8 +104,7 @@ export default function ProfilePage() {
     } finally {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
-      sessionStorage.removeItem('boardingDraft')
-      sessionStorage.removeItem('providerRegistered')
+      clearMatchClientSession()
       router.replace('/login')
     }
   }

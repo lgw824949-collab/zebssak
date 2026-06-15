@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FormEvent, Suspense, useState } from 'react'
 import { subscribePush } from '@/lib/push'
+import { clearMatchClientSession } from '@/lib/match-session'
 
 interface AuthApiResponse {
   success: boolean
@@ -87,6 +88,7 @@ function LoginPageContent() {
 
       localStorage.setItem('token', result.data.token)
       localStorage.setItem('user', JSON.stringify(result.data.user))
+      clearMatchClientSession()
 
       if ('serviceWorker' in navigator) {
         try {
