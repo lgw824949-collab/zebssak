@@ -6,6 +6,11 @@ import {
 } from '@/lib/match-direction'
 import { sendMatchPushNotifications } from '@/lib/push-server'
 import { resolveAdjacentCarNumbers, resolveCarDistance } from '@/lib/match-movement-guide'
+import {
+  fetchRealtimePositionRows,
+  normalizeSeoulTrainNo,
+  resolveSeoulLineName,
+} from '@/lib/seoul-metro'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -37,6 +42,16 @@ interface WaitingRequestRow {
   car_number: number
 }
 
+interface MatchRealtimeRequestRow {
+  id: string
+  direction: string
+  origin_station: { station_code?: string } | { station_code?: string }[] | null
+  destination_station:
+    | { station_code?: string }
+    | { station_code?: string }[]
+    | null
+}
+
 function errorResponse(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status })
 }
@@ -59,6 +74,104 @@ function compositeTrainNo(linePrefix: string, trainNo: string): string {
   return `${linePrefix}:${trainNo}`
 }
 
+function normalizeTrainNoForStorage(linePrefix: string, trainNo: string): string {
+  const raw = trainNo.trim()
+  const isSeoul = /^s[1-9]$/u.test(linePrefix.trim().toLowerCase())
+  if (!isSeoul) return raw
+  const normalized = normalizeSeoulTrainNo(raw)
+  return normalized || raw
+}
+
+function normalizeStationLabel(name: string | null | undefined): string {
+  return (name ?? '')
+    .trim()
+    .replace(/역$/u, '')
+    .replace(/\s+/g, '')
+}
+
+function resolveSeoulLineParamFromPrefix(linePrefix: string): string | null {
+  const match = linePrefix.trim().toLowerCase().match(/^s([1-9])$/)
+  if (!match?.[1]) return null
+  return `seoul${match[1]}`
+}
+
+/** 입력 열차번호와 실시간 API trainNo를 느슨하게 비교합니다. */
+function isSameRealtimeTrain(rowTrainNo: string, requestedTrainNo: string): boolean {
+  const rowRaw = rowTrainNo.trim()
+  const reqRaw = requestedTrainNo.trim()
+  if (!rowRaw || !reqRaw) return false
+
+  const rowNorm = normalizeSeoulTrainNo(rowRaw)
+  const reqNorm = normalizeSeoulTrainNo(reqRaw)
+  if (rowNorm && reqNorm && rowNorm === reqNorm) return true
+
+  const rowDigits = rowRaw.replace(/\D/g, '')
+  const reqDigits = reqRaw.replace(/\D/g, '')
+  if (rowDigits && reqDigits) {
+    if (rowDigits === reqDigits) return true
+    if (rowDigits.endsWith(reqDigits) || reqDigits.endsWith(rowDigits)) return true
+  }
+
+  return false
+}
+
+/**
+ * 선택 열차가 실제 탑승 가능한 위치인지 서버에서 검증합니다.
+ * - 서울 1~9호선은 실시간 API가 확보되어야만 진행
+ * - 현재 열차 역이 탑승역과 다르면 "아직 탑승 전"으로 판단해 차단
+ */
+async function validateRealtimeBoardingContext(
+  request: Request,
+  input: {
+    linePrefix: string
+    trainNo: string
+    boardingStationName: string
+  }
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const lineParam = resolveSeoulLineParamFromPrefix(input.linePrefix)
+  if (!lineParam) {
+    return { ok: true }
+  }
+
+  const lineName = resolveSeoulLineName(lineParam)
+  if (!lineName) {
+    return { ok: true }
+  }
+
+  const boardingLabel = normalizeStationLabel(input.boardingStationName)
+  if (!boardingLabel) {
+    return { ok: true }
+  }
+
+  const positionRows = await fetchRealtimePositionRows(request, lineName)
+  if (!positionRows.length) {
+    return {
+      ok: false,
+      message: '실시간 열차 위치를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+    }
+  }
+
+  const matchedTrain = positionRows.find((row) =>
+    isSameRealtimeTrain(String(row.trainNo ?? ''), input.trainNo)
+  )
+  if (!matchedTrain?.statnNm) {
+    return {
+      ok: false,
+      message: '선택한 열차의 실시간 위치를 확인할 수 없습니다. 열차 도착 후 다시 시도해 주세요.',
+    }
+  }
+
+  const currentLabel = normalizeStationLabel(matchedTrain.statnNm)
+  if (currentLabel !== boardingLabel) {
+    return {
+      ok: false,
+      message: `선택한 열차는 현재 ${matchedTrain.statnNm}역입니다. ${input.boardingStationName}역 도착 후 등록해 주세요.`,
+    }
+  }
+
+  return { ok: true }
+}
+
 function stationCodeFromJoin(
   station:
     | { station_code?: string }
@@ -70,6 +183,62 @@ function stationCodeFromJoin(
     return station[0]?.station_code?.trim() ?? ''
   }
   return station?.station_code?.trim() ?? ''
+}
+
+function stationOrderFromCode(stationCode: string): number | null {
+  const match = stationCode.trim().toLowerCase().match(/-(\d+)$/u)
+  if (!match?.[1]) return null
+  const parsed = Number.parseInt(match[1], 10)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+async function resolveCurrentStationOrder(
+  supabase: SupabaseClient,
+  linePrefix: string,
+  currentStationName: string
+): Promise<number | null> {
+  const normalizedName = normalizeStationLabel(currentStationName)
+  if (!normalizedName) return null
+
+  const { data: rows, error } = await supabase
+    .from('stations')
+    .select('station_name, station_order, station_code')
+    .ilike('station_code', `${linePrefix}-%`)
+
+  if (error || !rows?.length) return null
+
+  const matched = rows.find((row) => {
+    const code = String(row.station_code ?? '').trim().toLowerCase()
+    if (!code.startsWith(linePrefix)) return false
+    return normalizeStationLabel(String(row.station_name ?? '')) === normalizedName
+  })
+
+  if (!matched || typeof matched.station_order !== 'number') return null
+  return matched.station_order
+}
+
+function isRequestInsideRealtimeWindow(
+  row: MatchRealtimeRequestRow,
+  currentOrder: number
+): boolean {
+  const originCode = stationCodeFromJoin(row.origin_station)
+  const destinationCode = stationCodeFromJoin(row.destination_station)
+  const originOrder = stationOrderFromCode(originCode)
+  const destinationOrder = stationOrderFromCode(destinationCode)
+  if (originOrder == null || destinationOrder == null) return false
+
+  const minOrder = Math.min(originOrder, destinationOrder)
+  const maxOrder = Math.max(originOrder, destinationOrder)
+  if (currentOrder < minOrder || currentOrder > maxOrder) return false
+
+  const directionBucket = normalizeDirectionForStorage(row.direction)
+  if (directionBucket === '1') {
+    return currentOrder <= originOrder && currentOrder >= destinationOrder
+  }
+  if (directionBucket === '2') {
+    return currentOrder >= originOrder && currentOrder <= destinationOrder
+  }
+  return false
 }
 
 /**
@@ -120,7 +289,8 @@ async function ensureTrain(
   trainNo: string,
   lineNumber: number
 ): Promise<string | null> {
-  const storedTrainNo = compositeTrainNo(linePrefix, trainNo)
+  const normalizedTrainNo = normalizeTrainNoForStorage(linePrefix, trainNo)
+  const storedTrainNo = compositeTrainNo(linePrefix, normalizedTrainNo)
 
   const { data: existingRows, error: selectError } = await supabase
     .from('trains')
@@ -283,10 +453,12 @@ async function calculateQueuePosition(
  * 반대 유형 waiting 요청과 매칭 시도 후 matches 행 생성
  */
 async function tryCreateMatch(
+  request: Request,
   supabase: SupabaseClient,
   newRequestId: string,
   newRequestType: RequestType,
   trainUuid: string,
+  trainNo: string,
   carNumber: number,
   linePrefix: string,
   direction: string
@@ -306,6 +478,7 @@ async function tryCreateMatch(
       remaining_stations,
       requested_at,
       car_number,
+      direction,
       destination_station:stations!destination_station_id(station_code),
       origin_station:stations!origin_station_id(station_code)
     `)
@@ -341,6 +514,69 @@ async function tryCreateMatch(
 
   if (!sameLineCandidates.length) {
     return null
+  }
+
+  if (/^s[1-9]$/u.test(linePrefix)) {
+    const lineName = resolveSeoulLineName(`seoul${linePrefix.slice(1)}`)
+    if (!lineName) return null
+
+    const positionRows = await fetchRealtimePositionRows(request, lineName)
+    if (!positionRows.length) return null
+
+    const matchedTrain = positionRows.find((row) =>
+      isSameRealtimeTrain(String(row.trainNo ?? ''), trainNo)
+    )
+    if (!matchedTrain?.statnNm) return null
+
+    const currentOrder = await resolveCurrentStationOrder(
+      supabase,
+      linePrefix,
+      matchedTrain.statnNm
+    )
+    if (currentOrder == null) return null
+
+    const { data: newRequestRow, error: newRequestError } = await supabase
+      .from('match_requests')
+      .select(`
+        id,
+        direction,
+        origin_station:stations!origin_station_id(station_code),
+        destination_station:stations!destination_station_id(station_code)
+      `)
+      .eq('id', newRequestId)
+      .maybeSingle()
+
+    if (newRequestError || !newRequestRow) return null
+
+    const newRealtimeRow = newRequestRow as MatchRealtimeRequestRow
+    if (!isRequestInsideRealtimeWindow(newRealtimeRow, currentOrder)) {
+      return null
+    }
+
+    const realtimeCandidates = sameLineCandidates.filter((row) =>
+      isRequestInsideRealtimeWindow(
+        {
+          id: String(row.id),
+          direction: String((row as { direction?: string }).direction ?? direction),
+          origin_station: row.origin_station as
+            | { station_code?: string }
+            | { station_code?: string }[]
+            | null,
+          destination_station: row.destination_station as
+            | { station_code?: string }
+            | { station_code?: string }[]
+            | null,
+        },
+        currentOrder
+      )
+    )
+
+    if (!realtimeCandidates.length) {
+      return null
+    }
+
+    sameLineCandidates.length = 0
+    sameLineCandidates.push(...realtimeCandidates)
   }
 
   const ranked = sortByMatchingPriority(
@@ -524,6 +760,18 @@ export async function POST(request: Request) {
         400
       )
     }
+
+    const normalizedTrainNo = normalizeTrainNoForStorage(linePrefix, trainNo)
+
+    const boardingRealtimeCheck = await validateRealtimeBoardingContext(request, {
+      linePrefix,
+      trainNo: normalizedTrainNo,
+      boardingStationName: originName,
+    })
+    if (!boardingRealtimeCheck.ok) {
+      return errorResponse(boardingRealtimeCheck.message, 409)
+    }
+
     const originOrderMatch = originCode.match(/-(\d+)$/)
     const originOrder = originOrderMatch ? Number(originOrderMatch[1]) : 1
     const destinationOrderMatch = destinationCode.match(/-(\d+)$/)
@@ -550,7 +798,12 @@ export async function POST(request: Request) {
       return errorResponse('역 정보를 저장할 수 없습니다.', 500)
     }
 
-    const trainUuid = await ensureTrain(supabase, linePrefix, trainNo, lineNumber)
+    const trainUuid = await ensureTrain(
+      supabase,
+      linePrefix,
+      normalizedTrainNo,
+      lineNumber
+    )
     if (!trainUuid) {
       return errorResponse('열차 정보를 저장할 수 없습니다.', 500)
     }
@@ -613,10 +866,12 @@ export async function POST(request: Request) {
     }
 
     const matchId = await tryCreateMatch(
+      request,
       supabase,
       created.id as string,
       requestType,
       trainUuid,
+      normalizedTrainNo,
       carNumber,
       linePrefix,
       directionStored
