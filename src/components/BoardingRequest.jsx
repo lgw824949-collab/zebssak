@@ -2937,6 +2937,8 @@ function StepTrain({
   currentStation,
   mode,
   isMatching,
+  presenceMode,
+  onPresenceModeChange,
   onTrainPick,
   onBack,
 }) {
@@ -3494,6 +3496,8 @@ function StepTrain({
   const lineColor = LINE_OLIVE;
   const lineColorLight = LINE_OLIVE_LIGHT;
   const directionLabel = (line || "").split("·")[1]?.trim() || "";
+  const isLeaveMode = mode === "leave";
+  const isPlatformWaiting = presenceMode === "platform_waiting";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: C.bg }}>
@@ -3567,6 +3571,63 @@ function StepTrain({
             <p style={{ margin: "8px 0 0", fontSize: 13, color: C.muted }}>{directionLabel}</p>
           ) : null}
         </div>
+
+        {!isLeaveMode ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "12px 14px",
+              borderRadius: 14,
+              background: C.card,
+              border: `1px solid ${C.border}`,
+            }}
+          >
+            <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: C.text }}>
+              지금 어디에 있나요?
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => onPresenceModeChange?.("platform_waiting")}
+                style={{
+                  flex: 1,
+                  padding: "10px 8px",
+                  borderRadius: 10,
+                  border: `2px solid ${isPlatformWaiting ? lineColor : C.border}`,
+                  background: isPlatformWaiting ? lineColorLight : "#FFFFFF",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: isPlatformWaiting ? lineColor : C.muted,
+                  cursor: "pointer",
+                }}
+              >
+                플랫폼 대기
+              </button>
+              <button
+                type="button"
+                onClick={() => onPresenceModeChange?.("onboard")}
+                style={{
+                  flex: 1,
+                  padding: "10px 8px",
+                  borderRadius: 10,
+                  border: `2px solid ${!isPlatformWaiting ? lineColor : C.border}`,
+                  background: !isPlatformWaiting ? lineColorLight : "#FFFFFF",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: !isPlatformWaiting ? lineColor : C.muted,
+                  cursor: "pointer",
+                }}
+              >
+                열차 탑승 중
+              </button>
+            </div>
+            <p style={{ margin: "10px 0 0", fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+              {isPlatformWaiting
+                ? "다음 열차를 기다리는 중이면 여기를 선택하세요. 탑승 후 매칭이 시작됩니다."
+                : "이미 열차에 올라탔다면 여기를 선택하세요. 열차번호 확인 후 바로 매칭됩니다."}
+            </p>
+          </div>
+        ) : null}
 
         <p style={{ margin: "14px 0 10px", fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
           {currentStation
@@ -4551,6 +4612,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
   const [submitError, setSubmitError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [voiceSeekDraft, setVoiceSeekDraft] = useState(null);
+  const [presenceMode, setPresenceMode] = useState("platform_waiting");
   const submitSeekFailureRef = useRef("");
   const lineNumber = resolveLineNumberFromLineProp(normalizedLine);
 
@@ -4566,6 +4628,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
     setSubmitError("");
     setIsSubmitting(false);
     setVoiceSeekDraft(null);
+    setPresenceMode("platform_waiting");
   }, [normalizedLine, mode]);
 
   // 탑승 화면 진입 시 역 목록을 미리 받아 두어 검색·열차 단계 지연을 줄입니다.
@@ -4753,6 +4816,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
         },
         body: JSON.stringify({
           role: "seeker",
+          presence_mode: presenceMode,
           train_id: activeTrainId,
           line_number: lineNumber,
           direction: normalizeDirectionForStorage(activeTrainDirection || "하행"),
@@ -4793,6 +4857,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
 
       const draft = {
         role: "seeker",
+        presenceMode,
         lineKey: resolveApiLineKeyFromLineProp(normalizedLine),
         lineLabel: normalizedLine,
         lineNumber,
@@ -4919,6 +4984,7 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
 
       const body = {
         role: "provider",
+        presence_mode: "onboard",
         train_id: trainId,
         line_number: lineNumber,
         direction: normalizeDirectionForStorage(trainDirection || "하행"),
@@ -5222,6 +5288,8 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
           station={station}
           currentStation={currentStationName}
           isMatching={false}
+          presenceMode={presenceMode}
+          onPresenceModeChange={setPresenceMode}
           onTrainPick={handleTrainPick}
           onBack={handleBackFromStep2}
         />

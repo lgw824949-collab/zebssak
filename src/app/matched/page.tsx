@@ -505,9 +505,23 @@ export default function MatchedPage() {
     }
   }
 
-  function handleConfirm() {
-    saveHomeMatchCompletedHint()
+  async function handleConfirm() {
+    const token = localStorage.getItem('token')
+    const matchId = resolveMatchId()
+
+    if (token && matchId && detail?.status === 'accepted') {
+      try {
+        await fetch(`/api/matches/${encodeURIComponent(matchId)}/complete`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      } catch {
+        // 완료 API 실패해도 홈 완료 힌트는 유지합니다.
+      }
+    }
+
     clearMatchSession()
+    saveHomeMatchCompletedHint()
     router.push('/')
   }
 

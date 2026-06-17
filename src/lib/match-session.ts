@@ -1,4 +1,4 @@
-/** 매칭·대기 관련 sessionStorage 키 */
+/** 매칭·대기 관련 sessionStorage 키 (완료 힌트는 별도 관리) */
 export const MATCH_CLIENT_SESSION_KEYS = [
   'activeMatchId',
   'activeMatchRequestId',
@@ -6,7 +6,6 @@ export const MATCH_CLIENT_SESSION_KEYS = [
   'waitingDraft',
   'providerRegistered',
   'seekerMatchRequestRegistered',
-  'homeMatchCompletedHint',
 ] as const
 
 /** 로그아웃·거절·취소 시 매칭 클라이언트 session을 정리합니다. */

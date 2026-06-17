@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
 import { cancelMatchRequestForUser } from '@/lib/cancel-match-request'
-import { repairStaleMatchedRequest } from '@/lib/match-request-repair'
+import { repairStaleMatchedRequest, repairWaitingRequestAfterCompletedMatch } from '@/lib/match-request-repair'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 
 function errorResponse(message: string, status: number) {
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     const { data: matchRequest, error: requestError } = await supabase
       .from('match_requests')
       .select(
-        'id, request_type, status, remaining_stations, destination_station_id, train_id, car_number'
+        'id, request_type, status, remaining_stations, destination_station_id, train_id, car_number, presence_mode'
       )
       .eq('id', requestId)
       .eq('user_id', userId)
@@ -50,12 +50,31 @@ export async function GET(request: Request) {
       })
     }
 
+    const effectiveStatus =
+      repairResult === 'waiting'
+        ? 'waiting'
+        : String(matchRequest.status ?? '')
+
+    if (effectiveStatus === 'waiting') {
+      const waitingRepair = await repairWaitingRequestAfterCompletedMatch(
+        supabase,
+        requestId
+      )
+      if (waitingRepair === 'cancelled') {
+        return NextResponse.json({
+          success: true,
+          data: {
+            match_request: { ...matchRequest, status: 'cancelled' },
+            queue_position: null,
+            match: null,
+          },
+        })
+      }
+    }
+
     const effectiveRequest = {
       ...matchRequest,
-      status:
-        repairResult === 'waiting'
-          ? 'waiting'
-          : String(matchRequest.status ?? ''),
+      status: effectiveStatus,
     }
 
     const { data: matchRaw } = await supabase
@@ -68,7 +87,7 @@ export async function GET(request: Request) {
       .limit(1)
       .maybeSingle()
 
-    // 취소된 요청·종료된 매칭은 활성 매칭으로 내려주지 않습니다.
+    // 취소·완료·종료된 매칭은 활성 매칭으로 내려주지 않습니다.
     let match: typeof matchRaw = null
     const requestStatus = String(effectiveRequest.status ?? '')
     if (requestStatus !== 'cancelled' && matchRaw) {
@@ -79,12 +98,18 @@ export async function GET(request: Request) {
     }
 
     let queuePosition: number | null = null
+    const requestPresenceMode =
+      String(effectiveRequest.presence_mode ?? 'onboard') === 'platform_waiting'
+        ? 'platform_waiting'
+        : 'onboard'
+
     if (effectiveRequest.request_type === 'seat_seek' && effectiveRequest.status === 'waiting') {
       const { data: waitingList } = await supabase
         .from('match_requests')
         .select('id, remaining_stations, requested_at, users(is_vulnerable)')
         .eq('status', 'waiting')
         .eq('request_type', 'seat_seek')
+        .eq('presence_mode', requestPresenceMode)
 
       if (waitingList) {
         const sorted = [...waitingList].sort((a, b) => {

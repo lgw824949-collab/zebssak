@@ -481,6 +481,7 @@ async function fetchMatchRequestStatus(
   queuePosition: number | null
   pendingMatchId: string | null
   acceptedMatchId: string | null
+  completedMatchId: string | null
   matchStatus: string | null
   requestType: string | null
   requestStatus: string | null
@@ -507,6 +508,7 @@ async function fetchMatchRequestStatus(
       queuePosition: null,
       pendingMatchId: null,
       acceptedMatchId: null,
+      completedMatchId: null,
       matchStatus: null,
       requestType: null,
       requestStatus: null,
@@ -517,11 +519,13 @@ async function fetchMatchRequestStatus(
   const matchId = statusPayload.data?.match?.id ?? null
   const pendingMatchId = matchStatus === 'pending' ? matchId : null
   const acceptedMatchId = matchStatus === 'accepted' ? matchId : null
+  const completedMatchId = matchStatus === 'completed' ? matchId : null
 
   return {
     queuePosition: statusPayload.data?.queue_position ?? null,
     pendingMatchId,
     acceptedMatchId,
+    completedMatchId,
     matchStatus,
     requestType: statusPayload.data?.match_request?.request_type ?? null,
     requestStatus: statusPayload.data?.match_request?.status ?? null,
@@ -601,6 +605,7 @@ function buildHomeWaitView(input: {
   waitingCount: number
   pendingMatchId: string | null
   acceptedMatchId: string | null
+  completedMatchId: string | null
   matchStatus: string | null
   trainNo: string | null
   carNumber: number | null
@@ -608,6 +613,17 @@ function buildHomeWaitView(input: {
 }): HomeWaitView | null {
   const registrationKind: 'seek' | 'leave' =
     input.requestType === 'leaving' ? 'leave' : 'seek'
+
+  const completedProgress: HomeMatchProgress = {
+    step: 'seated',
+    flowStep: 'done',
+    handoffRemaining: null,
+    seatConfirmed: true,
+    matchCompleted: true,
+    trainCurrentStationName: null,
+    providerDirectionLabel: null,
+    positionIsLive: false,
+  }
 
   const baseView = {
     requestId: input.requestId,
@@ -623,6 +639,17 @@ function buildHomeWaitView(input: {
 
   if (input.requestStatus === 'cancelled') {
     return null
+  }
+
+  if (input.matchStatus === 'completed' || input.homeProgress?.matchCompleted) {
+    return {
+      ...baseView,
+      phase: 'match_done',
+      matchId: input.completedMatchId ?? input.acceptedMatchId ?? input.pendingMatchId,
+      homeProgress: input.homeProgress?.matchCompleted
+        ? input.homeProgress
+        : completedProgress,
+    }
   }
 
   if (input.requestStatus === 'matched' && input.matchStatus !== 'accepted') {
@@ -787,8 +814,10 @@ async function fetchHomeWaitView(token: string): Promise<HomeWaitView | null> {
   }
 
   let homeProgress: HomeMatchProgress | null = null
-  if (status.acceptedMatchId) {
-    homeProgress = await fetchHomeMatchProgress(token, status.acceptedMatchId)
+  const activeMatchId =
+    status.completedMatchId ?? status.acceptedMatchId ?? status.pendingMatchId
+  if (activeMatchId) {
+    homeProgress = await fetchHomeMatchProgress(token, activeMatchId)
   }
 
   const view = buildHomeWaitView({
@@ -800,6 +829,7 @@ async function fetchHomeWaitView(token: string): Promise<HomeWaitView | null> {
     waitingCount,
     pendingMatchId: status.pendingMatchId,
     acceptedMatchId: status.acceptedMatchId,
+    completedMatchId: status.completedMatchId,
     matchStatus: status.matchStatus,
     trainNo,
     carNumber,
@@ -849,17 +879,30 @@ export default function Home() {
   }, [])
 
   const loadHomeWaitStatus = useCallback(async (token: string | null) => {
-    const applyCompletedHintOnly = () => {
-      setHomeWaitView(resolveHomeWaitViewFromCompletedHint())
-    }
+    const hintView = resolveHomeWaitViewFromCompletedHint()
 
     if (!token) {
-      applyCompletedHintOnly()
+      setHomeWaitView(hintView)
       return
     }
 
     try {
       const view = await fetchHomeWaitView(token)
+
+      if (view?.phase === 'match_done') {
+        clearHomeMatchCompletedHint()
+        setHomeWaitView(view)
+        return
+      }
+
+      if (
+        hintView &&
+        (!view || view.phase === 'waiting_seek' || view.phase === 'waiting_leave')
+      ) {
+        setHomeWaitView(hintView)
+        return
+      }
+
       if (view) {
         clearHomeMatchCompletedHint()
         setHomeWaitView(view)
@@ -867,10 +910,10 @@ export default function Home() {
       }
 
       clearHomeMatchSession()
-      applyCompletedHintOnly()
+      setHomeWaitView(hintView)
     } catch {
       clearHomeMatchSession()
-      applyCompletedHintOnly()
+      setHomeWaitView(hintView)
     }
   }, [])
 
@@ -1368,8 +1411,12 @@ export default function Home() {
   }
 
   const homeMatchStatusBox = resolveHomeMatchStatusBox(homeWaitView)
-  const isSeekRegistering = homeWaitView?.phase === 'waiting_seek'
-  const isLeaveRegistering = homeWaitView?.phase === 'waiting_leave'
+  const isActiveWaitRegistration =
+    homeWaitView?.phase === 'waiting_seek' || homeWaitView?.phase === 'waiting_leave'
+  const isSeekRegistering =
+    isActiveWaitRegistration && homeWaitView?.registrationKind === 'seek'
+  const isLeaveRegistering =
+    isActiveWaitRegistration && homeWaitView?.registrationKind === 'leave'
 
   return (
     <div className="mx-auto flex w-full max-w-[480px] flex-col bg-[#f5f5f0]">

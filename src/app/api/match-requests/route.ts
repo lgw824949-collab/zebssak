@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
 import {
-  equivalentDirectionsForMatch,
-  normalizeDirectionForStorage,
-} from '@/lib/match-direction'
-import { sendMatchPushNotifications } from '@/lib/push-server'
-import { resolveAdjacentCarNumbers, resolveCarDistance } from '@/lib/match-movement-guide'
+  extractLinePrefixFromStationCode,
+  validateOnboardBoardingContext,
+} from '@/lib/match-boarding-validation'
 import {
-  fetchRealtimePositionRows,
-  normalizeSeoulTrainNo,
-  resolveSeoulLineName,
-} from '@/lib/seoul-metro'
+  calculateQueuePosition,
+  tryCreateMatch,
+} from '@/lib/match-create'
+import { normalizeDirectionForStorage } from '@/lib/match-direction'
+import { resolvePresenceModeForRole, type PresenceMode } from '@/lib/presence-mode'
+import { normalizeSeoulTrainNo } from '@/lib/seoul-metro'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -19,6 +19,7 @@ type RequestType = 'seat_seek' | 'leaving'
 
 interface MatchRequestBody {
   role?: unknown
+  presence_mode?: unknown
   train_id?: unknown
   direction?: unknown
   car_number?: unknown
@@ -32,34 +33,8 @@ interface MatchRequestBody {
   destination_name?: unknown
 }
 
-interface WaitingRequestRow {
-  id: string
-  user_id: string
-  remaining_stations: number
-  requested_at: string
-  is_disabled: boolean
-  total_points: number
-  car_number: number
-}
-
-interface MatchRealtimeRequestRow {
-  id: string
-  direction: string
-  origin_station: { station_code?: string } | { station_code?: string }[] | null
-  destination_station:
-    | { station_code?: string }
-    | { station_code?: string }[]
-    | null
-}
-
 function errorResponse(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status })
-}
-
-/** 역 코드에서 호선 접두사 추출 (예: s2-05 → s2, l1-03 → l1) */
-function extractLinePrefixFromStationCode(stationCode: string): string | null {
-  const match = stationCode.trim().toLowerCase().match(/^([a-z]+\d+)-/)
-  return match?.[1] ?? null
 }
 
 function resolveLinePrefix(originCode: string, destinationCode: string): string | null {
@@ -69,7 +44,6 @@ function resolveLinePrefix(originCode: string, destinationCode: string): string 
   )
 }
 
-/** train_no + 호선 접두사로 trains 테이블 조회·저장 키 생성 */
 function compositeTrainNo(linePrefix: string, trainNo: string): string {
   return `${linePrefix}:${trainNo}`
 }
@@ -82,175 +56,10 @@ function normalizeTrainNoForStorage(linePrefix: string, trainNo: string): string
   return normalized || raw
 }
 
-function normalizeStationLabel(name: string | null | undefined): string {
-  return (name ?? '')
-    .trim()
-    .replace(/역$/u, '')
-    .replace(/\s+/g, '')
-}
-
-function resolveSeoulLineParamFromPrefix(linePrefix: string): string | null {
-  const match = linePrefix.trim().toLowerCase().match(/^s([1-9])$/)
-  if (!match?.[1]) return null
-  return `seoul${match[1]}`
-}
-
-/** 입력 열차번호와 실시간 API trainNo를 느슨하게 비교합니다. */
-function isSameRealtimeTrain(rowTrainNo: string, requestedTrainNo: string): boolean {
-  const rowRaw = rowTrainNo.trim()
-  const reqRaw = requestedTrainNo.trim()
-  if (!rowRaw || !reqRaw) return false
-
-  const rowNorm = normalizeSeoulTrainNo(rowRaw)
-  const reqNorm = normalizeSeoulTrainNo(reqRaw)
-  if (rowNorm && reqNorm && rowNorm === reqNorm) return true
-
-  const rowDigits = rowRaw.replace(/\D/g, '')
-  const reqDigits = reqRaw.replace(/\D/g, '')
-  if (rowDigits && reqDigits) {
-    if (rowDigits === reqDigits) return true
-    if (rowDigits.endsWith(reqDigits) || reqDigits.endsWith(rowDigits)) return true
-  }
-
-  return false
-}
-
-/**
- * 선택 열차가 실제 탑승 가능한 위치인지 서버에서 검증합니다.
- * - 서울 1~9호선은 실시간 API가 확보되어야만 진행
- * - 현재 열차 역이 탑승역과 다르면 "아직 탑승 전"으로 판단해 차단
- */
-async function validateRealtimeBoardingContext(
-  request: Request,
-  input: {
-    linePrefix: string
-    trainNo: string
-    boardingStationName: string
-  }
-): Promise<{ ok: true } | { ok: false; message: string }> {
-  const lineParam = resolveSeoulLineParamFromPrefix(input.linePrefix)
-  if (!lineParam) {
-    return { ok: true }
-  }
-
-  const lineName = resolveSeoulLineName(lineParam)
-  if (!lineName) {
-    return { ok: true }
-  }
-
-  const boardingLabel = normalizeStationLabel(input.boardingStationName)
-  if (!boardingLabel) {
-    return { ok: true }
-  }
-
-  const positionRows = await fetchRealtimePositionRows(request, lineName)
-  if (!positionRows.length) {
-    return {
-      ok: false,
-      message: '실시간 열차 위치를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.',
-    }
-  }
-
-  const matchedTrain = positionRows.find((row) =>
-    isSameRealtimeTrain(String(row.trainNo ?? ''), input.trainNo)
-  )
-  if (!matchedTrain?.statnNm) {
-    return {
-      ok: false,
-      message: '선택한 열차의 실시간 위치를 확인할 수 없습니다. 열차 도착 후 다시 시도해 주세요.',
-    }
-  }
-
-  const currentLabel = normalizeStationLabel(matchedTrain.statnNm)
-  if (currentLabel !== boardingLabel) {
-    return {
-      ok: false,
-      message: `선택한 열차는 현재 ${matchedTrain.statnNm}역입니다. ${input.boardingStationName}역 도착 후 등록해 주세요.`,
-    }
-  }
-
-  return { ok: true }
-}
-
-function stationCodeFromJoin(
-  station:
-    | { station_code?: string }
-    | { station_code?: string }[]
-    | null
-    | undefined
-): string {
-  if (Array.isArray(station)) {
-    return station[0]?.station_code?.trim() ?? ''
-  }
-  return station?.station_code?.trim() ?? ''
-}
-
-function stationOrderFromCode(stationCode: string): number | null {
-  const match = stationCode.trim().toLowerCase().match(/-(\d+)$/u)
-  if (!match?.[1]) return null
-  const parsed = Number.parseInt(match[1], 10)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-async function resolveCurrentStationOrder(
-  supabase: SupabaseClient,
-  linePrefix: string,
-  currentStationName: string
-): Promise<number | null> {
-  const normalizedName = normalizeStationLabel(currentStationName)
-  if (!normalizedName) return null
-
-  const { data: rows, error } = await supabase
-    .from('stations')
-    .select('station_name, station_order, station_code')
-    .ilike('station_code', `${linePrefix}-%`)
-
-  if (error || !rows?.length) return null
-
-  const matched = rows.find((row) => {
-    const code = String(row.station_code ?? '').trim().toLowerCase()
-    if (!code.startsWith(linePrefix)) return false
-    return normalizeStationLabel(String(row.station_name ?? '')) === normalizedName
-  })
-
-  if (!matched || typeof matched.station_order !== 'number') return null
-  return matched.station_order
-}
-
-function isRequestInsideRealtimeWindow(
-  row: MatchRealtimeRequestRow,
-  currentOrder: number
-): boolean {
-  const originCode = stationCodeFromJoin(row.origin_station)
-  const destinationCode = stationCodeFromJoin(row.destination_station)
-  const originOrder = stationOrderFromCode(originCode)
-  const destinationOrder = stationOrderFromCode(destinationCode)
-  if (originOrder == null || destinationOrder == null) return false
-
-  const minOrder = Math.min(originOrder, destinationOrder)
-  const maxOrder = Math.max(originOrder, destinationOrder)
-  if (currentOrder < minOrder || currentOrder > maxOrder) return false
-
-  const directionBucket = normalizeDirectionForStorage(row.direction)
-  if (directionBucket === '1') {
-    return currentOrder <= originOrder && currentOrder >= destinationOrder
-  }
-  if (directionBucket === '2') {
-    return currentOrder >= originOrder && currentOrder <= destinationOrder
-  }
-  return false
-}
-
-/**
- * API role → DB request_type
- */
 function mapRole(role: ApiRole): RequestType {
   return role === 'seeker' ? 'seat_seek' : 'leaving'
 }
 
-/**
- * 역 정보를 DB에 upsert 후 UUID 반환
- */
 async function ensureStation(
   supabase: SupabaseClient,
   stationCode: string,
@@ -279,10 +88,6 @@ async function ensureStation(
   return data.id as string
 }
 
-/**
- * 열차 번호 + 호선 접두사로 trains 행을 조회·생성합니다.
- * 동일 train_no라도 호선 접두사(s1, s2, l1 등)가 다르면 별도 행으로 관리합니다.
- */
 async function ensureTrain(
   supabase: SupabaseClient,
   linePrefix: string,
@@ -334,307 +139,9 @@ async function ensureTrain(
 }
 
 /**
- * user_id 목록에 교통약자/매너포인트를 붙입니다.
- */
-async function attachPriorityFields(
-  supabase: SupabaseClient,
-  rows: Array<{
-    id: string
-    user_id: string
-    remaining_stations: number
-    requested_at: string
-    car_number: number
-  }>
-): Promise<WaitingRequestRow[]> {
-  if (!rows.length) {
-    return []
-  }
-
-  const userIds = Array.from(new Set(rows.map((row) => row.user_id)))
-  const { data: usersByDisabled, error: disabledError } = await supabase
-    .from('users')
-    .select('id, is_disabled, total_points')
-    .in('id', userIds)
-
-  const { data: usersByVulnerable, error: vulnerableError } = await supabase
-    .from('users')
-    .select('id, is_vulnerable, total_points')
-    .in('id', userIds)
-
-  const disabledByUserId = new Map<string, boolean>()
-  const pointsByUserId = new Map<string, number>()
-
-  if (!disabledError && usersByDisabled) {
-    for (const user of usersByDisabled) {
-      disabledByUserId.set(user.id as string, (user as { is_disabled?: boolean }).is_disabled === true)
-      pointsByUserId.set(user.id as string, Number((user as { total_points?: number }).total_points ?? 0))
-    }
-  } else if (!vulnerableError && usersByVulnerable) {
-    for (const user of usersByVulnerable) {
-      disabledByUserId.set(
-        user.id as string,
-        (user as { is_vulnerable?: boolean }).is_vulnerable === true
-      )
-      pointsByUserId.set(user.id as string, Number((user as { total_points?: number }).total_points ?? 0))
-    }
-  }
-
-  return rows.map((row) => ({
-    ...row,
-    car_number:
-      typeof row.car_number === 'number' && Number.isInteger(row.car_number)
-        ? row.car_number
-        : 1,
-    is_disabled: disabledByUserId.get(row.user_id) === true,
-    total_points: pointsByUserId.get(row.user_id) ?? 0,
-  }))
-}
-
-/**
- * 매칭 우선순위 정렬
- * 1) 교통약자(is_disabled=true) 우선
- * 2) total_points 높은 순
- * 3) 호차 거리 가까운 순 (같은 호차 → 옆 호차)
- * 4) 남은 역 수 많은 순
- * 5) 요청 시각 빠른 순
- */
-function sortByMatchingPriority(
-  rows: WaitingRequestRow[],
-  requesterCarNumber: number
-): WaitingRequestRow[] {
-  return [...rows].sort((a, b) => {
-    if (a.is_disabled !== b.is_disabled) {
-      return a.is_disabled ? -1 : 1
-    }
-    if (b.total_points !== a.total_points) {
-      return b.total_points - a.total_points
-    }
-    const carDistanceA = resolveCarDistance(requesterCarNumber, a.car_number)
-    const carDistanceB = resolveCarDistance(requesterCarNumber, b.car_number)
-    if (carDistanceA !== carDistanceB) {
-      return carDistanceA - carDistanceB
-    }
-    if (b.remaining_stations !== a.remaining_stations) {
-      return b.remaining_stations - a.remaining_stations
-    }
-    return new Date(a.requested_at).getTime() - new Date(b.requested_at).getTime()
-  })
-}
-
-/**
- * 대기 순위 계산 (교통약자 → 포인트 → 남은 역 수 → 요청 시각)
- */
-async function calculateQueuePosition(
-  supabase: SupabaseClient,
-  requestType: RequestType,
-  currentRequestId: string
-): Promise<number> {
-  const { data, error } = await supabase
-    .from('match_requests')
-    .select('id, user_id, remaining_stations, requested_at, car_number')
-    .eq('status', 'waiting')
-    .eq('request_type', requestType)
-
-  if (error || !data) {
-    return 1
-  }
-
-  const currentRow = data.find((row) => row.id === currentRequestId)
-  const requesterCar =
-    typeof currentRow?.car_number === 'number' ? currentRow.car_number : 1
-
-  const rows = await attachPriorityFields(supabase, data)
-  const sorted = sortByMatchingPriority(rows, requesterCar)
-  const index = sorted.findIndex((row) => row.id === currentRequestId)
-  return index >= 0 ? index + 1 : sorted.length
-}
-
-/**
- * 반대 유형 waiting 요청과 매칭 시도 후 matches 행 생성
- */
-async function tryCreateMatch(
-  request: Request,
-  supabase: SupabaseClient,
-  newRequestId: string,
-  newRequestType: RequestType,
-  trainUuid: string,
-  trainNo: string,
-  carNumber: number,
-  linePrefix: string,
-  direction: string
-): Promise<string | null> {
-  const oppositeType: RequestType =
-    newRequestType === 'seat_seek' ? 'leaving' : 'seat_seek'
-
-  const directionValues = equivalentDirectionsForMatch(direction)
-
-  const adjacentCars = resolveAdjacentCarNumbers(carNumber)
-
-  const { data: candidates, error } = await supabase
-    .from('match_requests')
-    .select(`
-      id,
-      user_id,
-      remaining_stations,
-      requested_at,
-      car_number,
-      direction,
-      destination_station:stations!destination_station_id(station_code),
-      origin_station:stations!origin_station_id(station_code)
-    `)
-    .eq('status', 'waiting')
-    .eq('request_type', oppositeType)
-    .eq('train_id', trainUuid)
-    .in('car_number', adjacentCars.length ? adjacentCars : [carNumber])
-    .in('direction', directionValues)
-    .neq('id', newRequestId)
-
-  if (error || !candidates?.length) {
-    return null
-  }
-
-  const sameLineCandidates = candidates.filter((row) => {
-    const destinationCode = stationCodeFromJoin(
-      row.destination_station as
-        | { station_code?: string }
-        | { station_code?: string }[]
-        | null
-    )
-    const originCode = stationCodeFromJoin(
-      row.origin_station as
-        | { station_code?: string }
-        | { station_code?: string }[]
-        | null
-    )
-    const candidatePrefix =
-      extractLinePrefixFromStationCode(destinationCode) ??
-      extractLinePrefixFromStationCode(originCode)
-    return candidatePrefix === linePrefix
-  })
-
-  if (!sameLineCandidates.length) {
-    return null
-  }
-
-  if (/^s[1-9]$/u.test(linePrefix)) {
-    const lineName = resolveSeoulLineName(`seoul${linePrefix.slice(1)}`)
-    if (!lineName) return null
-
-    const positionRows = await fetchRealtimePositionRows(request, lineName)
-    if (!positionRows.length) return null
-
-    const matchedTrain = positionRows.find((row) =>
-      isSameRealtimeTrain(String(row.trainNo ?? ''), trainNo)
-    )
-    if (!matchedTrain?.statnNm) return null
-
-    const currentOrder = await resolveCurrentStationOrder(
-      supabase,
-      linePrefix,
-      matchedTrain.statnNm
-    )
-    if (currentOrder == null) return null
-
-    const { data: newRequestRow, error: newRequestError } = await supabase
-      .from('match_requests')
-      .select(`
-        id,
-        direction,
-        origin_station:stations!origin_station_id(station_code),
-        destination_station:stations!destination_station_id(station_code)
-      `)
-      .eq('id', newRequestId)
-      .maybeSingle()
-
-    if (newRequestError || !newRequestRow) return null
-
-    const newRealtimeRow = newRequestRow as MatchRealtimeRequestRow
-    if (!isRequestInsideRealtimeWindow(newRealtimeRow, currentOrder)) {
-      return null
-    }
-
-    const realtimeCandidates = sameLineCandidates.filter((row) =>
-      isRequestInsideRealtimeWindow(
-        {
-          id: String(row.id),
-          direction: String((row as { direction?: string }).direction ?? direction),
-          origin_station: row.origin_station as
-            | { station_code?: string }
-            | { station_code?: string }[]
-            | null,
-          destination_station: row.destination_station as
-            | { station_code?: string }
-            | { station_code?: string }[]
-            | null,
-        },
-        currentOrder
-      )
-    )
-
-    if (!realtimeCandidates.length) {
-      return null
-    }
-
-    sameLineCandidates.length = 0
-    sameLineCandidates.push(...realtimeCandidates)
-  }
-
-  const ranked = sortByMatchingPriority(
-    await attachPriorityFields(supabase, sameLineCandidates),
-    carNumber
-  )
-  const partner = ranked[0]
-  if (!partner) {
-    return null
-  }
-
-  const seatSeekId =
-    newRequestType === 'seat_seek' ? newRequestId : partner.id
-  const leavingId =
-    newRequestType === 'leaving' ? newRequestId : partner.id
-
-  const notifyExpiresAt = new Date(Date.now() + 30 * 1000).toISOString()
-
-  const { data: match, error: matchError } = await supabase
-    .from('matches')
-    .insert({
-      seat_seek_request_id: seatSeekId,
-      leaving_request_id: leavingId,
-      status: 'pending',
-      notify_expires_at: notifyExpiresAt,
-    })
-    .select('id')
-    .single()
-
-  if (matchError || !match) {
-    return null
-  }
-
-  const { error: updateError } = await supabase
-    .from('match_requests')
-    .update({ status: 'matched' })
-    .in('id', [seatSeekId, leavingId])
-    .eq('status', 'waiting')
-
-  if (updateError) {
-    await supabase.from('matches').delete().eq('id', match.id as string)
-    return null
-  }
-
-  void sendMatchPushNotifications(
-    supabase,
-    match.id as string,
-    seatSeekId,
-    leavingId
-  ).catch(() => {
-    // 푸시 실패해도 매칭은 유지합니다.
-  })
-
-  return match.id as string
-}
-
-/**
  * POST /api/match-requests — 매칭 요청 등록
+ * - platform_waiting: 플랫폼 대기(매칭 시도 없음)
+ * - onboard: 탑승 중(실시간 검증 후 매칭 시도)
  */
 export async function POST(request: Request) {
   try {
@@ -654,6 +161,8 @@ export async function POST(request: Request) {
     if (role !== 'seeker' && role !== 'provider') {
       return errorResponse('role은 seeker 또는 provider여야 합니다.', 400)
     }
+
+    const presenceMode: PresenceMode = resolvePresenceModeForRole(role, body.presence_mode)
 
     const trainNo = typeof body.train_id === 'string' ? body.train_id.trim() : ''
     const direction = typeof body.direction === 'string' ? body.direction.trim() : ''
@@ -762,14 +271,20 @@ export async function POST(request: Request) {
     }
 
     const normalizedTrainNo = normalizeTrainNoForStorage(linePrefix, trainNo)
+    const directionStored = normalizeDirectionForStorage(direction)
 
-    const boardingRealtimeCheck = await validateRealtimeBoardingContext(request, {
-      linePrefix,
-      trainNo: normalizedTrainNo,
-      boardingStationName: originName,
-    })
-    if (!boardingRealtimeCheck.ok) {
-      return errorResponse(boardingRealtimeCheck.message, 409)
+    // 탑승 중만 실시간 검증 — 플랫폼 대기는 등록만 허용
+    if (presenceMode === 'onboard') {
+      const onboardCheck = await validateOnboardBoardingContext(request, supabase, {
+        linePrefix,
+        trainNo: normalizedTrainNo,
+        direction: directionStored,
+        originStationCode: originCode,
+        destinationStationCode: destinationCode,
+      })
+      if (!onboardCheck.ok) {
+        return errorResponse(onboardCheck.message, 409)
+      }
     }
 
     const originOrderMatch = originCode.match(/-(\d+)$/)
@@ -815,7 +330,6 @@ export async function POST(request: Request) {
       .eq('status', 'waiting')
 
     const requestType = mapRole(role)
-    const directionStored = normalizeDirectionForStorage(direction)
 
     const insertPayload: Record<string, unknown> = {
       user_id: userId,
@@ -827,6 +341,7 @@ export async function POST(request: Request) {
       remaining_stations: remainingStops,
       status: 'waiting',
       car_number: carNumber,
+      presence_mode: presenceMode,
     }
 
     if (seatSide !== null && seatNumber !== null) {
@@ -862,24 +377,38 @@ export async function POST(request: Request) {
           500
         )
       }
+      if (insertError?.message?.includes('presence_mode')) {
+        return errorResponse(
+          'DB에 presence_mode 컬럼이 없습니다. migration 014를 실행해주세요.',
+          500
+        )
+      }
       return errorResponse('매칭 요청 등록에 실패했습니다.', 500)
     }
 
-    const matchId = await tryCreateMatch(
-      request,
-      supabase,
-      created.id as string,
-      requestType,
-      trainUuid,
-      normalizedTrainNo,
-      carNumber,
-      linePrefix,
-      directionStored
-    )
+    let matchId: string | null = null
+    if (presenceMode === 'onboard') {
+      matchId = await tryCreateMatch(
+        request,
+        supabase,
+        created.id as string,
+        requestType,
+        trainUuid,
+        normalizedTrainNo,
+        carNumber,
+        linePrefix,
+        directionStored
+      )
+    }
 
     const queuePosition =
       role === 'seeker' && !matchId
-        ? await calculateQueuePosition(supabase, requestType, created.id as string)
+        ? await calculateQueuePosition(
+            supabase,
+            requestType,
+            created.id as string,
+            presenceMode
+          )
         : matchId
           ? 1
           : null
@@ -889,6 +418,7 @@ export async function POST(request: Request) {
         success: true,
         data: {
           match_request_id: created.id,
+          presence_mode: presenceMode,
           queue_position: queuePosition,
           match_id: matchId,
           matched: Boolean(matchId),

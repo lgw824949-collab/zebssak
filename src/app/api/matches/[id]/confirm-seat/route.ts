@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
+import { finalizeMatchCompletion } from '@/lib/finalize-match-completion'
 
 interface MatchRow {
   id: string
@@ -125,14 +126,10 @@ export async function POST(
     }
 
     if (match.status === 'accepted') {
-      await supabase
-        .from('matches')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', matchId)
-        .eq('status', 'accepted')
+      const finalizeResult = await finalizeMatchCompletion(supabase, matchId)
+      if (!finalizeResult.ok) {
+        return errorResponse(finalizeResult.message, 500)
+      }
     }
 
     return NextResponse.json({

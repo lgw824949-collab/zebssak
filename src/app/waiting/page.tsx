@@ -30,6 +30,7 @@ type BoardingLineKey =
 
 interface BoardingDraft {
   role: string
+  presenceMode?: 'onboard' | 'platform_waiting'
   lineKey?: BoardingLineKey
   lineLabel?: string
   lineNumber: number
@@ -110,6 +111,7 @@ async function loadCurrentRequestSnapshot(
         car_number?: number | null
         destination_station_name?: string | null
         remaining_stations?: number | null
+        presence_mode?: string | null
       }
     }
 
@@ -123,6 +125,8 @@ async function loadCurrentRequestSnapshot(
 
     const draft: BoardingDraft = {
       role: isProvider ? 'provider' : 'seeker',
+      presenceMode:
+        data.presence_mode === 'platform_waiting' ? 'platform_waiting' : 'onboard',
       lineNumber,
       lineLabel: `서울 ${lineNumber}호선`,
       lineKey: lineNumber === 7 ? 'seoul7' : undefined,
@@ -354,6 +358,14 @@ const WAITING_SUBTITLE_BY_ROLE = {
   seeker: '하차 예정자가 등록되면 알려드려요',
 } as const
 
+const PLATFORM_WAITING_SUBTITLE = '열차에 탑승하면 매칭이 시작됩니다'
+
+const PLATFORM_WAITING_GUIDE = [
+  '지금은 플랫폼 대기 상태입니다',
+  '열차에 탑승한 뒤 아래 버튼을 눌러 주세요',
+  '탑승 확인 후 같은 열차 안에서만 매칭됩니다',
+] as const
+
 const CONNECTED_SUBTITLE_BY_ROLE = {
   provider: '착석 희망자와 연결 · 알림에서 확인',
   seeker: '하차 예정자와 연결 · 이동 후 수락',
@@ -577,6 +589,8 @@ export default function WaitingPage() {
   const [partnerAcceptedNotice, setPartnerAcceptedNotice] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
   const [matchPhase, setMatchPhase] = useState<WaitMatchPhase>('waiting')
+  const [presenceMode, setPresenceMode] = useState<'onboard' | 'platform_waiting'>('onboard')
+  const [isConfirmingOnboard, setIsConfirmingOnboard] = useState(false)
 
   useEffect(() => {
     const tokenFromStorage = localStorage.getItem('token')
@@ -674,6 +688,9 @@ export default function WaitingPage() {
           }
           if (!cancelled) {
             setDraft(parsedDraft)
+            if (parsedDraft.presenceMode) {
+              setPresenceMode(parsedDraft.presenceMode)
+            }
           }
           sessionStorage.setItem(WAITING_DRAFT_KEY, JSON.stringify(parsedDraft))
         }
@@ -727,6 +744,7 @@ export default function WaitingPage() {
             const providerSeat = resolveSeatFromDraft(parsedDraft)
             const providerBody: Record<string, unknown> = {
               role: 'provider',
+              presence_mode: 'onboard',
               train_id: parsedDraft.trainNo,
               direction: resolveRequestDirection(parsedDraft),
               car_number: parsedDraft.carNumber,
@@ -770,6 +788,7 @@ export default function WaitingPage() {
                 match_request_id?: string
                 match_id?: string | null
                 matched?: boolean
+                presence_mode?: string
               }
             }
 
@@ -807,6 +826,7 @@ export default function WaitingPage() {
               },
               body: JSON.stringify({
                 role: 'seeker',
+                presence_mode: parsedDraft.presenceMode ?? 'platform_waiting',
                 train_id: parsedDraft.trainNo,
                 direction: resolveRequestDirection(parsedDraft),
                 car_number: parsedDraft.carNumber,
@@ -834,6 +854,7 @@ export default function WaitingPage() {
                 match_request_id?: string
                 match_id?: string | null
                 matched?: boolean
+                presence_mode?: string
               }
             }
 
@@ -855,6 +876,9 @@ export default function WaitingPage() {
             }
 
             if (!cancelled) {
+              const nextPresence =
+                result.data.presence_mode === 'onboard' ? 'onboard' : 'platform_waiting'
+              setPresenceMode(nextPresence)
               setWaitingRank(result.data.queue_position ?? 1)
               setIsSeekerWaiting(true)
               setIsProviderWaiting(false)
@@ -878,11 +902,14 @@ export default function WaitingPage() {
           const statusResult = (await statusResponse.json()) as {
             success: boolean
             error?: string
-            data?: {
-              queue_position?: number | null
-              match?: { id: string; status?: string } | null
-              match_request?: { status?: string } | null
-            }
+              data?: {
+                queue_position?: number | null
+                match?: { id: string; status?: string } | null
+                match_request?: {
+                  status?: string
+                  presence_mode?: string
+                } | null
+              }
           }
 
           if (!statusResponse.ok || !statusResult.success) {
@@ -914,6 +941,12 @@ export default function WaitingPage() {
           }
 
           if (!cancelled) {
+            const requestPresence =
+              statusResult.data?.match_request?.presence_mode === 'platform_waiting'
+                ? 'platform_waiting'
+                : 'onboard'
+            setPresenceMode(requestPresence)
+
             if (isProviderRole) {
               const requestStatus = statusResult.data?.match_request?.status
               setIsProviderWaiting(requestStatus === 'waiting' || !requestStatus)
@@ -1187,6 +1220,73 @@ export default function WaitingPage() {
     }
   }, [isReady, partnerAcceptedNotice, router])
 
+  async function handleConfirmOnboard() {
+    if (isConfirmingOnboard) {
+      return
+    }
+
+    const token = localStorage.getItem('token')
+    const requestId = sessionStorage.getItem(ACTIVE_REQUEST_KEY)
+    if (!token || !requestId) {
+      setError('탑승 확인에 필요한 정보가 없습니다.')
+      return
+    }
+
+    setIsConfirmingOnboard(true)
+    setError('')
+
+    try {
+      const response = await fetch(
+        `/api/match-requests/${encodeURIComponent(requestId)}/onboard`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      )
+
+      const result = (await response.json()) as {
+        success?: boolean
+        error?: string
+        data?: {
+          presence_mode?: string
+          queue_position?: number | null
+          match_id?: string | null
+          matched?: boolean
+        }
+      }
+
+      if (handleUnauthorizedResponse(response)) {
+        return
+      }
+
+      if (!response.ok || !result.success) {
+        setError(result.error ?? '탑승 확인에 실패했습니다.')
+        return
+      }
+
+      setPresenceMode('onboard')
+      if (draft) {
+        const nextDraft = { ...draft, presenceMode: 'onboard' as const }
+        setDraft(nextDraft)
+        sessionStorage.setItem(WAITING_DRAFT_KEY, JSON.stringify(nextDraft))
+        sessionStorage.setItem('boardingDraft', JSON.stringify(nextDraft))
+      }
+
+      if (result.data?.matched && result.data.match_id) {
+        sessionStorage.setItem('activeMatchId', result.data.match_id)
+        router.replace('/matching')
+        return
+      }
+
+      setWaitingRank(result.data?.queue_position ?? 1)
+      setIsSeekerWaiting(true)
+    } catch {
+      setError('탑승 확인 중 오류가 발생했습니다.')
+    } finally {
+      setIsConfirmingOnboard(false)
+    }
+  }
+
   async function handleCancel() {
     if (isCancelling) {
       return
@@ -1271,24 +1371,36 @@ export default function WaitingPage() {
   const waitingRole = isProviderDraft ? 'provider' : 'seeker'
   const isWaitingPanelVisible = isProviderDraft ? isProviderWaiting : isSeekerWaiting
   const showStatusPanel = matchPhase !== 'waiting' || isWaitingPanelVisible
+  const isPlatformWaitingSeeker =
+    !isProviderDraft && presenceMode === 'platform_waiting' && matchPhase === 'waiting'
   const statusTitle =
     matchPhase === 'accepted'
       ? '연결 완료'
       : matchPhase === 'connected'
         ? '연결됨'
-        : '대기 중'
+        : isPlatformWaitingSeeker
+          ? '플랫폼 대기 중'
+          : '대기 중'
   const statusSubtitle =
     matchPhase === 'accepted'
       ? '좌석 안내 화면으로 이동합니다'
       : matchPhase === 'connected'
         ? CONNECTED_SUBTITLE_BY_ROLE[waitingRole]
-        : WAITING_SUBTITLE_BY_ROLE[waitingRole]
+        : isPlatformWaitingSeeker
+          ? PLATFORM_WAITING_SUBTITLE
+          : WAITING_SUBTITLE_BY_ROLE[waitingRole]
   const liveStatusLabel =
-    matchPhase === 'waiting' ? '실시간 대기 중' : '진행 중'
+    matchPhase === 'waiting'
+      ? isPlatformWaitingSeeker
+        ? '탑승 전 대기'
+        : '실시간 대기 중'
+      : '진행 중'
   const guideItems =
     matchPhase === 'connected' || matchPhase === 'accepted'
       ? MATCH_PROGRESS_GUIDE_BY_ROLE[waitingRole]
-      : MATCH_GUIDE_BY_ROLE[waitingRole]
+      : isPlatformWaitingSeeker
+        ? PLATFORM_WAITING_GUIDE
+        : MATCH_GUIDE_BY_ROLE[waitingRole]
   const guideTitle =
     matchPhase === 'connected' || matchPhase === 'accepted' ? '진행 안내' : '이용 안내'
   return (
@@ -1542,8 +1654,35 @@ export default function WaitingPage() {
         style={{
           padding: `16px 0 max(24px, env(safe-area-inset-bottom))`,
           flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
         }}
       >
+        {isPlatformWaitingSeeker ? (
+          <button
+            type="button"
+            disabled={isConfirmingOnboard}
+            onClick={() => {
+              void handleConfirmOnboard()
+            }}
+            style={{
+              width: '100%',
+              minHeight: 48,
+              padding: '12px 0',
+              background: lineColor,
+              border: 'none',
+              borderRadius: 12,
+              fontSize: 15,
+              fontWeight: 700,
+              color: '#FFFFFF',
+              cursor: isConfirmingOnboard ? 'not-allowed' : 'pointer',
+              opacity: isConfirmingOnboard ? 0.7 : 1,
+            }}
+          >
+            {isConfirmingOnboard ? '탑승 확인 중...' : '탑승했어요 — 매칭 시작'}
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={isCancelling}

@@ -1,6 +1,9 @@
 ﻿import { NextResponse } from 'next/server'
 import { getUserIdFromRequest } from '@/lib/api-auth'
-import { repairStaleMatchedRequest } from '@/lib/match-request-repair'
+import {
+  repairStaleMatchedRequest,
+  repairWaitingRequestAfterCompletedMatch,
+} from '@/lib/match-request-repair'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 
 function errorResponse(message: string, status: number) {
@@ -23,7 +26,7 @@ export async function GET(request: Request) {
     const { data: currentRequestRaw, error: currentError } = await supabase
       .from('match_requests')
       .select(
-        'id, status, request_type, remaining_stations, car_number, requested_at, destination_station_id, train_id'
+        'id, status, request_type, remaining_stations, car_number, requested_at, destination_station_id, train_id, presence_mode'
       )
       .eq('user_id', userId)
       .in('status', ['waiting', 'matched'])
@@ -37,16 +40,26 @@ export async function GET(request: Request) {
 
     let currentRequest = currentRequestRaw
 
-    if (currentRequest?.status === 'matched') {
-      const repairResult = await repairStaleMatchedRequest(
-        supabase,
-        currentRequest.id as string
-      )
+    if (currentRequest?.id) {
+      if (currentRequest.status === 'matched') {
+        const repairResult = await repairStaleMatchedRequest(
+          supabase,
+          currentRequest.id as string
+        )
 
-      if (repairResult === 'cancelled') {
-        currentRequest = null
-      } else if (repairResult === 'waiting') {
-        currentRequest = { ...currentRequest, status: 'waiting' }
+        if (repairResult === 'cancelled') {
+          currentRequest = null
+        } else if (repairResult === 'waiting') {
+          currentRequest = { ...currentRequest, status: 'waiting' }
+        }
+      } else if (currentRequest.status === 'waiting') {
+        const repairResult = await repairWaitingRequestAfterCompletedMatch(
+          supabase,
+          currentRequest.id as string
+        )
+        if (repairResult === 'cancelled') {
+          currentRequest = null
+        }
       }
     }
 
@@ -105,6 +118,7 @@ export async function GET(request: Request) {
         destination_station_name: destinationStationName,
         next_station_name: destinationStationName,
         remaining_stations: currentRequest.remaining_stations ?? null,
+        presence_mode: currentRequest.presence_mode ?? 'onboard',
         waiting_count: waitingCountRaw ?? 0,
       },
     })
