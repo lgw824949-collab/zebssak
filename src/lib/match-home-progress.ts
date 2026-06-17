@@ -31,11 +31,12 @@ export function resolveHomeProgressStep(input: {
     return 'seated'
   }
 
-  if (input.flowStep === 'seat') {
-    return 'seated'
-  }
-
-  if (input.flowStep === 'wait' || input.flowStep === 'move') {
+  // 이동·대기·착석 준비 중에는 홈 2단계(이동) 유지 — 완료는 착석 확인 후만
+  if (
+    input.flowStep === 'wait' ||
+    input.flowStep === 'move' ||
+    input.flowStep === 'seat'
+  ) {
     return 'moving'
   }
 
@@ -47,7 +48,7 @@ export function resolveHomeProgressStepLabels(
   registrationKind: 'seek' | 'leave'
 ): readonly [string, string, string] {
   if (registrationKind === 'leave') {
-    return ['매칭', '대기', '완료']
+    return ['매칭', '이동 대기', '완료']
   }
 
   return ['매칭', '이동', '완료']
@@ -73,6 +74,9 @@ export function resolveHomeProgressBlinkHint(input: {
       return currentStation ? `${currentStation} · 편히 앉기` : '편히 앉아 주세요'
     }
     if (input.step === 'moving') {
+      if (input.flowStep === 'seat') {
+        return '지금 양보'
+      }
       if (input.flowStep === 'wait') {
         return '문 옆 대기 중'
       }
@@ -86,6 +90,9 @@ export function resolveHomeProgressBlinkHint(input: {
   }
 
   if (input.step === 'moving') {
+    if (input.flowStep === 'seat') {
+      return '지금 앉기'
+    }
     if (input.flowStep === 'wait') {
       return '문 옆 대기'
     }

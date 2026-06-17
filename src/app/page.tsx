@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import AppHamburgerMenu from '@/components/AppHamburgerMenu'
 import CongestionHaltModal from '@/components/CongestionHaltModal'
 import HomeMatchProgressBar from '@/components/HomeMatchProgressBar'
@@ -15,7 +15,6 @@ import {
 import { formatStationDisplayName } from '@/lib/match-display'
 import { cancelMatchRequestClient } from '@/lib/cancel-match-request'
 import {
-  resolveHomeProgressBannerLabel,
   resolveHomeProgressStep,
   resolveHomeRegistrationPurposeLine,
   type HomeMatchProgress,
@@ -81,10 +80,7 @@ const DEFAULT_HOME_LINE_LABEL = HOME_LINE_OPTIONS[0].label
 
 /** 서울 7호선 공식 색상 — 앱 전역과 동일 (#747F00) */
 const LINE7_PRIMARY = '#747F00'
-const LINE7_PRIMARY_DARK = '#5F6B2E'
-const LINE7_PRIMARY_DEEP = '#4A5520'
 const LINE7_SOFT_BG = '#F3F5E8'
-const LINE7_MUTED_BG = '#EDF0DC'
 const LINE7_SUCCESS_BG = '#E8EDCF'
 const LINE7_BORDER = '#D5DDB8'
 const LINE7_BORDER_STRONG = '#C4CE8F'
@@ -167,6 +163,9 @@ type HomeWaitPhase =
   | 'match_done'
 
 const HOME_MATCH_COMPLETED_HINT_KEY = 'homeMatchCompletedHint'
+const REVIEW_DEMO_BANNER_DISMISS_KEY = 'reviewDemoBannerDismissed'
+/** 완료 카드 자동 닫기 (ms) */
+const HOME_MATCH_DONE_AUTO_DISMISS_MS = 30000
 
 interface HomeMatchCompletedHint {
   kind: 'seek' | 'leave'
@@ -198,38 +197,10 @@ interface HomeMatchStatusBox {
   textColor: string
 }
 
-/** Supabase 활성 매칭 데이터 기준 — 홈 상태 박스 표시 여부·스타일 */
+/** Supabase 활성 매칭 데이터 기준 — 홈 상태 박스 (카드와 중복되지 않는 실패만) */
 function resolveHomeMatchStatusBox(view: HomeWaitView | null): HomeMatchStatusBox | null {
   if (!view) {
     return null
-  }
-
-  if (view.phase === 'match_in_progress' && view.homeProgress) {
-    return {
-      kind: 'in_progress',
-      label: resolveHomeProgressBannerLabel({
-        registrationKind: view.registrationKind,
-        step: view.homeProgress.step,
-        matchCompleted: view.homeProgress.matchCompleted,
-      }),
-      emoji: '●',
-      backgroundColor: '#FFF8F0',
-      textColor: '#8B6914',
-    }
-  }
-
-  if (view.phase === 'match_done') {
-    return {
-      kind: 'completed',
-      label: resolveHomeProgressBannerLabel({
-        registrationKind: view.registrationKind,
-        step: 'seated',
-        matchCompleted: true,
-      }),
-      emoji: '✓',
-      backgroundColor: LINE7_SUCCESS_BG,
-      textColor: LINE7_PRIMARY_DEEP,
-    }
   }
 
   if (view.matchStatus === 'expired' || view.matchStatus === 'cancelled') {
@@ -239,26 +210,6 @@ function resolveHomeMatchStatusBox(view: HomeWaitView | null): HomeMatchStatusBo
       emoji: '✕',
       backgroundColor: '#F0EBE6',
       textColor: '#7D5A52',
-    }
-  }
-
-  if (view.phase === 'match_alert' || view.matchStatus === 'pending') {
-    return {
-      kind: 'waiting',
-      label: '연결됨',
-      emoji: '●',
-      backgroundColor: LINE7_SUCCESS_BG,
-      textColor: LINE7_PRIMARY_DEEP,
-    }
-  }
-
-  if (view.phase === 'waiting_seek' || view.phase === 'waiting_leave') {
-    return {
-      kind: 'waiting',
-      label: '대기 중',
-      emoji: '●',
-      backgroundColor: LINE7_MUTED_BG,
-      textColor: LINE7_PRIMARY_DARK,
     }
   }
 
@@ -678,7 +629,7 @@ function buildHomeWaitView(input: {
       matchId,
       homeProgress:
         input.homeProgress ?? {
-          step: 'matched',
+          step: 'moving',
           flowStep: 'move',
           handoffRemaining: null,
           seatConfirmed: false,
@@ -867,6 +818,7 @@ export default function Home() {
   const [homeWaitView, setHomeWaitView] = useState<HomeWaitView | null>(null)
   const [isCancellingHomeWait, setIsCancellingHomeWait] = useState(false)
   const [reviewDemoActive, setReviewDemoActive] = useState(false)
+  const [reviewDemoDismissed, setReviewDemoDismissed] = useState(false)
   const isOutsideOperatingHours = useMemo(
     () => !isSubwayOperatingHours(resolveHomeApiLine(selectedLineLabel)),
     [selectedLineLabel]
@@ -929,6 +881,16 @@ export default function Home() {
   }, [congestionStatus, isLoadingData])
 
   useEffect(() => {
+    try {
+      setReviewDemoDismissed(
+        sessionStorage.getItem(REVIEW_DEMO_BANNER_DISMISS_KEY) === '1'
+      )
+    } catch {
+      setReviewDemoDismissed(false)
+    }
+  }, [])
+
+  useEffect(() => {
     void fetch('/api/health/review-demo', { cache: 'no-store' })
       .then((res) => res.json())
       .then((payload: { success?: boolean; data?: { enabled?: boolean } }) => {
@@ -960,6 +922,22 @@ export default function Home() {
       setHomeWaitView(null)
     }
   }, [loadHomeData, loadHomeWaitStatus])
+
+  useEffect(() => {
+    if (homeWaitView?.phase !== 'match_done') {
+      return
+    }
+
+    const timerId = window.setTimeout(() => {
+      clearHomeMatchCompletedHint()
+      clearHomeMatchSession()
+      setHomeWaitView(null)
+    }, HOME_MATCH_DONE_AUTO_DISMISS_MS)
+
+    return () => {
+      window.clearTimeout(timerId)
+    }
+  }, [homeWaitView?.phase, homeWaitView?.requestId])
 
   useEffect(() => {
     void loadTransferStations()
@@ -1043,6 +1021,32 @@ export default function Home() {
 
   async function pushSeekPage(lineLabel: string, destination?: string) {
     await pushBoardingPage(lineLabel, 'seek', destination)
+  }
+
+  function dismissReviewDemoBanner(): void {
+    try {
+      sessionStorage.setItem(REVIEW_DEMO_BANNER_DISMISS_KEY, '1')
+    } catch {
+      // sessionStorage 실패 시 배너만 숨깁니다.
+    }
+    setReviewDemoDismissed(true)
+  }
+
+  function dismissHomeMatchDoneCard(): void {
+    clearHomeMatchCompletedHint()
+    clearHomeMatchSession()
+    setHomeWaitView(null)
+  }
+
+  function handleHomeMatchDoneReregister(): void {
+    if (!homeWaitView) {
+      return
+    }
+
+    const mode = homeWaitView.registrationKind
+    const destination = homeWaitView.destinationName?.trim() || undefined
+    dismissHomeMatchDoneCard()
+    handleModeSelect(mode, destination)
   }
 
   function handleModeSelect(mode: HomeFlowMode, destination?: string) {
@@ -1429,6 +1433,130 @@ export default function Home() {
     isActiveWaitRegistration && homeWaitView?.registrationKind === 'seek'
   const isLeaveRegistering =
     isActiveWaitRegistration && homeWaitView?.registrationKind === 'leave'
+  const isPriorityHomeWait =
+    homeWaitView?.phase === 'match_alert' ||
+    homeWaitView?.phase === 'match_in_progress' ||
+    homeWaitView?.phase === 'match_done'
+  const isMatchFlowActive =
+    homeWaitView?.phase === 'match_alert' ||
+    homeWaitView?.phase === 'match_in_progress'
+  const showReviewDemoBanner = reviewDemoActive && !reviewDemoDismissed
+
+  function renderHomeRegistrationCard(): ReactNode {
+    if (!homeWaitView) {
+      return null
+    }
+
+    const card = resolveHomeMyRegistrationCard(homeWaitView)
+    const showCancelButton =
+      (homeWaitView.phase === 'waiting_seek' ||
+        homeWaitView.phase === 'waiting_leave' ||
+        homeWaitView.phase === 'match_in_progress' ||
+        homeWaitView.phase === 'match_alert') &&
+      Boolean(homeWaitView.requestId)
+    const isMatchAlert = homeWaitView.phase === 'match_alert'
+    const isMatchInProgress = homeWaitView.phase === 'match_in_progress'
+    const isMatchDone = homeWaitView.phase === 'match_done'
+    const showProgressBar =
+      isMatchInProgress && Boolean(homeWaitView.homeProgress)
+    const isEmphasizedCard = isMatchAlert || isMatchInProgress || isMatchDone
+
+    return (
+      <section className="mx-4 mt-3" aria-label="내 등록 상태">
+        <div
+          className="w-full rounded-2xl border px-4 py-4 text-left"
+          style={
+            isEmphasizedCard
+              ? {
+                  borderColor: LINE7_BORDER_STRONG,
+                  backgroundColor: isMatchDone ? LINE7_SUCCESS_BG : LINE7_SOFT_BG,
+                }
+              : {
+                  borderColor: LINE7_BORDER,
+                  backgroundColor: '#F7F8F2',
+                }
+          }
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={isMatchDone ? undefined : handleHomeWaitStatusClick}
+              onKeyDown={(event) => {
+                if (isMatchDone) return
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  handleHomeWaitStatusClick()
+                }
+              }}
+              className={`min-w-0 flex-1 ${isMatchDone ? '' : 'cursor-pointer transition active:opacity-90'}`}
+            >
+              <span
+                className="inline-block rounded-full px-2.5 py-0.5 text-zeb-xs font-bold text-white"
+                style={{
+                  backgroundColor: isMatchAlert
+                    ? LINE7_PRIMARY
+                    : isMatchDone
+                      ? LINE7_ACCENT
+                      : LINE7_PRIMARY,
+                }}
+              >
+                {card.statusBadge}
+              </span>
+              <p className="mt-2 text-zeb-lg font-bold text-[#1A1A1A]">{card.purposeLine}</p>
+              {!showProgressBar && !isMatchDone ? (
+                <p className="mt-1 text-zeb-base font-semibold text-[#5F6B2E]">
+                  {card.progressLine}
+                </p>
+              ) : null}
+              {showProgressBar && homeWaitView.homeProgress ? (
+                <HomeMatchProgressBar
+                  registrationKind={homeWaitView.registrationKind}
+                  progress={homeWaitView.homeProgress}
+                />
+              ) : null}
+              {isMatchDone ? (
+                <div className="mt-3 space-y-2">
+                  <p className="text-zeb-sm font-medium leading-snug text-[#5F6B2E]">
+                    {card.progressLine}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleHomeMatchDoneReregister}
+                    className="zeb-touch-target w-full rounded-xl py-3.5 text-zeb-base font-bold text-white"
+                    style={{ backgroundColor: LINE7_PRIMARY }}
+                  >
+                    {homeWaitView.registrationKind === 'leave'
+                      ? '다시 양보 등록'
+                      : '다시 착석 등록'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={dismissHomeMatchDoneCard}
+                    className="zeb-touch-target w-full py-2 text-center text-zeb-sm font-semibold text-[#7A8460]"
+                  >
+                    닫기
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            {showCancelButton ? (
+              <button
+                type="button"
+                disabled={isCancellingHomeWait}
+                onClick={() => {
+                  void handleCancelHomeWaitRequest()
+                }}
+                className="zeb-touch-target shrink-0 px-1 text-xs font-medium text-red-400 disabled:opacity-50"
+              >
+                취소
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-[480px] flex-col bg-[#f5f5f0]">
@@ -1478,6 +1606,8 @@ export default function Home() {
       </header>
 
       <main className="flex flex-col pb-4">
+        {isPriorityHomeWait ? renderHomeRegistrationCard() : null}
+
         {/* 객실 일러스트 — 높이를 키워 3~4명이 보이게, 나머지는 좌우 스크롤 */}
         <section className="w-full shrink-0 bg-[#f5f5f0]" aria-label="지하철 객실 안내">
           <div className="zeb-no-scrollbar zeb-hero-pan-x" aria-label="객실 이미지 가로 스크롤">
@@ -1500,7 +1630,8 @@ export default function Home() {
             disabled={
               isMatchingPaused ||
               isOutsideOperatingHours ||
-              isSeekRegistering
+              isSeekRegistering ||
+              isMatchFlowActive
             }
             onClick={() => handleModeSelect('seek')}
             className={resolveHomeActionButtonClass(isSeekRegistering)}
@@ -1527,7 +1658,8 @@ export default function Home() {
             disabled={
               isMatchingPaused ||
               isOutsideOperatingHours ||
-              isLeaveRegistering
+              isLeaveRegistering ||
+              isMatchFlowActive
             }
             onClick={() => handleModeSelect('leave')}
             className={resolveHomeActionButtonClass(isLeaveRegistering)}
@@ -1551,13 +1683,23 @@ export default function Home() {
           </button>
         </section>
 
-        {reviewDemoActive ? (
-          <p
-            className="mx-4 mt-2 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2.5 text-zeb-xs font-semibold leading-snug text-[#1D4ED8]"
+        {showReviewDemoBanner ? (
+          <div
+            className="mx-4 mt-2 flex items-start gap-2 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2.5"
             role="status"
           >
-            심사용 모드: PC에서도 매칭·수락 테스트가 가능합니다. (탑승 검증 완화)
-          </p>
+            <p className="min-w-0 flex-1 text-zeb-xs font-semibold leading-snug text-[#1D4ED8]">
+              심사용 모드: PC에서도 매칭·수락 테스트가 가능합니다. (탑승 검증 완화)
+            </p>
+            <button
+              type="button"
+              onClick={dismissReviewDemoBanner}
+              className="shrink-0 px-1 text-zeb-xs font-bold leading-none text-[#1D4ED8]"
+              aria-label="심사용 안내 닫기"
+            >
+              ×
+            </button>
+          </div>
         ) : null}
 
         {isOutsideOperatingHours ? (
@@ -1650,12 +1792,12 @@ export default function Home() {
           </div>
         </section>
 
+        {!isPriorityHomeWait ? renderHomeRegistrationCard() : null}
+
         {homeMatchStatusBox ? (
           <section className="mx-4 mt-3" aria-label="매칭 상태">
             <p
-              className={`rounded-xl border px-4 py-3 text-center text-sm font-bold ${
-                homeMatchStatusBox.kind === 'in_progress' ? 'home-status-blink' : ''
-              }`}
+              className="rounded-xl border px-4 py-3 text-center text-sm font-bold"
               style={{
                 backgroundColor: homeMatchStatusBox.backgroundColor,
                 borderColor: LINE7_BORDER,
@@ -1667,96 +1809,6 @@ export default function Home() {
               </span>
               {homeMatchStatusBox.label}
             </p>
-          </section>
-        ) : null}
-
-        {homeWaitView ? (
-          <section className="mx-4 mt-2" aria-label="내 등록 상태">
-            {(() => {
-              const card = resolveHomeMyRegistrationCard(homeWaitView)
-              const showCancelButton =
-                (homeWaitView.phase === 'waiting_seek' ||
-                  homeWaitView.phase === 'waiting_leave' ||
-                  homeWaitView.phase === 'match_in_progress' ||
-                  homeWaitView.phase === 'match_alert') &&
-                Boolean(homeWaitView.requestId)
-              const isMatchAlert = homeWaitView.phase === 'match_alert'
-              const isMatchInProgress = homeWaitView.phase === 'match_in_progress'
-              const isMatchDone = homeWaitView.phase === 'match_done'
-              const showProgressBar =
-                (isMatchInProgress || isMatchDone) && homeWaitView.homeProgress
-
-              return (
-                <div
-                  className="w-full rounded-2xl border px-4 py-4 text-left"
-                  style={
-                    isMatchAlert || isMatchInProgress
-                      ? {
-                          borderColor: LINE7_BORDER_STRONG,
-                          backgroundColor: LINE7_SOFT_BG,
-                        }
-                      : {
-                          borderColor: LINE7_BORDER,
-                          backgroundColor: '#F7F8F2',
-                        }
-                  }
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={handleHomeWaitStatusClick}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          handleHomeWaitStatusClick()
-                        }
-                      }}
-                      className="min-w-0 flex-1 cursor-pointer transition active:opacity-90"
-                    >
-                      <span
-                        className="inline-block rounded-full px-2.5 py-0.5 text-zeb-xs font-bold text-white"
-                        style={{
-                          backgroundColor: isMatchAlert
-                            ? LINE7_PRIMARY
-                            : isMatchDone
-                              ? LINE7_ACCENT
-                              : LINE7_PRIMARY,
-                        }}
-                      >
-                        {card.statusBadge}
-                      </span>
-                      <p className="mt-2 text-zeb-lg font-bold text-[#1A1A1A]">
-                        {card.purposeLine}
-                      </p>
-                      {!showProgressBar ? (
-                        <p className="mt-1 text-zeb-base font-semibold text-[#5F6B2E]">
-                          {card.progressLine}
-                        </p>
-                      ) : null}
-                      {showProgressBar ? (
-                        <HomeMatchProgressBar
-                          registrationKind={homeWaitView.registrationKind}
-                          progress={homeWaitView.homeProgress as HomeMatchProgress}
-                        />
-                      ) : null}
-                    </div>
-                    {showCancelButton ? (
-                      <button
-                        type="button"
-                        disabled={isCancellingHomeWait}
-                        onClick={() => {
-                          void handleCancelHomeWaitRequest()
-                        }}
-                        className="zeb-touch-target shrink-0 px-1 text-xs font-medium text-red-400 disabled:opacity-50"
-                      >
-                        취소
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              )
-            })()}
           </section>
         ) : null}
 
@@ -1853,20 +1905,6 @@ export default function Home() {
         )}
         */}
       </main>
-      <style jsx global>{`
-        @keyframes home-status-blink-keyframes {
-          0%,
-          100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.55;
-          }
-        }
-        .home-status-blink {
-          animation: home-status-blink-keyframes 1s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   )
 }

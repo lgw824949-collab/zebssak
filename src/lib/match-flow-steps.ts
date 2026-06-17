@@ -1,5 +1,5 @@
 import type { MatchMovementStatus } from '@/lib/match-movement'
-import { isHandoffMoveDue, isHandoffReady } from '@/lib/match-handoff-remaining'
+import { isHandoffReady } from '@/lib/match-handoff-remaining'
 
 export type MatchFlowStep = 'accept' | 'move' | 'wait' | 'seat' | 'done'
 
@@ -75,7 +75,11 @@ export function resolveMatchFlowStep(input: {
   const selfStatus = input.selfMovementStatus ?? 'idle'
   const partnerStatus = input.partnerMovementStatus ?? 'idle'
   const handoffReady = isHandoffReady(input.handoffRemainingStations)
-  const moveDue = isHandoffMoveDue(input.handoffRemainingStations)
+
+  // 착석 희망자: 이동 시작 전에는 양보자가 앉아 있어도 착석 단계로 넘어가지 않음
+  if (input.viewerRole === 'seeker' && selfStatus === 'idle') {
+    return 'move'
+  }
 
   const seekerAtDoor =
     input.viewerRole === 'seeker'
@@ -83,11 +87,6 @@ export function resolveMatchFlowStep(input: {
       : partnerStatus === 'arrived'
 
   if (seekerAtDoor) {
-    // 실시간 위치 없을 때: 문 옆 도착 후 착석/양보 단계로 진행
-    if (!input.positionIsLive && moveDue) {
-      return 'seat'
-    }
-
     return handoffReady ? 'seat' : 'wait'
   }
 
