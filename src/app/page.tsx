@@ -1435,8 +1435,7 @@ export default function Home() {
     isActiveWaitRegistration && homeWaitView?.registrationKind === 'leave'
   const isPriorityHomeWait =
     homeWaitView?.phase === 'match_alert' ||
-    homeWaitView?.phase === 'match_in_progress' ||
-    homeWaitView?.phase === 'match_done'
+    homeWaitView?.phase === 'match_in_progress'
   const isMatchFlowActive =
     homeWaitView?.phase === 'match_alert' ||
     homeWaitView?.phase === 'match_in_progress'
