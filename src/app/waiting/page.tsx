@@ -362,8 +362,8 @@ const PLATFORM_WAITING_SUBTITLE = '열차에 탑승하면 매칭이 시작됩니
 
 const PLATFORM_WAITING_GUIDE = [
   '지금은 플랫폼 대기 상태입니다',
-  '열차에 탑승한 뒤 아래 버튼을 눌러 주세요',
-  '탑승 확인 후 같은 열차 안에서만 매칭됩니다',
+  '호차·좌석 위치를 미리 확인해 주세요',
+  '탑승 후 「탑승했어요」를 눌러 매칭을 시작합니다',
 ] as const
 
 const CONNECTED_SUBTITLE_BY_ROLE = {

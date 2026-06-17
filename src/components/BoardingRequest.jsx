@@ -2930,6 +2930,8 @@ function formatVoiceTrainArrival(train, boardingStation) {
   return arrivalMessage || "도착 정보 확인 중";
 }
 
+const PLATFORM_WAITING_GUIDE_SEEN_KEY = "platformWaitingGuideSeen";
+
 // ─── Step 2: 열차 선택 (탭 1회 → 매칭 시도) ───────────────────────
 function StepTrain({
   line,
@@ -2952,7 +2954,46 @@ function StepTrain({
   const [travelDirectionKey, setTravelDirectionKey] = useState(null);
   const [seoulStationOrder, setSeoulStationOrder] = useState([]);
   const [isOutsideOperatingHours, setIsOutsideOperatingHours] = useState(false);
+  const [showPlatformWaitingGuide, setShowPlatformWaitingGuide] = useState(false);
   const apiLine = resolveApiLineFromLineProp(line);
+
+  function markPlatformWaitingGuideSeen() {
+    try {
+      sessionStorage.setItem(PLATFORM_WAITING_GUIDE_SEEN_KEY, "1");
+    } catch {
+      // sessionStorage 실패 시 모달만 닫습니다.
+    }
+  }
+
+  function openPlatformWaitingGuide() {
+    setShowPlatformWaitingGuide(true);
+  }
+
+  function closePlatformWaitingGuide() {
+    markPlatformWaitingGuideSeen();
+    setShowPlatformWaitingGuide(false);
+  }
+
+  function handlePlatformWaitingSelect() {
+    onPresenceModeChange?.("platform_waiting");
+    openPlatformWaitingGuide();
+  }
+
+  useEffect(() => {
+    if (mode === "leave" || presenceMode !== "platform_waiting") {
+      return;
+    }
+
+    try {
+      if (sessionStorage.getItem(PLATFORM_WAITING_GUIDE_SEEN_KEY) === "1") {
+        return;
+      }
+    } catch {
+      return;
+    }
+
+    openPlatformWaitingGuide();
+  }, [mode, presenceMode]);
 
   function resolveTrainDirectionKey(train) {
     const directionLabel = String(train?.direction ?? "").trim();
@@ -3588,7 +3629,7 @@ function StepTrain({
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
-                onClick={() => onPresenceModeChange?.("platform_waiting")}
+                onClick={handlePlatformWaitingSelect}
                 style={{
                   flex: 1,
                   padding: "10px 8px",
@@ -3623,7 +3664,7 @@ function StepTrain({
             </div>
             <p style={{ margin: "10px 0 0", fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
               {isPlatformWaiting
-                ? "다음 열차를 기다리는 중이면 여기를 선택하세요. 탑승 후 매칭이 시작됩니다."
+                ? "탑승 전 대기용입니다. 위치를 미리 확인하고, 탑승 후 매칭을 시작해 주세요."
                 : "이미 열차에 올라탔다면 여기를 선택하세요. 열차번호 확인 후 바로 매칭됩니다."}
             </p>
           </div>
@@ -3793,6 +3834,94 @@ function StepTrain({
           다음 — {mode === "leave" ? "좌석 선택" : "출입문 선택"}
         </button>
       </div>
+
+      {showPlatformWaitingGuide ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="platform-waiting-guide-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 120,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: `0 ${MOBILE.pageX}px`,
+          }}
+        >
+          <button
+            type="button"
+            aria-label="닫기"
+            onClick={closePlatformWaitingGuide}
+            style={{
+              position: "absolute",
+              inset: 0,
+              border: "none",
+              background: "rgba(11, 31, 75, 0.55)",
+              cursor: "pointer",
+            }}
+          />
+          <div
+            style={{
+              position: "relative",
+              zIndex: 121,
+              width: "100%",
+              maxWidth: 360,
+              borderRadius: 16,
+              background: "#FFFFFF",
+              padding: "22px 20px 18px",
+              boxShadow: "0 12px 40px rgba(15, 23, 42, 0.18)",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontWeight: 700,
+                color: lineColor,
+                letterSpacing: "0.02em",
+              }}
+            >
+              플랫폼 대기 안내
+            </p>
+            <h2
+              id="platform-waiting-guide-title"
+              style={{
+                margin: "8px 0 0",
+                fontSize: 18,
+                fontWeight: 800,
+                color: C.text,
+                lineHeight: 1.4,
+              }}
+            >
+              탑승 전에는 매칭되지 않아요
+            </h2>
+            <p style={{ margin: "10px 0 0", fontSize: 14, color: C.muted, lineHeight: 1.55 }}>
+              호차·좌석 위치를 미리 확인하시고, 탑승 후 대기 화면에서
+              「탑승했어요」를 눌러 매칭을 시작해 주세요.
+            </p>
+            <button
+              type="button"
+              onClick={closePlatformWaitingGuide}
+              style={{
+                marginTop: 18,
+                width: "100%",
+                minHeight: MOBILE.touchMin,
+                border: "none",
+                borderRadius: 12,
+                background: lineColor,
+                color: "#FFFFFF",
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              확인
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
