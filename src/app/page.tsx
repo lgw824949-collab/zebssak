@@ -1687,9 +1687,14 @@ export default function Home() {
             className="mx-4 mt-2 flex items-start gap-2 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2.5"
             role="status"
           >
-            <p className="min-w-0 flex-1 text-zeb-xs font-semibold leading-snug text-[#1D4ED8]">
-              심사용 모드: PC에서도 매칭·수락 테스트가 가능합니다. (탑승 검증 완화)
-            </p>
+            <div className="min-w-0 flex-1">
+              <p className="text-zeb-xs font-extrabold leading-none text-[#1D4ED8]">
+                심사용 테스트 모드 ON
+              </p>
+              <p className="mt-1 text-[11px] font-semibold leading-snug text-[#2563EB]">
+                PC 매칭/수락 가능 (탑승 검증 완화)
+              </p>
+            </div>
             <button
               type="button"
               onClick={dismissReviewDemoBanner}
