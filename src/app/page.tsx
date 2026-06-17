@@ -1684,21 +1684,21 @@ export default function Home() {
 
         {showReviewDemoBanner ? (
           <div
-            className="mx-4 mt-2 flex items-start gap-2 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2.5"
+            className="mx-4 mt-2 flex items-start gap-2 rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3.5 py-3"
             role="status"
           >
             <div className="min-w-0 flex-1">
-              <p className="text-zeb-xs font-extrabold leading-none text-[#1D4ED8]">
+              <p className="text-zeb-sm font-extrabold leading-none text-[#5F6B2E]">
                 심사용 테스트 모드 ON
               </p>
-              <p className="mt-1 text-[11px] font-semibold leading-snug text-[#2563EB]">
+              <p className="mt-1 text-zeb-xs font-semibold leading-snug text-[#747F00]">
                 PC 매칭/수락 가능 (탑승 검증 완화)
               </p>
             </div>
             <button
               type="button"
               onClick={dismissReviewDemoBanner}
-              className="shrink-0 px-1 text-zeb-xs font-bold leading-none text-[#1D4ED8]"
+              className="shrink-0 px-1 text-zeb-sm font-bold leading-none text-[#747F00]"
               aria-label="심사용 안내 닫기"
             >
               ×
