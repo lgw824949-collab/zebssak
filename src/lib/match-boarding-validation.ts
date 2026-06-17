@@ -2,8 +2,8 @@ import { normalizeDirectionForStorage } from '@/lib/match-direction'
 import {
   getDevMockStationName,
   getDevMockTrainNo,
-  isDevRealtimeBypassEnabled,
 } from '@/lib/presence-mode'
+import { isMatchRealtimeBypassEnabled } from '@/lib/review-demo'
 import {
   fetchRealtimePositionRows,
   normalizeSeoulTrainNo,
@@ -144,7 +144,7 @@ export async function validateOnboardBoardingContext(
     destinationStationCode: string
   }
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  if (isDevRealtimeBypassEnabled()) {
+  if (isMatchRealtimeBypassEnabled()) {
     return { ok: true }
   }
 

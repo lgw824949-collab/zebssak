@@ -17,6 +17,7 @@ import type {
   MatchRouteGuide,
 } from '@/lib/match-movement'
 import { resolveLiveHandoffRouteContext } from '@/lib/match-handoff-remaining-server'
+import { isMatchRealtimeBypassEnabled } from '@/lib/review-demo'
 import { resolveDirectionBucket } from '@/lib/match-direction'
 import {
   fetchRealtimePositionRows,
@@ -745,6 +746,7 @@ export async function PATCH(
         return errorResponse('매칭 요청 실시간 검증 정보를 찾을 수 없습니다.', 500)
       }
 
+      if (!isMatchRealtimeBypassEnabled()) {
       const destinationCode = stationCodeFromJoin(leavingRealtime.destination_station)
       const linePrefix = resolveStationLinePrefix(destinationCode)
       if (!linePrefix || !/^s[1-9]$/u.test(linePrefix)) {
@@ -814,6 +816,7 @@ export async function PATCH(
           'not_onboard',
           '자리넘기기 사용자가 실제 탑승 열차에 없어 수락할 수 없습니다.'
         )
+      }
       }
 
       const { data: leavingReq, error: leavingErr } = await supabase

@@ -866,6 +866,7 @@ export default function Home() {
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [homeWaitView, setHomeWaitView] = useState<HomeWaitView | null>(null)
   const [isCancellingHomeWait, setIsCancellingHomeWait] = useState(false)
+  const [reviewDemoActive, setReviewDemoActive] = useState(false)
   const isOutsideOperatingHours = useMemo(
     () => !isSubwayOperatingHours(resolveHomeApiLine(selectedLineLabel)),
     [selectedLineLabel]
@@ -926,6 +927,17 @@ export default function Home() {
     const paused = isLineHalted(congestionStatus, DEFAULT_HOME_LINE_LABEL)
     setIsMatchingPaused(paused)
   }, [congestionStatus, isLoadingData])
+
+  useEffect(() => {
+    void fetch('/api/health/review-demo', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((payload: { success?: boolean; data?: { enabled?: boolean } }) => {
+        setReviewDemoActive(Boolean(payload.success && payload.data?.enabled))
+      })
+      .catch(() => {
+        setReviewDemoActive(false)
+      })
+  }, [])
 
   useEffect(() => {
     try {
@@ -1538,6 +1550,15 @@ export default function Home() {
             ) : null}
           </button>
         </section>
+
+        {reviewDemoActive ? (
+          <p
+            className="mx-4 mt-2 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2.5 text-zeb-xs font-semibold leading-snug text-[#1D4ED8]"
+            role="status"
+          >
+            심사용 모드: PC에서도 매칭·수락 테스트가 가능합니다. (탑승 검증 완화)
+          </p>
+        ) : null}
 
         {isOutsideOperatingHours ? (
           <p

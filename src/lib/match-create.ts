@@ -11,6 +11,7 @@ import {
   type MatchRealtimeRequestRow,
 } from '@/lib/match-boarding-validation'
 import { sendMatchPushNotifications } from '@/lib/push-server'
+import { isMatchRealtimeBypassEnabled } from '@/lib/review-demo'
 import { fetchRealtimePositionRows, resolveSeoulLineName } from '@/lib/seoul-metro'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -196,7 +197,7 @@ export async function tryCreateMatch(
     return null
   }
 
-  if (/^s[1-9]$/u.test(linePrefix)) {
+  if (/^s[1-9]$/u.test(linePrefix) && !isMatchRealtimeBypassEnabled()) {
     const lineName = resolveSeoulLineName(`seoul${linePrefix.slice(1)}`)
     if (!lineName) return null
 
