@@ -45,13 +45,13 @@ export default function MatchFlowScreen({
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-2xl bg-white px-5 py-6 shadow-[0_8px_30px_rgba(26,26,26,0.06)] ring-1 ring-black/[0.04]">
-        <p className="text-center text-[13px] font-bold text-[#747F00]">{action.stepLabel}</p>
-        <h1 className="mt-2 text-center text-[24px] font-extrabold leading-tight text-[#1A1A1A]">
+        <p className="text-center text-zeb-sm font-semibold text-[#747F00]">{action.stepLabel}</p>
+        <h1 className="mt-2 text-center text-zeb-2xl font-bold leading-tight text-[#1A1A1A]">
           {action.headline}
         </h1>
 
         {action.detail ? (
-          <p className="mt-2 text-center text-[15px] font-medium leading-snug text-[#6B7280]">
+          <p className="mt-2 text-center text-zeb-md font-medium leading-snug text-[#6B7280]">
             {action.detail}
           </p>
         ) : null}
@@ -62,14 +62,14 @@ export default function MatchFlowScreen({
           >
             {currentStation ? (
               <div className="rounded-xl bg-[#F7F8F2] px-3 py-2.5 text-center">
-                <p className="text-[11px] font-semibold text-[#9CA3AF]">현재 위치</p>
-                <p className="mt-1 text-[16px] font-extrabold text-[#1A1A1A]">{currentStation}</p>
+                <p className="text-zeb-xs font-medium text-[#9CA3AF]">현재 위치</p>
+                <p className="mt-1 text-zeb-lg font-bold text-[#1A1A1A]">{currentStation}</p>
               </div>
             ) : null}
             {directionLabel ? (
               <div className="rounded-xl bg-[#F7F8F2] px-3 py-2.5 text-center">
-                <p className="text-[11px] font-semibold text-[#9CA3AF]">방향</p>
-                <p className="mt-1 text-[15px] font-extrabold text-[#747F00]">{directionLabel}</p>
+                <p className="text-zeb-xs font-medium text-[#9CA3AF]">방향</p>
+                <p className="mt-1 text-zeb-md font-bold text-[#747F00]">{directionLabel}</p>
               </div>
             ) : null}
           </div>
@@ -77,10 +77,10 @@ export default function MatchFlowScreen({
 
         {remainingLabel && flowStep !== 'done' ? (
           <div className="mt-4 text-center">
-            <p className="text-[32px] font-extrabold tabular-nums text-[#747F00]">
+            <p className="text-zeb-3xl font-bold tabular-nums text-[#747F00] zeb-mono">
               {remainingLabel}
             </p>
-            <p className="mt-1 text-[12px] font-semibold text-[#9CA3AF]">
+            <p className="mt-1 text-zeb-xs font-medium text-[#9CA3AF]">
               {positionIsLive ? '실시간' : '등록 기준'}
             </p>
           </div>
@@ -88,7 +88,7 @@ export default function MatchFlowScreen({
 
         {showStatus ? (
           <p
-            className={`mt-4 rounded-xl px-4 py-3.5 text-center text-[15px] font-bold leading-snug ${
+            className={`mt-4 rounded-xl px-4 py-3.5 text-center text-zeb-md font-semibold leading-snug ${
               action.blink && !transitionMessage && showButton
                 ? 'match-flow-blink bg-[#FFF3CD] text-[#8B6914]'
                 : 'bg-[#F7F8F2] text-[#4A5219]'
@@ -105,7 +105,7 @@ export default function MatchFlowScreen({
           type="button"
           disabled={isSubmitting}
           onClick={onPrimaryAction}
-          className={`w-full rounded-2xl py-4 text-[18px] font-extrabold text-white shadow-[0_10px_28px_rgba(116,127,0,0.35)] transition active:scale-[0.98] disabled:opacity-60 ${
+          className={`w-full rounded-2xl py-4 text-zeb-xl font-bold text-white shadow-[0_10px_28px_rgba(116,127,0,0.35)] transition active:scale-[0.98] disabled:opacity-60 ${
             action.blink ? 'match-flow-blink' : ''
           }`}
           style={{

@@ -486,8 +486,6 @@ function WaitingPageLayout({ children }: { children: ReactNode }) {
         display: 'flex',
         flexDirection: 'column',
         background: '#F7F8FA',
-        color: '#1A1A1A',
-        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
         paddingLeft: `max(${MOBILE_PAGE_X}px, env(safe-area-inset-left))`,
         paddingRight: `max(${MOBILE_PAGE_X}px, env(safe-area-inset-right))`,
       }}

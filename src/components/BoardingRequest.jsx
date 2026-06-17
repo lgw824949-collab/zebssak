@@ -936,9 +936,20 @@ const C = {
   card: "#FFFFFF",
   border: "#E2E8F0",
   text: "#1A1A1A",
-  muted: "#888",
+  muted: "#6B7280",
   priority: { bg: "#FFF3E0", border: "#FFB74D", text: "#E65100" },
-  occupied: { bg: "#EBEBEB", border: "#D0D0D0", text: "#888" },
+  occupied: { bg: "#EBEBEB", border: "#D0D0D0", text: "#9CA3AF" },
+};
+
+/** 타이포 스케일 — globals.css와 동일 */
+const TYPO = {
+  xs: { fontSize: 12, lineHeight: 1.45, letterSpacing: "-0.01em" },
+  sm: { fontSize: 13, lineHeight: 1.5, letterSpacing: "-0.02em" },
+  base: { fontSize: 14, lineHeight: 1.55, letterSpacing: "-0.02em" },
+  md: { fontSize: 15, lineHeight: 1.55, letterSpacing: "-0.02em" },
+  lg: { fontSize: 16, lineHeight: 1.5, letterSpacing: "-0.02em" },
+  xl: { fontSize: 18, lineHeight: 1.4, letterSpacing: "-0.03em" },
+  "2xl": { fontSize: 22, lineHeight: 1.35, letterSpacing: "-0.03em" },
 };
 
 /** 모바일 터치·타이포 기준 (iOS 자동 줌 방지) */
@@ -1108,10 +1119,10 @@ function Header({ step, onBack, title, line }) {
       </button>
       <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
         <LineCircleBadge line={line} />
-        <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{title}</div>
+        <div style={{ ...TYPO.lg, fontWeight: 700, color: C.text }}>{title}</div>
       </div>
       <div style={{
-        fontSize: 11, color: C.primary, fontWeight: 600,
+        ...TYPO.xs, color: C.primary, fontWeight: 600,
         background: C.primaryLight, borderRadius: 20, padding: "3px 10px",
       }}>
         {step} / 3
@@ -3566,13 +3577,13 @@ function StepTrain({
         </button>
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
           <LineCircleBadge line={line} />
-          <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>열차 선택</div>
+          <div style={{ ...TYPO.lg, fontWeight: 700, color: C.text }}>열차 선택</div>
         </div>
         <div
           style={{
-            fontSize: 11,
+            ...TYPO.xs,
             color: lineColor,
-            fontWeight: 700,
+            fontWeight: 600,
             background: lineColorLight,
             borderRadius: 20,
             padding: "4px 10px",
@@ -3594,22 +3605,22 @@ function StepTrain({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
+            <span style={{ ...TYPO.lg, fontWeight: 700, color: C.text }}>
               {currentStation
                 ? formatStationDisplayName(currentStation)
                 : "현재 역 확인 중"}
             </span>
             {station ? (
               <>
-                <span style={{ color: C.muted, fontSize: 14 }}>→</span>
-                <span style={{ fontSize: 15, fontWeight: 700, color: lineColor }}>
+                <span style={{ color: C.muted, ...TYPO.md }}>→</span>
+                <span style={{ ...TYPO.lg, fontWeight: 700, color: lineColor }}>
                   {formatStationDisplayName(station)}
                 </span>
               </>
             ) : null}
           </div>
           {directionLabel ? (
-            <p style={{ margin: "8px 0 0", fontSize: 13, color: C.muted }}>{directionLabel}</p>
+            <p style={{ margin: "8px 0 0", ...TYPO.sm, color: C.muted }}>{directionLabel}</p>
           ) : null}
         </div>
 
@@ -3623,7 +3634,7 @@ function StepTrain({
               border: `1px solid ${C.border}`,
             }}
           >
-            <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: C.text }}>
+            <p style={{ margin: "0 0 10px", ...TYPO.sm, fontWeight: 600, color: C.text }}>
               지금 어디에 있나요?
             </p>
             <div style={{ display: "flex", gap: 8 }}>
@@ -3636,8 +3647,8 @@ function StepTrain({
                   borderRadius: 10,
                   border: `2px solid ${isPlatformWaiting ? lineColor : C.border}`,
                   background: isPlatformWaiting ? lineColorLight : "#FFFFFF",
-                  fontSize: 13,
-                  fontWeight: 700,
+                  ...TYPO.sm,
+                  fontWeight: 600,
                   color: isPlatformWaiting ? lineColor : C.muted,
                   cursor: "pointer",
                 }}
@@ -3653,8 +3664,8 @@ function StepTrain({
                   borderRadius: 10,
                   border: `2px solid ${!isPlatformWaiting ? lineColor : C.border}`,
                   background: !isPlatformWaiting ? lineColorLight : "#FFFFFF",
-                  fontSize: 13,
-                  fontWeight: 700,
+                  ...TYPO.sm,
+                  fontWeight: 600,
                   color: !isPlatformWaiting ? lineColor : C.muted,
                   cursor: "pointer",
                 }}
@@ -3662,20 +3673,20 @@ function StepTrain({
                 열차 탑승 중
               </button>
             </div>
-            <p style={{ margin: "10px 0 0", fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
+            <p style={{ margin: "10px 0 0", ...TYPO.sm, color: C.muted }}>
               {isPlatformWaiting
                 ? "탑승 전 대기용입니다. 위치를 미리 확인하고, 탑승 후 매칭을 시작해 주세요."
-                : "이미 열차에 올라탔다면 여기를 선택하세요. 열차번호 확인 후 바로 매칭됩니다."}
+                : "이미 탑승했다면 선택하세요. 열차 확인 후 바로 매칭됩니다."}
             </p>
           </div>
         ) : null}
 
-        <p style={{ margin: "14px 0 10px", fontSize: 13, color: C.muted, lineHeight: 1.5 }}>
+        <p style={{ margin: "14px 0 10px", ...TYPO.sm, color: C.muted }}>
           {currentStation
             ? `${formatStationDisplayName(currentStation)} 역 열차를 선택해 주세요`
             : "열차를 선택해 주세요"}
           {lastUpdatedAt ? (
-            <span style={{ display: "block", marginTop: 4, fontSize: 12, color: lineColor }}>
+            <span style={{ display: "block", marginTop: 4, ...TYPO.xs, color: lineColor, fontWeight: 600 }}>
               {secondsUntilRefresh}초 후 자동 갱신
             </span>
           ) : null}
@@ -3877,10 +3888,9 @@ function StepTrain({
             <p
               style={{
                 margin: 0,
-                fontSize: 11,
-                fontWeight: 700,
+                ...TYPO.xs,
+                fontWeight: 600,
                 color: lineColor,
-                letterSpacing: "0.02em",
               }}
             >
               플랫폼 대기 안내
@@ -3889,15 +3899,14 @@ function StepTrain({
               id="platform-waiting-guide-title"
               style={{
                 margin: "8px 0 0",
-                fontSize: 18,
-                fontWeight: 800,
+                ...TYPO.xl,
+                fontWeight: 700,
                 color: C.text,
-                lineHeight: 1.4,
               }}
             >
               탑승 전에는 매칭되지 않아요
             </h2>
-            <p style={{ margin: "10px 0 0", fontSize: 14, color: C.muted, lineHeight: 1.55 }}>
+            <p style={{ margin: "10px 0 0", ...TYPO.base, color: C.muted }}>
               호차·좌석 위치를 미리 확인하시고, 탑승 후 대기 화면에서
               「탑승했어요」를 눌러 매칭을 시작해 주세요.
             </p>
@@ -3912,8 +3921,8 @@ function StepTrain({
                 borderRadius: 12,
                 background: lineColor,
                 color: "#FFFFFF",
-                fontSize: 15,
-                fontWeight: 700,
+                ...TYPO.md,
+                fontWeight: 600,
                 cursor: "pointer",
               }}
             >
@@ -5380,7 +5389,6 @@ export default function BoardingRequest({ line = "서울 1호선 · 소요산 �
       maxWidth: 390, margin: "0 auto",
       height: "100dvh", minHeight: 600,
       display: "flex", flexDirection: "column",
-      fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
       background: C.card, overflow: "hidden",
       border: `1px solid ${C.border}`, borderRadius: 20,
       boxShadow: "0 4px 24px rgba(0,0,0,0.08)",

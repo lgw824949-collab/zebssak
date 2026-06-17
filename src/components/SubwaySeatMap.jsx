@@ -269,7 +269,6 @@ function Seat({
       {seatLetter && !isElderly ? (
         <span
           style={{
-            fontFamily: "'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif",
             fontSize: 10,
             fontWeight: 700,
             color: "#475569",
@@ -332,7 +331,7 @@ function AisleSectionBadge({ label, lineColor, highlighted, compact = false }) {
       style={{
         fontSize: compact ? AISLE_SECTION_BADGE_FONT_SIZE : 16,
         fontWeight: 800,
-        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontFamily: "var(--font-mono)",
         fontVariantNumeric: "tabular-nums",
         color: highlighted ? "#FFFFFF" : lineColor,
         background: highlighted ? "#F59E0B" : "#FFFFFF",
@@ -692,7 +691,7 @@ export default function SubwaySeatMap({
       style={{
         fontSize: AISLE_SECTION_BADGE_FONT_SIZE,
         fontWeight: 800,
-        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontFamily: "var(--font-mono)",
         fontVariantNumeric: "tabular-nums",
         color: lineColor,
         background: "#FFFFFF",
@@ -919,7 +918,6 @@ export default function SubwaySeatMap({
   return (
     <div
       style={{
-        fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
         maxWidth: 380,
         width: "100%",
         margin: "0 auto",

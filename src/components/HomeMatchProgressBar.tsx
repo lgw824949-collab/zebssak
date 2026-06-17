@@ -38,7 +38,7 @@ export default function HomeMatchProgressBar({
           return (
             <div key={label} className="flex flex-col items-center gap-1.5">
               <span
-                className={`flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-extrabold ${
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-zeb-xs font-bold ${
                   isActive && shouldBlink ? 'home-progress-blink' : ''
                 }`}
                 style={{
@@ -50,7 +50,7 @@ export default function HomeMatchProgressBar({
                 {isDone ? '✓' : index + 1}
               </span>
               <span
-                className={`text-center text-[11px] font-bold leading-tight ${
+                className={`text-center text-zeb-xs font-semibold leading-tight ${
                   isActive && shouldBlink ? 'home-progress-blink' : ''
                 }`}
                 style={{ color: isActive ? '#747F00' : isDone ? '#5F6B2E' : '#9CA3AF' }}
@@ -63,7 +63,7 @@ export default function HomeMatchProgressBar({
       </div>
 
       <p
-        className={`mt-3 rounded-xl px-3 py-2.5 text-center text-[14px] font-bold leading-snug text-[#5F6B2E] ${
+        className={`mt-3 rounded-xl px-3 py-2.5 text-center text-zeb-base font-semibold leading-snug text-[#5F6B2E] ${
           shouldBlink ? 'home-progress-blink bg-[#FFF8F0]' : 'bg-[#F0F5E8]'
         }`}
         role="status"

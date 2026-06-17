@@ -18,6 +18,26 @@
 @font-face {
   font-family: 'Zeb UI';
   font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/packages/pretendard/dist/web/static/woff2/Pretendard-Medium.woff2')
+    format('woff2');
+  unicode-range: U+0000-002F, U+003A-10FFFF;
+}
+
+@font-face {
+  font-family: 'Zeb UI';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/packages/pretendard/dist/web/static/woff2/Pretendard-SemiBold.woff2')
+    format('woff2');
+  unicode-range: U+0000-002F, U+003A-10FFFF;
+}
+
+@font-face {
+  font-family: 'Zeb UI';
+  font-style: normal;
   font-weight: 700;
   font-display: swap;
   src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/packages/pretendard/dist/web/static/woff2/Pretendard-Bold.woff2')
@@ -58,7 +78,7 @@
     --accent: #c6ff00;
     --accent-foreground: #747f00;
     --muted: #f0f1f3;
-    --muted-foreground: #888888;
+    --muted-foreground: #6b7280;
     --border: #ebebeb;
     --radius: 1rem;
     --line-1: #747F00;
@@ -71,13 +91,16 @@
 
     --space-page-x: 1rem;
     --space-page-x-lg: 1.25rem;
-    /* 기존 대비 +1~2px */
-    --font-size-base: 1.0625rem;
-    --font-size-sm: 0.9375rem;
-    --font-size-lg: 1.1875rem;
-    --font-size-xl: 1.3125rem;
-    --font-size-2xl: 1.625rem;
-    --font-size-3xl: 2rem;
+    /* 타이포 스케일 — 12·13·14·15·16·18·22·28 */
+    --font-size-2xs: 0.625rem;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.8125rem;
+    --font-size-base: 0.875rem;
+    --font-size-md: 0.9375rem;
+    --font-size-lg: 1rem;
+    --font-size-xl: 1.125rem;
+    --font-size-2xl: 1.375rem;
+    --font-size-3xl: 1.75rem;
     --touch-target-min: 2.75rem;
     --safe-area-top: env(safe-area-inset-top, 0px);
     --safe-area-right: env(safe-area-inset-right, 0px);
@@ -89,8 +112,9 @@
     --app-header-px: 1rem;
     --app-header-height: calc(var(--app-header-pt) + var(--touch-target-min) + var(--app-header-pb));
     --bottom-nav-height: calc(3.5rem + max(0.375rem, var(--safe-area-bottom)));
-    --body-line-height: 1.6;
-    --body-letter-spacing: -0.3px;
+    --body-line-height: 1.55;
+    --body-letter-spacing: -0.02em;
+    --heading-letter-spacing: -0.03em;
   }
 
   * {
@@ -113,11 +137,13 @@
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
-    font-size: max(17px, var(--font-size-base));
+    font-size: max(16px, var(--font-size-lg));
     line-height: var(--body-line-height);
     letter-spacing: var(--body-letter-spacing);
+    font-weight: 400;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     padding-top: var(--safe-area-top);
     padding-bottom: var(--safe-area-bottom);
   }
@@ -134,7 +160,22 @@
   input,
   select,
   textarea {
-    font-size: max(17px, var(--font-size-base));
+    font-size: max(16px, var(--font-size-lg));
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: var(--heading-letter-spacing);
+    line-height: 1.35;
+    color: var(--foreground);
+  }
+
+  p {
+    margin: 0;
   }
 
   button:not(.zeb-seat-btn),
@@ -199,8 +240,8 @@
     padding: 0 1.25rem;
     border-radius: 0.75rem;
     font-family: var(--font-sans);
-    font-size: max(17px, var(--font-size-base));
-    font-weight: 700;
+    font-size: max(16px, var(--font-size-lg));
+    font-weight: 600;
     line-height: var(--body-line-height);
     letter-spacing: var(--body-letter-spacing);
     border: none;
@@ -230,10 +271,80 @@
 
   .zeb-field {
     font-family: var(--font-sans);
-    font-size: max(17px, var(--font-size-base));
+    font-size: max(16px, var(--font-size-lg));
     line-height: var(--body-line-height);
     letter-spacing: var(--body-letter-spacing);
     -webkit-tap-highlight-color: transparent;
+  }
+
+  .zeb-boarding-shell {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-lg);
+    line-height: var(--body-line-height);
+    letter-spacing: var(--body-letter-spacing);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .zeb-typo-2xs {
+    font-size: var(--font-size-2xs);
+    line-height: 1.3;
+    letter-spacing: 0;
+  }
+
+  .zeb-typo-xs {
+    font-size: var(--font-size-xs);
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+  }
+
+  .zeb-typo-sm {
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    letter-spacing: -0.02em;
+  }
+
+  .zeb-typo-base {
+    font-size: var(--font-size-base);
+    line-height: 1.55;
+    letter-spacing: -0.02em;
+  }
+
+  .zeb-typo-md {
+    font-size: var(--font-size-md);
+    line-height: 1.55;
+    letter-spacing: -0.02em;
+  }
+
+  .zeb-typo-lg {
+    font-size: var(--font-size-lg);
+    line-height: 1.5;
+    letter-spacing: -0.02em;
+  }
+
+  .zeb-typo-xl {
+    font-size: var(--font-size-xl);
+    line-height: 1.4;
+    letter-spacing: var(--heading-letter-spacing);
+    font-weight: 700;
+  }
+
+  .zeb-typo-2xl {
+    font-size: var(--font-size-2xl);
+    line-height: 1.35;
+    letter-spacing: var(--heading-letter-spacing);
+    font-weight: 700;
+  }
+
+  .zeb-typo-3xl {
+    font-size: var(--font-size-3xl);
+    line-height: 1.3;
+    letter-spacing: var(--heading-letter-spacing);
+    font-weight: 800;
+  }
+
+  .zeb-typo-muted {
+    color: var(--muted-foreground);
   }
 
   .zeb-seat-btn {
@@ -253,7 +364,7 @@
   .zeb-tab-btn {
     min-height: var(--touch-target-min);
     min-width: var(--touch-target-min);
-    font-size: max(17px, 0.8125rem);
+    font-size: var(--font-size-sm);
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -348,10 +459,18 @@
   }
 
   .zeb-bottom-nav__label {
-    font-size: 0.6875rem;
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: -0.2px;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+
+  .wait-page-layout {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-lg);
+    line-height: var(--body-line-height);
+    letter-spacing: var(--body-letter-spacing);
+    color: var(--foreground);
   }
 }
 

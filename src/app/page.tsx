@@ -1454,8 +1454,8 @@ export default function Home() {
         </Link>
 
         <div className="min-w-0 flex-1 px-1 text-center">
-          <p className="truncate text-[17px] font-bold text-[#1A1A1A]">빈자리, 잽싸게</p>
-          <p className="mt-0.5 text-[13px] font-medium leading-snug text-[#6B7280]">
+          <p className="truncate text-zeb-lg font-bold text-[#1A1A1A]">빈자리, 잽싸게</p>
+          <p className="mt-0.5 text-zeb-sm font-medium leading-snug text-[#6B7280]">
             <span className="font-bold text-[#747F00]">서울 7호선</span>
             <span className="text-[#9CA3AF]"> · </span>
             곧 비어질 좌석을 미리 확인하세요
@@ -1494,7 +1494,7 @@ export default function Home() {
             className={resolveHomeActionButtonClass(isSeekRegistering)}
           >
             {isSeekRegistering ? (
-              <span className="flex items-center justify-center gap-1.5 text-[18px] font-bold leading-snug">
+              <span className="flex items-center justify-center gap-1.5 text-zeb-xl font-bold leading-snug">
                 <span
                   className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-white"
                   aria-hidden
@@ -1502,10 +1502,10 @@ export default function Home() {
                 등록 중…
               </span>
             ) : (
-              <span className="text-[18px] font-bold leading-snug">빈자리 찾기</span>
+              <span className="text-zeb-xl font-bold leading-snug">빈자리 찾기</span>
             )}
             {isSeekRegistering ? (
-              <span className="mt-1 text-[12px] font-medium text-white/85">
+              <span className="mt-1 text-zeb-xs font-medium text-white/85">
                 아래 카드에서 확인
               </span>
             ) : null}
@@ -1521,7 +1521,7 @@ export default function Home() {
             className={resolveHomeActionButtonClass(isLeaveRegistering)}
           >
             {isLeaveRegistering ? (
-              <span className="flex items-center justify-center gap-1.5 text-[18px] font-bold leading-snug">
+              <span className="flex items-center justify-center gap-1.5 text-zeb-xl font-bold leading-snug">
                 <span
                   className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-white"
                   aria-hidden
@@ -1529,10 +1529,10 @@ export default function Home() {
                 등록 중…
               </span>
             ) : (
-              <span className="text-[18px] font-bold leading-snug">자리 넘기기</span>
+              <span className="text-zeb-xl font-bold leading-snug">자리 넘기기</span>
             )}
             {isLeaveRegistering ? (
-              <span className="mt-1 text-[12px] font-medium text-white/85">
+              <span className="mt-1 text-zeb-xs font-medium text-white/85">
                 아래 카드에서 확인
               </span>
             ) : null}
@@ -1694,7 +1694,7 @@ export default function Home() {
                       className="min-w-0 flex-1 cursor-pointer transition active:opacity-90"
                     >
                       <span
-                        className="inline-block rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white"
+                        className="inline-block rounded-full px-2.5 py-0.5 text-zeb-xs font-bold text-white"
                         style={{
                           backgroundColor: isMatchAlert
                             ? LINE7_PRIMARY
@@ -1705,11 +1705,11 @@ export default function Home() {
                       >
                         {card.statusBadge}
                       </span>
-                      <p className="mt-2 text-[16px] font-extrabold text-[#1A1A1A]">
+                      <p className="mt-2 text-zeb-lg font-bold text-[#1A1A1A]">
                         {card.purposeLine}
                       </p>
                       {!showProgressBar ? (
-                        <p className="mt-1 text-[14px] font-semibold text-[#5F6B2E]">
+                        <p className="mt-1 text-zeb-base font-semibold text-[#5F6B2E]">
                           {card.progressLine}
                         </p>
                       ) : null}
@@ -1753,10 +1753,10 @@ export default function Home() {
             className="mt-3 rounded-2xl border border-[#EBEBEB] bg-white px-4 py-3.5"
             aria-label="서비스 안내"
           >
-            <p className="text-[13px] font-medium leading-snug text-[#6B7280]">
+            <p className="text-zeb-sm font-medium leading-snug text-[#6B7280]">
               서울 7호선 단독 운영 · 혼잡도 데이터 기반 매칭
             </p>
-            <ul className="mt-2.5 flex flex-col gap-1.5 text-[14px] leading-snug text-[#4B5563]">
+            <ul className="mt-2.5 flex flex-col gap-1.5 text-zeb-base leading-snug text-[#4B5563]">
               <li>· 착석 수요가 많은 장거리 노선</li>
               <li>· 환승역 66개 — 빈자리 찾기에 유리</li>
               <li>· 교통약자·일반 이용자 모두 이용 가능</li>
@@ -1773,20 +1773,20 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleBackToModeStep}
-                className="text-[13px] font-semibold text-[#888888]"
+                className="text-zeb-sm font-semibold text-[#888888]"
               >
                 ← 이전
               </button>
-              <p className="text-[13px] font-medium text-[#888888]">
+              <p className="text-zeb-sm font-medium text-[#888888]">
                 {activeTab === 'leave' ? '하차 알리기' : '빈자리 찾기'}
               </p>
             </div>
 
             <div className="mb-5">
-              <h2 className="text-[22px] font-extrabold tracking-tight text-[#1A1A1A]">
+              <h2 className="text-zeb-2xl font-bold tracking-tight text-[#1A1A1A]">
                 어느 노선 타세요?
               </h2>
-              <p className="mt-2 text-[14px] font-medium" style={{ color: LINE7_OLIVE }}>
+              <p className="mt-2 text-zeb-base font-medium" style={{ color: LINE7_OLIVE }}>
                 서울 7호선 단독 운영 중
               </p>
             </div>
@@ -1802,16 +1802,16 @@ export default function Home() {
                   aria-label={`${line.label} 선택`}
                 >
                   <span
-                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
+                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-zeb-md font-bold text-white"
                     style={{ background: line.color }}
                   >
                     {line.badge}
                   </span>
                   <span className="min-w-0 flex-1 text-left">
-                    <span className="block text-[16px] font-extrabold text-[#1A1A1A]">
+                    <span className="block text-zeb-lg font-bold text-[#1A1A1A]">
                       {line.label}
                     </span>
-                    <span className="mt-0.5 block text-[13px] font-medium text-[#888888]">
+                    <span className="mt-0.5 block text-zeb-sm font-medium text-[#888888]">
                       {line.stationExamples}
                     </span>
                   </span>
