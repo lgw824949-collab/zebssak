@@ -36,42 +36,84 @@ interface StoredUser {
 const GPS_MAX_RADIUS_KM = 1
 /** 배포 후 구 UI 캐시(SW·브라우저) 1회 갱신 */
 const HOME_UI_VERSION = '2026-06-11-first-visit-v32'
-/** 홈 2단계 — 현재 서울 7호선만 노출 */
+/** 홈 2단계 — 서울 1~9호선, 인천 1~2호선 노출 */
 const HOME_LINE_OPTIONS = [
-  // {
-  //   label: '서울 1호선',
-  //   shortLabel: '1호선',
-  //   badge: '1',
-  //   color: '#747F00',
-  //   stationExamples: '서울역 · 종로 · 청량리',
-  // },
-  // {
-  //   label: '서울 2호선',
-  //   shortLabel: '2호선',
-  //   badge: '2',
-  //   color: '#747F00',
-  //   stationExamples: '강남 · 잠실 · 홍대',
-  // },
-  // {
-  //   label: '인천 1호선',
-  //   shortLabel: '인천1',
-  //   badge: '인1',
-  //   color: '#7CA8D5',
-  //   stationExamples: '부평 · 예술회관 · 원인재',
-  // },
-  // {
-  //   label: '인천 2호선',
-  //   shortLabel: '인천2',
-  //   badge: '인2',
-  //   color: '#ED8B00',
-  //   stationExamples: '검단오류 · 주안 · 운연',
-  // },
+  {
+    label: '서울 1호선',
+    shortLabel: '1호선',
+    badge: '1',
+    color: '#747F00',
+    stationExamples: '서울역 · 종로 · 청량리',
+  },
+  {
+    label: '서울 2호선',
+    shortLabel: '2호선',
+    badge: '2',
+    color: '#747F00',
+    stationExamples: '강남 · 잠실 · 홍대',
+  },
+  {
+    label: '서울 3호선',
+    shortLabel: '3호선',
+    badge: '3',
+    color: '#EF7C1C',
+    stationExamples: '대화 · 종로3가 · 오금',
+  },
+  {
+    label: '서울 4호선',
+    shortLabel: '4호선',
+    badge: '4',
+    color: '#00A5DE',
+    stationExamples: '진접 · 혜화 · 오이도',
+  },
+  {
+    label: '서울 5호선',
+    shortLabel: '5호선',
+    badge: '5',
+    color: '#996CAC',
+    stationExamples: '방화 · 여의도 · 하남검단산',
+  },
+  {
+    label: '서울 6호선',
+    shortLabel: '6호선',
+    badge: '6',
+    color: '#CD7C2F',
+    stationExamples: '응암 · 삼각지 · 신내',
+  },
   {
     label: '서울 7호선',
     shortLabel: '7호선',
     badge: '7',
     color: '#747F00',
     stationExamples: '장암 · 논현 · 석남',
+  },
+  {
+    label: '서울 8호선',
+    shortLabel: '8호선',
+    badge: '8',
+    color: '#E6186C',
+    stationExamples: '암사 · 잠실 · 모란',
+  },
+  {
+    label: '서울 9호선',
+    shortLabel: '9호선',
+    badge: '9',
+    color: '#BDB092',
+    stationExamples: '개화 · 신논현 · 중앙보훈병원',
+  },
+  {
+    label: '인천 1호선',
+    shortLabel: '인천1',
+    badge: '인1',
+    color: '#759CCE',
+    stationExamples: '부평 · 예술회관 · 원인재',
+  },
+  {
+    label: '인천 2호선',
+    shortLabel: '인천2',
+    badge: '인2',
+    color: '#F5A200',
+    stationExamples: '검단오류 · 주안 · 운연',
   },
 ] as const
 
@@ -126,15 +168,15 @@ const HOME_TRANSFER_STATIONS = [
 
 // const VOICE_PARSE_PENDING_KEY = 'voiceParsePending'
 
-// type HomeStep = 'mode' | 'line'
+type HomeStep = 'mode' | 'line'
 
-// function ChevronRightIcon() {
-//   return (
-//     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden className="shrink-0" style={{ color: LINE7_OLIVE }}>
-//       <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-//     </svg>
-//   )
-// }
+function ChevronRightIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden className="shrink-0">
+      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (v: number) => (v * Math.PI) / 180
@@ -809,6 +851,8 @@ export default function Home() {
   const [showCongestionModal, setShowCongestionModal] = useState(false)
   const [selectedLineLabel, setSelectedLineLabel] = useState<string>('서울 7호선')
   const [activeTab, setActiveTab] = useState<HomeFlowMode | null>(null)
+  const [homeStep, setHomeStep] = useState<HomeStep>('mode')
+  const [pendingDestination, setPendingDestination] = useState<string | undefined>(undefined)
   const [transferStationsLoading, setTransferStationsLoading] = useState(false)
   const [transferStations, setTransferStations] = useState<
     (typeof HOME_TRANSFER_STATIONS)[number][]
@@ -1052,9 +1096,8 @@ export default function Home() {
   function handleModeSelect(mode: HomeFlowMode, destination?: string) {
     clearHomeMatchCompletedHint()
     setActiveTab(mode)
-    // 단독 노선(서울 7호선) — 노선 선택 단계 생략
-    // setHomeStep('line')
-    handleLinePick(DEFAULT_HOME_LINE_LABEL, mode, destination)
+    setPendingDestination(destination)
+    setHomeStep('line')
   }
 
   function handleTransferStationClick(station: (typeof HOME_TRANSFER_STATIONS)[number]) {
@@ -1253,10 +1296,11 @@ export default function Home() {
     router.push('/waiting')
   }
 
-  // function handleBackToModeStep() {
-  //   setHomeStep('mode')
-  //   setActiveTab(null)
-  // }
+  function handleBackToModeStep() {
+    setHomeStep('mode')
+    setActiveTab(null)
+    setPendingDestination(undefined)
+  }
 
   async function proceedToBoarding(
     lineLabel: string,
@@ -1607,245 +1651,246 @@ export default function Home() {
       <main className="flex flex-col pb-4">
         {isPriorityHomeWait ? renderHomeRegistrationCard() : null}
 
-        {/* 객실 일러스트 — 높이를 키워 3~4명이 보이게, 나머지는 좌우 스크롤 */}
-        <section className="w-full shrink-0 bg-[#f5f5f0]" aria-label="지하철 객실 안내">
-          <div className="zeb-no-scrollbar zeb-hero-pan-x" aria-label="객실 이미지 가로 스크롤">
-            <img
-              src={`/images/subway-hero.png?v=${HOME_UI_VERSION}`}
-              alt="지하철 7호선 실내"
-              className="block h-[min(72vw,300px)] min-h-[260px] w-auto max-w-none select-none"
-              draggable={false}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none'
-              }}
-            />
-          </div>
-        </section>
-
-        {/* 등록 액션 — 빈자리 찾기 / 자리 넘기기 */}
-        <section className="mx-4 mt-3 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={
-              isMatchingPaused ||
-              isOutsideOperatingHours ||
-              isSeekRegistering ||
-              isMatchFlowActive
-            }
-            onClick={() => handleModeSelect('seek')}
-            className={resolveHomeActionButtonClass(isSeekRegistering)}
-          >
-            {isSeekRegistering ? (
-              <span className="flex items-center justify-center gap-1.5 text-zeb-xl font-bold leading-snug">
-                <span
-                  className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-white"
-                  aria-hidden
+        {homeStep === 'mode' ? (
+          <>
+            {/* 객실 일러스트 — 높이를 키워 3~4명이 보이게, 나머지는 좌우 스크롤 */}
+            <section className="w-full shrink-0 bg-[#f5f5f0]" aria-label="지하철 객실 안내">
+              <div className="zeb-no-scrollbar zeb-hero-pan-x" aria-label="객실 이미지 가로 스크롤">
+                <img
+                  src={`/images/subway-hero.png?v=${HOME_UI_VERSION}`}
+                  alt="지하철 실내"
+                  className="block h-[min(72vw,300px)] min-h-[260px] w-auto max-w-none select-none"
+                  draggable={false}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none'
+                  }}
                 />
-                등록 중…
-              </span>
-            ) : (
-              <span className="text-zeb-xl font-bold leading-snug">빈자리 찾기</span>
-            )}
-            {isSeekRegistering ? (
-              <span className="mt-1 text-zeb-xs font-medium text-white/85">
-                아래 카드에서 확인
-              </span>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            disabled={
-              isMatchingPaused ||
-              isOutsideOperatingHours ||
-              isLeaveRegistering ||
-              isMatchFlowActive
-            }
-            onClick={() => handleModeSelect('leave')}
-            className={resolveHomeActionButtonClass(isLeaveRegistering)}
-          >
-            {isLeaveRegistering ? (
-              <span className="flex items-center justify-center gap-1.5 text-zeb-xl font-bold leading-snug">
-                <span
-                  className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-white"
-                  aria-hidden
-                />
-                등록 중…
-              </span>
-            ) : (
-              <span className="text-zeb-xl font-bold leading-snug">자리 넘기기</span>
-            )}
-            {isLeaveRegistering ? (
-              <span className="mt-1 text-zeb-xs font-medium text-white/85">
-                아래 카드에서 확인
-              </span>
-            ) : null}
-          </button>
-        </section>
+              </div>
+            </section>
 
-        {showReviewDemoBanner ? (
-          <div
-            className="mx-4 mt-2 flex items-start gap-2 rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3.5 py-3"
-            role="status"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="text-zeb-sm font-extrabold leading-none text-[#5F6B2E]">
-                심사용 테스트 모드 ON
-              </p>
-              <p className="mt-1 text-zeb-xs font-semibold leading-snug text-[#747F00]">
-                PC 매칭/수락 가능 (탑승 검증 완화)
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={dismissReviewDemoBanner}
-              className="shrink-0 px-1 text-zeb-sm font-bold leading-none text-[#747F00]"
-              aria-label="심사용 안내 닫기"
-            >
-              ×
-            </button>
-          </div>
-        ) : null}
-
-        {isOutsideOperatingHours ? (
-          <p
-            className="mx-4 mt-2 rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3 py-2.5 text-xs font-bold text-[#5F6B2E]"
-            role="alert"
-          >
-            {SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE}
-          </p>
-        ) : null}
-
-        {isMatchingPaused ? (
-          <p
-            className="mx-4 mt-2 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
-            role="alert"
-          >
-            현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
-          </p>
-        ) : null}
-
-        {/* 환승 많은 역 */}
-        <section className="mx-4 mt-3" aria-label="환승 많은 역">
-          <div className="mb-1 flex items-center justify-between">
-            <h2 className="text-base font-bold text-[#1A1A1A]">환승 많은 역</h2>
-            <div className="flex items-center gap-2">
+            {/* 등록 액션 — 빈자리 찾기 / 자리 넘기기 */}
+            <section className="mx-4 mt-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className="text-[#7A8460] transition-colors hover:text-[#747F00]"
-                aria-label="이전"
-                onClick={() => scrollTransferStations('prev')}
+                disabled={
+                  isMatchingPaused ||
+                  isOutsideOperatingHours ||
+                  isSeekRegistering ||
+                  isMatchFlowActive
+                }
+                onClick={() => handleModeSelect('seek')}
+                className={resolveHomeActionButtonClass(isSeekRegistering)}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                {isSeekRegistering ? (
+                  <span className="flex items-center justify-center gap-1.5 text-zeb-xl font-bold leading-snug">
+                    <span
+                      className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-white"
+                      aria-hidden
+                    />
+                    등록 중…
+                  </span>
+                ) : (
+                  <span className="text-zeb-xl font-bold leading-snug">빈자리 찾기</span>
+                )}
+                {isSeekRegistering ? (
+                  <span className="mt-1 text-zeb-xs font-medium text-white/85">
+                    아래 카드에서 확인
+                  </span>
+                ) : null}
               </button>
               <button
                 type="button"
-                className="text-[#7A8460] transition-colors hover:text-[#747F00]"
-                aria-label="다음"
-                onClick={() => scrollTransferStations('next')}
+                disabled={
+                  isMatchingPaused ||
+                  isOutsideOperatingHours ||
+                  isLeaveRegistering ||
+                  isMatchFlowActive
+                }
+                onClick={() => handleModeSelect('leave')}
+                className={resolveHomeActionButtonClass(isLeaveRegistering)}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                {isLeaveRegistering ? (
+                  <span className="flex items-center justify-center gap-1.5 text-zeb-xl font-bold leading-snug">
+                    <span
+                      className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-white"
+                      aria-hidden
+                    />
+                    등록 중…
+                  </span>
+                ) : (
+                  <span className="text-zeb-xl font-bold leading-snug">자리 넘기기</span>
+                )}
+                {isLeaveRegistering ? (
+                  <span className="mt-1 text-zeb-xs font-medium text-white/85">
+                    아래 카드에서 확인
+                  </span>
+                ) : null}
               </button>
-            </div>
-          </div>
-          <div
-            ref={transferScrollRef}
-            className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {transferStationsLoading ? (
-              <>
-                <span
-                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
-                  aria-hidden
-                />
-                <span
-                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
-                  aria-hidden
-                />
-                <span
-                  className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
-                  aria-hidden
-                />
-              </>
-            ) : (
-              transferStations.map((station, index) => {
-                const isSelected =
-                  selectedTransferStation === station.label ||
-                  (selectedTransferStation === null && index === 0)
+            </section>
 
-                return (
+            {showReviewDemoBanner ? (
+              <div
+                className="mx-4 mt-2 flex items-start gap-2 rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3.5 py-3"
+                role="status"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-zeb-sm font-extrabold leading-none text-[#5F6B2E]">
+                    심사용 테스트 모드 ON
+                  </p>
+                  <p className="mt-1 text-zeb-xs font-semibold leading-snug text-[#747F00]">
+                    PC 매칭/수락 가능 (탑승 검증 완화)
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={dismissReviewDemoBanner}
+                  className="shrink-0 px-1 text-zeb-sm font-bold leading-none text-[#747F00]"
+                  aria-label="심사용 안내 닫기"
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+
+            {isOutsideOperatingHours ? (
+              <p
+                className="mx-4 mt-2 rounded-xl border border-[#D5DDB8] bg-[#F7F8F2] px-3 py-2.5 text-xs font-bold text-[#5F6B2E]"
+                role="alert"
+              >
+                {SUBWAY_OUTSIDE_OPERATING_HOURS_MESSAGE}
+              </p>
+            ) : null}
+
+            {isMatchingPaused ? (
+              <p
+                className="mx-4 mt-2 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3 py-2.5 text-xs font-bold text-[#DC2626]"
+                role="alert"
+              >
+                현재 매칭 기능이 일시 정지되었습니다. 잠시 후 다시 시도해주세요.
+              </p>
+            ) : null}
+
+            {/* 환승 많은 역 */}
+            <section className="mx-4 mt-3" aria-label="환승 많은 역">
+              <div className="mb-1 flex items-center justify-between">
+                <h2 className="text-base font-bold text-[#1A1A1A]">환승 많은 역</h2>
+                <div className="flex items-center gap-2">
                   <button
-                    key={`${station.label}-${index}`}
                     type="button"
-                    disabled={isMatchingPaused}
-                    onClick={() => handleTransferStationClick(station)}
-                    className={`shrink-0 rounded-full px-3 py-1 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${
-                      isSelected
-                        ? 'bg-[#747F00] text-white'
-                        : 'border border-[#D5DDB8] bg-white text-[#7A8460]'
-                    }`}
+                    className="text-[#7A8460] transition-colors hover:text-[#747F00]"
+                    aria-label="이전"
+                    onClick={() => scrollTransferStations('prev')}
                   >
-                    {station.label}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
                   </button>
-                )
-              })
-            )}
-          </div>
-        </section>
+                  <button
+                    type="button"
+                    className="text-[#7A8460] transition-colors hover:text-[#747F00]"
+                    aria-label="다음"
+                    onClick={() => scrollTransferStations('next')}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div
+                ref={transferScrollRef}
+                className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {transferStationsLoading ? (
+                  <>
+                    <span
+                      className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
+                      aria-hidden
+                    />
+                    <span
+                      className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
+                      aria-hidden
+                    />
+                    <span
+                      className="h-7 w-16 shrink-0 animate-pulse rounded-full bg-gray-200"
+                      aria-hidden
+                    />
+                  </>
+                ) : (
+                  transferStations.map((station, index) => {
+                    const isSelected =
+                      selectedTransferStation === station.label ||
+                      (selectedTransferStation === null && index === 0)
 
-        {!isPriorityHomeWait ? renderHomeRegistrationCard() : null}
+                    return (
+                      <button
+                        key={`${station.label}-${index}`}
+                        type="button"
+                        disabled={isMatchingPaused}
+                        onClick={() => handleTransferStationClick(station)}
+                        className={`shrink-0 rounded-full px-3 py-1 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                          isSelected
+                            ? 'bg-[#747F00] text-white'
+                            : 'border border-[#D5DDB8] bg-white text-[#7A8460]'
+                        }`}
+                      >
+                        {station.label}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </section>
 
-        {homeMatchStatusBox ? (
-          <section className="mx-4 mt-3" aria-label="매칭 상태">
-            <p
-              className="rounded-xl border px-4 py-3 text-center text-sm font-bold"
-              style={{
-                backgroundColor: homeMatchStatusBox.backgroundColor,
-                borderColor: LINE7_BORDER,
-                color: homeMatchStatusBox.textColor,
-              }}
-            >
-              <span aria-hidden className="mr-1 opacity-80">
-                {homeMatchStatusBox.emoji}
-              </span>
-              {homeMatchStatusBox.label}
-            </p>
-          </section>
-        ) : null}
+            {!isPriorityHomeWait ? renderHomeRegistrationCard() : null}
 
-        <details className="group mx-4 mt-3">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-bold text-[#1A1A1A] marker:content-none [&::-webkit-details-marker]:hidden">
-            <span
-              className="inline-block text-[10px] leading-none text-[#888888] transition-transform group-open:rotate-90"
-              aria-hidden
-            >
-              ▶
-            </span>
-            왜 7호선인가?
-          </summary>
-          <section
-            className="mt-3 rounded-2xl border border-[#EBEBEB] bg-white px-4 py-3.5"
-            aria-label="서비스 안내"
-          >
-            <p className="text-zeb-sm font-medium leading-snug text-[#6B7280]">
-              서울 7호선 단독 운영 · 혼잡도 데이터 기반 매칭
-            </p>
-            <ul className="mt-2.5 flex flex-col gap-1.5 text-zeb-base leading-snug text-[#4B5563]">
-              <li>· 착석 수요가 많은 장거리 노선</li>
-              <li>· 환승역 66개 — 빈자리 찾기에 유리</li>
-              <li>· 교통약자·일반 이용자 모두 이용 가능</li>
-            </ul>
-          </section>
-        </details>
+            {homeMatchStatusBox ? (
+              <section className="mx-4 mt-3" aria-label="매칭 상태">
+                <p
+                  className="rounded-xl border px-4 py-3 text-center text-sm font-bold"
+                  style={{
+                    backgroundColor: homeMatchStatusBox.backgroundColor,
+                    borderColor: LINE7_BORDER,
+                    color: homeMatchStatusBox.textColor,
+                  }}
+                >
+                  <span aria-hidden className="mr-1 opacity-80">
+                    {homeMatchStatusBox.emoji}
+                  </span>
+                  {homeMatchStatusBox.label}
+                </p>
+              </section>
+            ) : null}
 
-        <div className="h-1 shrink-0" aria-hidden />
+            <details className="group mx-4 mt-3">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-bold text-[#1A1A1A] marker:content-none [&::-webkit-details-marker]:hidden">
+                <span
+                  className="inline-block text-[10px] leading-none text-[#888888] transition-transform group-open:rotate-90"
+                  aria-hidden
+                >
+                  ▶
+                </span>
+                왜 지하철인가?
+              </summary>
+              <section
+                className="mt-3 rounded-2xl border border-[#EBEBEB] bg-white px-4 py-3.5"
+                aria-label="서비스 안내"
+              >
+                <p className="text-zeb-sm font-medium leading-snug text-[#6B7280]">
+                  실시간 지하철 착석 및 자리 양보 매칭
+                </p>
+                <ul className="mt-2.5 flex flex-col gap-1.5 text-zeb-base leading-snug text-[#4B5563]">
+                  <li>· 서울 1~9호선 및 인천 1~2호선 지원</li>
+                  <li>· 혼잡한 출퇴근길 착석 수요 해소</li>
+                  <li>· 교통약자·일반 이용자 모두 이용 가능</li>
+                </ul>
+              </section>
+            </details>
 
-        {/* 단독 노선 — 노선 선택 UI (복원 시 homeStep === 'line' 분기로 되돌리기)
+            <div className="h-1 shrink-0" aria-hidden />
+          </>
         ) : (
-          <section className="flex flex-1 flex-col">
+          <section className="flex flex-1 flex-col mx-4 mt-3">
             <div className="mb-8 flex items-center justify-between">
               <button
                 type="button"
@@ -1863,8 +1908,8 @@ export default function Home() {
               <h2 className="text-zeb-2xl font-bold tracking-tight text-[#1A1A1A]">
                 어느 노선 타세요?
               </h2>
-              <p className="mt-2 text-zeb-base font-medium" style={{ color: LINE7_OLIVE }}>
-                서울 7호선 단독 운영 중
+              <p className="mt-2 text-zeb-base font-medium text-[#6B7280]">
+                원하시는 노선을 선택해 주세요.
               </p>
             </div>
 
@@ -1875,7 +1920,7 @@ export default function Home() {
                   type="button"
                   disabled={isMatchingPaused}
                   className="zeb-touch-target flex w-full items-center gap-4 rounded-xl bg-white px-4 py-4 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
-                  onClick={() => handleLinePick(line.label)}
+                  onClick={() => handleLinePick(line.label, activeTab || undefined, pendingDestination)}
                   aria-label={`${line.label} 선택`}
                 >
                   <span
@@ -1907,7 +1952,6 @@ export default function Home() {
             ) : null}
           </section>
         )}
-        */}
       </main>
     </div>
   )
